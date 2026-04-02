@@ -90,6 +90,11 @@ hashes per zizmor best practices.
 - `OPENROUTER_API_KEY` — Required for LLM calls (prompted interactively if missing)
 - `PITGPT_DEFAULT_MODEL` — Defaults to `anthropic/claude-sonnet-4`
 
+## Key Documents
+
+- [`docs/prd-v1.md`](docs/prd-v1.md) — Product Requirements Document v1
+  (original docx preserved at `docs/prd-v1.docx`)
+
 ## Updating This File
 
 When you make changes that affect any of the above (new tools, new
