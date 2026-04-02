@@ -1,0 +1,54 @@
+[project]
+name = "pitgpt"
+version = "0.1.0"
+description = "Personal clinical trial machine — prototype"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "typer>=0.15",
+    "textual>=3.0",
+    "scipy>=1.14",
+    "rich>=13.0",
+]
+
+[project.scripts]
+pitgpt = "pitgpt.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.22",
+    "mypy>=1.13",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"pitgpt/core/ingestion.py" = ["E501"]
+"pitgpt/tui/app.py" = ["E501"]
+"pitgpt/cli/main.py" = ["E501"]
+"tests/test_ingestion.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true

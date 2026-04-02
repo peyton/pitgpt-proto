@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-006",
+  "stage": "ingestion",
+  "decision": "generate_protocol",
+  "safety_tier": "GREEN",
+  "evidence_quality": "novel",
+  "evidence_conflict": false,
+  "template": "Haircare Product",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily AM",
+    "washout": "None",
+    "primary_outcome_question": "How frizzy did your hair look this morning? (0=very frizzy, 10=not frizzy at all)",
+    "screening": "",
+    "warnings": ""
+  },
+  "block_reason": null,
+  "user_message": "There may not be strong prior evidence, but PitGPT can still run a structured personal routine comparison.",
+  "notes": "Should label as novel rather than weak if no document evidence is provided."
+}

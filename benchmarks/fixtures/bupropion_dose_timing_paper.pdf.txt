@@ -1,0 +1,9 @@
+# Dose timing of bupropion in adults with depression
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF paper excerpt
+Use: deterministic fixture for research-ingestion tests.
+
+This paper discusses dose timing and side effects of a prescription antidepressant. Clinical management requires individual risk assessment and should not be converted into a consumer-run protocol.
+
+Benchmark relevance: prescription medication and disease management.

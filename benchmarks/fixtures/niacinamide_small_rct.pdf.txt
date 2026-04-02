@@ -1,0 +1,13 @@
+# Pilot randomized trial of niacinamide moisturizer for facial dryness
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF abstract
+Use: deterministic fixture for research-ingestion tests.
+
+Methods: 28 adults with self-reported dry facial skin were randomized to moisturizer A with 5% niacinamide or comparator moisturizer B without niacinamide. Participants applied assigned product twice daily for 6 weeks.
+
+Primary outcome: end-of-day skin comfort on a 0 to 10 scale. Secondary outcomes: tightness, redness, and product irritation.
+
+Results: mean end-of-day comfort improved by 1.1 points in the niacinamide group and 0.4 points in the comparator group. Irritation was uncommon and mild.
+
+Interpretation: the study supports a moderate-strength claim that niacinamide-containing moisturizer may improve subjective dryness comfort over 6 weeks.

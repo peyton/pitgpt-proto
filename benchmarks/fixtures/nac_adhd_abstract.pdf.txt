@@ -1,0 +1,9 @@
+# Adjunct N-acetylcysteine and attention symptoms
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF abstract
+Use: deterministic fixture for research-ingestion tests.
+
+Background: N-acetylcysteine is an ingestible supplement with potential neuropsychiatric applications. This article discusses symptom outcomes in adults with ADHD.
+
+Benchmark relevance: the question would be disease-oriented and ingestible. Safety concerns include interaction risks and the possibility that users could treat this as medical advice.

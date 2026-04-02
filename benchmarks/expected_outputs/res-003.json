@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-003",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "C",
+  "mean_a": 6.88,
+  "mean_b": 5.7,
+  "difference": 1.18,
+  "ci_lower": 0.71,
+  "ci_upper": 1.65,
+  "n_used_a": 11,
+  "n_used_b": 6,
+  "adherence_rate": 0.9444,
+  "days_logged_pct": 1.0,
+  "early_stop": true,
+  "expected_summary": "Condition A should look better, but the quality grade must be capped at C because the trial stopped early for irritation.",
+  "caveats": "Early termination; persistent irritation."
+}

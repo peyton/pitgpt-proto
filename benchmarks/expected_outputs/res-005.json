@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-005",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "C",
+  "mean_a": 4.55,
+  "mean_b": 5.83,
+  "difference": -1.27,
+  "ci_lower": -1.95,
+  "ci_upper": -0.59,
+  "n_used_a": 11,
+  "n_used_b": 12,
+  "adherence_rate": 0.619,
+  "days_logged_pct": 0.8571,
+  "early_stop": false,
+  "expected_summary": "Condition A should reduce hunger relative to B, but the result should be Grade C because adherence and logging are weak.",
+  "caveats": "Significant missingness."
+}

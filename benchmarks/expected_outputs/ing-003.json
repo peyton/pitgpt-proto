@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-003",
+  "stage": "ingestion",
+  "decision": "generate_protocol",
+  "safety_tier": "GREEN",
+  "evidence_quality": "moderate",
+  "evidence_conflict": false,
+  "template": "Skincare Product",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily",
+    "washout": "None",
+    "primary_outcome_question": "How comfortable and hydrated did your skin feel by evening today? (0=very uncomfortable/dry, 10=very comfortable/hydrated)",
+    "screening": "",
+    "warnings": ""
+  },
+  "block_reason": null,
+  "user_message": "PitGPT found moderate research support and can turn the study idea into a personal 6-week crossover trial.",
+  "notes": "Must extract intervention, comparator, duration, outcome, and moderate evidence quality from the PDF."
+}

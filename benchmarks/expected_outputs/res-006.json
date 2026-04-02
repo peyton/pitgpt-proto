@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-006",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "D",
+  "mean_a": null,
+  "mean_b": null,
+  "difference": null,
+  "ci_lower": null,
+  "ci_upper": null,
+  "n_used_a": 0,
+  "n_used_b": 0,
+  "adherence_rate": 0.4762,
+  "days_logged_pct": 0.5238,
+  "early_stop": false,
+  "expected_summary": "The output should say there is insufficient data and assign Grade D.",
+  "caveats": "Very low adherence and extensive missing data."
+}

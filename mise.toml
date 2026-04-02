@@ -1,0 +1,6 @@
+[tools]
+python = "3.12"
+
+[env]
+OPENROUTER_API_KEY = "{{env.OPENROUTER_API_KEY}}"
+PITGPT_DEFAULT_MODEL = "{{env.PITGPT_DEFAULT_MODEL | default: 'anthropic/claude-sonnet-4'}}"

@@ -1,0 +1,11 @@
+# Pilot comparison of retinol frequency and visible smoothness
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF abstract
+Use: deterministic fixture for research-ingestion tests.
+
+Methods: adults with self-described dull skin compared retinol use 1 night per week versus 2 nights per week over 8 weeks.
+
+Outcomes: skin smoothness, visible flaking, stinging, and redness.
+Results: visible smoothness improved more in the twice-weekly arm, but irritation was also higher.
+Interpretation: moderate evidence for a tradeoff between effect and tolerability.

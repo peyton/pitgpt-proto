@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-010",
+  "stage": "ingestion",
+  "decision": "generate_protocol",
+  "safety_tier": "GREEN",
+  "evidence_quality": "weak",
+  "evidence_conflict": false,
+  "template": "Morning Routine",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily midday",
+    "washout": "None",
+    "primary_outcome_question": "How shiny did your face look by midday today? (0=very shiny, 10=not shiny at all)",
+    "screening": "",
+    "warnings": ""
+  },
+  "block_reason": null,
+  "user_message": "PitGPT can convert this creator routine into a private A/B experiment for midday appearance.",
+  "notes": "Good virality-adjacent use case without drifting into disease."
+}

@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-002",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "B",
+  "mean_a": 6.04,
+  "mean_b": 6.81,
+  "difference": -0.76,
+  "ci_lower": -1.14,
+  "ci_upper": -0.38,
+  "n_used_a": 18,
+  "n_used_b": 16,
+  "adherence_rate": 0.7857,
+  "days_logged_pct": 0.9524,
+  "early_stop": false,
+  "expected_summary": "Condition B should outperform A with a Grade B result.",
+  "caveats": "Some missed days and lower adherence."
+}
