@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PitGPT Design System</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --white:#FFFFFF;--gray-50:#FAFAFA;--gray-100:#F5F5F5;--gray-200:#E5E5E5;
+    --gray-300:#D4D4D4;--gray-400:#A3A3A3;--gray-500:#737373;--gray-600:#525252;
+    --gray-700:#404040;--gray-800:#262626;--gray-900:#171717;--black:#0A0A0A;
+    --pink-50:#FFF0F6;--pink-100:#FFD6E8;--pink-200:#FFB3D9;--pink-300:#FF80B5;
+    --pink-400:#FF4D94;--pink-500:#FF006E;--pink-600:#D4005C;--pink-700:#A80049;
+    --pink-800:#7D0037;--pink-900:#520024;
+    --safe:#16A34A;--safe-bg:#F0FDF4;--caution:#CA8A04;--caution-bg:#FEFCE8;
+    --danger:#DC2626;--danger-bg:#FEF2F2;--info:#2563EB;--info-bg:#EFF6FF;
+    --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'JetBrains Mono','SF Mono','Consolas',monospace;
+    --r-sm:6px;--r-md:10px;--r-lg:16px;--r-xl:24px;--r-full:9999px;
+    --sh-sm:0 1px 2px rgba(0,0,0,.05);--sh-md:0 2px 8px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+    --sh-lg:0 8px 24px rgba(0,0,0,.12),0 2px 4px rgba(0,0,0,.04);
+    --ease:cubic-bezier(.16,1,.3,1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:var(--font-body);background:var(--white);color:var(--black);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .ds-page{max-width:960px;margin:0 auto;padding:80px 32px}
+  .ds-header{margin-bottom:80px}
+  .ds-header h1{font-size:48px;font-weight:800;letter-spacing:-1.5px;line-height:1.1;margin-bottom:12px}
+  .ds-header h1 span{color:var(--pink-500)}
+  .ds-header p{font-size:18px;color:var(--gray-500);max-width:560px;line-height:1.5}
+  .ds-section{margin-bottom:72px}
+  .ds-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--pink-500);margin-bottom:24px;padding-bottom:12px;border-bottom:2px solid var(--gray-100)}
+  .ds-label{font-size:12px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}
+  .ds-note{font-size:13px;color:var(--gray-500);margin-top:8px}
+  .swatch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;margin-bottom:32px}
+  .swatch{border-radius:var(--r-md);overflow:hidden;border:1px solid var(--gray-200)}
+  .swatch-color{height:56px}
+  .swatch-info{padding:8px 10px;font-size:11px}
+  .swatch-info strong{display:block;font-size:12px;margin-bottom:2px}
+  .swatch-info code{font-family:var(--font-mono);font-size:10px;color:var(--gray-500)}
+  .type-specimen{margin-bottom:24px;padding:24px;background:var(--gray-50);border-radius:var(--r-lg)}
+  .type-specimen .sample{margin-bottom:8px}
+  .type-meta{font-family:var(--font-mono);font-size:11px;color:var(--gray-400)}
+  .comp-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:24px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:var(--r-full);font-family:var(--font-body);font-size:14px;font-weight:600;border:none;cursor:pointer;transition:all .15s var(--ease);line-height:1.4}
+  .btn-primary{background:var(--pink-500);color:#fff}.btn-primary:hover{background:var(--pink-600);transform:translateY(-1px);box-shadow:var(--sh-md)}
+  .btn-secondary{background:var(--white);color:var(--black);border:1.5px solid var(--gray-200)}.btn-secondary:hover{background:var(--gray-50);border-color:var(--gray-300)}
+  .btn-ghost{background:transparent;color:var(--pink-500);padding:10px 16px}.btn-ghost:hover{background:var(--pink-50)}
+  .btn-danger{background:transparent;color:var(--danger);border:1.5px solid #FECACA}.btn-danger:hover{background:var(--danger-bg)}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:var(--r-full);font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+  .badge-safe{background:var(--safe-bg);color:var(--safe)}.badge-caution{background:var(--caution-bg);color:var(--caution)}
+  .badge-danger{background:var(--danger-bg);color:var(--danger)}.badge-info{background:var(--info-bg);color:var(--info)}
+  .badge-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+  .evidence{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:var(--r-full);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .evidence-strong{background:#DCFCE7;color:#166534}.evidence-moderate{background:var(--info-bg);color:#1D4ED8}
+  .evidence-weak{background:var(--gray-100);color:var(--gray-600)}.evidence-novel{background:var(--pink-50);color:var(--pink-600)}
+  .grade{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:var(--r-md);font-family:var(--font-mono);font-size:20px;font-weight:700;color:#fff}
+  .grade-a{background:var(--safe)}.grade-b{background:#22C55E}.grade-c{background:var(--caution)}.grade-d{background:var(--danger)}
+  .info-i{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gray-100);color:var(--gray-500);font-size:10px;font-weight:700;cursor:help;position:relative;border:none;font-family:var(--font-body);vertical-align:middle;margin-left:3px;transition:all .15s;flex-shrink:0}
+  .info-i:hover,.info-i:focus{background:var(--pink-50);color:var(--pink-500);outline:none}
+  .info-i:focus-visible{outline:2px solid var(--pink-500);outline-offset:2px}
+  .info-i .tt{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--gray-900);color:#fff;padding:10px 14px;border-radius:var(--r-md);font-size:12px;font-weight:400;line-height:1.5;width:max-content;max-width:260px;opacity:0;pointer-events:none;transition:opacity .15s;z-index:100;text-transform:none;letter-spacing:0;text-align:left}
+  .info-i .tt::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--gray-900)}
+  .info-i:hover .tt,.info-i:focus .tt{opacity:1;pointer-events:auto}
+  .card-demo{background:var(--white);border-radius:var(--r-lg);border:1px solid var(--gray-200);padding:24px;transition:box-shadow .25s var(--ease);max-width:320px}
+  .card-demo:hover{box-shadow:var(--sh-md)}
+  .card-demo h3{font-size:16px;font-weight:700;margin-bottom:6px}
+  .card-demo p{font-size:14px;color:var(--gray-500)}
+  .chat-demo{max-width:520px}
+  .chat-input-demo{display:flex;align-items:flex-end;background:var(--white);border:1.5px solid var(--gray-200);border-radius:22px;padding:8px 8px 8px 20px;gap:8px;transition:border-color .15s,box-shadow .15s}
+  .chat-input-demo:focus-within{border-color:var(--pink-500);box-shadow:0 0 0 3px var(--pink-100)}
+  .chat-input-demo textarea{flex:1;border:none;outline:none;font-family:var(--font-body);font-size:15px;resize:none;min-height:24px;line-height:1.5;background:transparent;padding:6px 0;color:var(--black)}
+  .chat-input-demo textarea::placeholder{color:var(--gray-400)}
+  .chat-send-demo{width:36px;height:36px;border-radius:50%;background:var(--pink-500);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;transition:background .15s;flex-shrink:0}
+  .chat-send-demo:hover{background:var(--pink-600)}
+  .slider-demo{max-width:400px}
+  .slider-demo input[type="range"]{width:100%;height:8px;border-radius:4px;background:linear-gradient(to right,var(--gray-200),var(--pink-200),var(--pink-500));-webkit-appearance:none;appearance:none;outline:none;cursor:pointer}
+  .slider-demo input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--pink-500);cursor:pointer;box-shadow:var(--sh-md);border:3px solid #fff}
+  .slider-demo .slider-val{text-align:center;font-family:var(--font-mono);font-size:28px;font-weight:700;color:var(--pink-500);margin-top:8px}
+  .progress-demo{max-width:400px}
+  .progress-bar{height:6px;background:var(--gray-100);border-radius:var(--r-full);overflow:hidden}
+  .progress-fill{height:100%;background:var(--pink-500);border-radius:var(--r-full)}
+  .toggle{width:44px;height:24px;border-radius:12px;background:var(--gray-300);position:relative;cursor:pointer;transition:background .2s;border:none;padding:0;flex-shrink:0}
+  .toggle.on{background:var(--pink-500)}
+  .toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh-sm);transition:transform .2s var(--ease)}
+  .toggle.on::after{transform:translateX(20px)}
+  .radio-pill{padding:8px 18px;border-radius:var(--r-full);border:1.5px solid var(--gray-200);background:var(--white);font-family:var(--font-body);font-size:14px;cursor:pointer;transition:all .15s;color:var(--gray-600)}
+  .radio-pill:hover{border-color:var(--gray-300)}
+  .radio-pill.selected{border-color:var(--pink-500);background:var(--pink-50);color:var(--pink-600);font-weight:600}
+  .spacing-demo{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:36px}
+  .spacing-box{background:var(--pink-100);border-radius:4px;position:relative}
+  .spacing-box span{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-family:var(--font-mono);font-size:10px;color:var(--gray-400);white-space:nowrap}
+  .principles-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .principle{padding:24px;background:var(--gray-50);border-radius:var(--r-lg);border:1px solid var(--gray-100)}
+  .principle h3{font-size:15px;font-weight:700;margin-bottom:6px}
+  .principle p{font-size:13px;color:var(--gray-500);line-height:1.5}
+  .principle-icon{font-size:24px;margin-bottom:12px}
+  @media(max-width:640px){.ds-header h1{font-size:32px}.swatch-grid{grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}.principles-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="ds-page">
+  <header class="ds-header">
+    <h1>Pit<span>GPT</span> Design System</h1>
+    <p>Tokens, typography, and components for PitGPT — the personal experiment engine. Built for clarity, speed, and confidence.</p>
+  </header>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Logo &amp; Brand Mark</div>
+
+    <!-- Full Logo (App Icon) -->
+    <div class="ds-label">App Icon — Full Logo</div>
+    <p style="font-size:14px;color:var(--gray-600);margin-bottom:16px;max-width:640px;line-height:1.6">The primary logo is a venn diagram of two overlapping circles on a rounded-square container. The overlap represents A/B comparison — the core concept of every N-of-1 trial. Use this version for app icons, social assets, and any context where the logo appears standalone at 64px or larger.</p>
+    <div style="display:flex;gap:32px;align-items:end;flex-wrap:wrap;margin-bottom:12px">
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:24px;display:inline-flex;align-items:center;justify-content:center">
+        <img src="logo.svg" alt="PitGPT logo" width="128" height="128">
+      </div>
+      <div style="background:var(--gray-900);border-radius:var(--r-lg);padding:24px;display:inline-flex;align-items:center;justify-content:center">
+        <img src="logo.svg" alt="PitGPT logo on dark" width="128" height="128">
+      </div>
+      <div style="background:var(--gray-900);border-radius:var(--r-lg);padding:24px;display:inline-flex;align-items:center;justify-content:center">
+        <img src="logo.svg" alt="PitGPT logo small" width="64" height="64">
+      </div>
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:24px;display:inline-flex;align-items:center;justify-content:center">
+        <img src="logo.svg" alt="PitGPT logo small" width="48" height="48">
+      </div>
+    </div>
+    <div class="ds-note" style="margin-bottom:32px">File: <code style="font-family:var(--font-mono);font-size:12px;background:var(--gray-100);padding:2px 6px;border-radius:4px">logo.svg</code> — 512×512 with rx=112 rounded square. Minimum display size: 32px.</div>
+
+    <!-- Header Logomark (Simplified) -->
+    <div class="ds-label">Header Logomark — Simplified</div>
+    <p style="font-size:14px;color:var(--gray-600);margin-bottom:16px;max-width:640px;line-height:1.6">A stripped-down version of the mark used in the app sidebar and mobile header. No container square, no glow rings — just the two overlapping circles. Designed to read clearly at 28–34px and sit tight against the wordmark.</p>
+    <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <!-- Large preview -->
+      <div style="background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:20px 24px;display:inline-flex;align-items:center;gap:8px">
+        <svg width="48" height="48" viewBox="50 120 410 270"><defs><linearGradient id="ds-lg-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF006E"/><stop offset="100%" stop-color="#FF4D94"/></linearGradient><linearGradient id="ds-lg-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D94"/><stop offset="100%" stop-color="#FF80B5"/></linearGradient></defs><circle cx="200" cy="256" r="115" fill="url(#ds-lg-a)" opacity=".9"/><circle cx="312" cy="256" r="115" fill="url(#ds-lg-b)" opacity=".75"/></svg>
+        <span style="font-size:24px;font-weight:700;letter-spacing:-.5px">Pit<em style="font-style:normal;color:var(--pink-500)">GPT</em></span>
+      </div>
+      <!-- Actual size (sidebar) -->
+      <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:16px 20px;display:inline-flex;align-items:center;gap:6px">
+        <svg width="34" height="34" viewBox="50 120 410 270"><defs><linearGradient id="ds-sm-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF006E"/><stop offset="100%" stop-color="#FF4D94"/></linearGradient><linearGradient id="ds-sm-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D94"/><stop offset="100%" stop-color="#FF80B5"/></linearGradient></defs><circle cx="200" cy="256" r="115" fill="url(#ds-sm-a)" opacity=".9"/><circle cx="312" cy="256" r="115" fill="url(#ds-sm-b)" opacity=".75"/></svg>
+        <span style="font-size:20px;font-weight:700;letter-spacing:-.5px">Pit<em style="font-style:normal;color:var(--pink-500)">GPT</em></span>
+      </div>
+      <!-- Mark only -->
+      <div style="background:var(--gray-900);border-radius:var(--r-lg);padding:16px 20px;display:inline-flex;align-items:center;gap:6px">
+        <svg width="34" height="34" viewBox="50 120 410 270"><defs><linearGradient id="ds-dk-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF006E"/><stop offset="100%" stop-color="#FF4D94"/></linearGradient><linearGradient id="ds-dk-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D94"/><stop offset="100%" stop-color="#FF80B5"/></linearGradient></defs><circle cx="200" cy="256" r="115" fill="url(#ds-dk-a)" opacity=".9"/><circle cx="312" cy="256" r="115" fill="url(#ds-dk-b)" opacity=".75"/></svg>
+        <span style="font-size:20px;font-weight:700;letter-spacing:-.5px;color:#fff">Pit<em style="font-style:normal;color:var(--pink-300)">GPT</em></span>
+      </div>
+    </div>
+    <div class="ds-note" style="margin-bottom:32px">ViewBox cropped to <code style="font-family:var(--font-mono);font-size:12px;background:var(--gray-100);padding:2px 6px;border-radius:4px">50 120 410 270</code> — circles at cx 200/312, r=115. Sidebar renders at 30px, mobile at 26px. Gap to wordmark: 6px.</div>
+
+    <!-- Usage Guidelines -->
+    <div class="ds-label">Usage Guidelines</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:8px">
+      <div style="background:var(--safe-bg);border:1px solid #BBF7D0;border-radius:var(--r-md);padding:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--safe);margin-bottom:8px">✓ Do</div>
+        <ul style="font-size:13px;color:var(--gray-700);list-style:none;display:flex;flex-direction:column;gap:6px">
+          <li>Use <strong>logo.svg</strong> for app icons, favicons, and standalone placements ≥ 32px</li>
+          <li>Use the <strong>header logomark</strong> (cropped viewBox, no container) inline with the wordmark in navigation</li>
+          <li>Maintain the <strong>6px gap</strong> between logomark and wordmark in header contexts</li>
+          <li>Keep "Pit" in <strong>gray-900</strong> and "GPT" in <strong>pink-500</strong> for the wordmark</li>
+          <li>On dark backgrounds, shift "GPT" to <strong>pink-300</strong> and "Pit" to <strong>white</strong></li>
+        </ul>
+      </div>
+      <div style="background:var(--danger-bg);border:1px solid #FECACA;border-radius:var(--r-md);padding:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--danger);margin-bottom:8px">✗ Don't</div>
+        <ul style="font-size:13px;color:var(--gray-700);list-style:none;display:flex;flex-direction:column;gap:6px">
+          <li>Don't display the full logo.svg (with container square) below 32px — use the header logomark instead</li>
+          <li>Don't rotate, skew, or add drop shadows to the logo</li>
+          <li>Don't change the circle gradient colors or opacity values</li>
+          <li>Don't separate the two circles — the overlap <em>is</em> the concept</li>
+          <li>Don't place on backgrounds that clash with the pink gradient (orange, red, magenta)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ds-note">The venn diagram represents A/B comparison — the two conditions in every N-of-1 trial. The overlap is the participant: one person, two treatments, one answer.</div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Colors</div>
+    <div class="ds-label">Hot Pink (Brand)</div>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-color" style="background:#FFF0F6"></div><div class="swatch-info"><strong>50</strong><code>#FFF0F6</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FFD6E8"></div><div class="swatch-info"><strong>100</strong><code>#FFD6E8</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FFB3D9"></div><div class="swatch-info"><strong>200</strong><code>#FFB3D9</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF80B5"></div><div class="swatch-info"><strong>300</strong><code>#FF80B5</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF4D94"></div><div class="swatch-info"><strong>400</strong><code>#FF4D94</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FF006E"></div><div class="swatch-info"><strong>500</strong><code>#FF006E</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#D4005C"></div><div class="swatch-info"><strong>600</strong><code>#D4005C</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#A80049"></div><div class="swatch-info"><strong>700</strong><code>#A80049</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#7D0037"></div><div class="swatch-info"><strong>800</strong><code>#7D0037</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#520024"></div><div class="swatch-info"><strong>900</strong><code>#520024</code></div></div>
+    </div>
+    <div class="ds-label">Neutrals</div>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-color" style="background:#FFFFFF;border-bottom:1px solid #E5E5E5"></div><div class="swatch-info"><strong>White</strong><code>#FFF</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#FAFAFA"></div><div class="swatch-info"><strong>50</strong><code>#FAFAFA</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#F5F5F5"></div><div class="swatch-info"><strong>100</strong><code>#F5F5F5</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#E5E5E5"></div><div class="swatch-info"><strong>200</strong><code>#E5E5E5</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#D4D4D4"></div><div class="swatch-info"><strong>300</strong><code>#D4D4D4</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#737373"></div><div class="swatch-info"><strong>500</strong><code>#737373</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#404040"></div><div class="swatch-info"><strong>700</strong><code>#404040</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#171717"></div><div class="swatch-info"><strong>900</strong><code>#171717</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#0A0A0A"></div><div class="swatch-info"><strong>Black</strong><code>#0A0A0A</code></div></div>
+    </div>
+    <div class="ds-label">Semantic</div>
+    <div class="swatch-grid">
+      <div class="swatch"><div class="swatch-color" style="background:#16A34A"></div><div class="swatch-info"><strong>Safe</strong><code>#16A34A</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#CA8A04"></div><div class="swatch-info"><strong>Caution</strong><code>#CA8A04</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#DC2626"></div><div class="swatch-info"><strong>Danger</strong><code>#DC2626</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#2563EB"></div><div class="swatch-info"><strong>Info</strong><code>#2563EB</code></div></div>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Typography</div>
+    <div class="type-specimen"><div class="sample" style="font-size:42px;font-weight:800;letter-spacing:-1.5px;line-height:1.1">What do you want to test?</div><div class="type-meta">Inter 800 · 42px · -1.5px tracking · Display</div></div>
+    <div class="type-specimen"><div class="sample" style="font-size:28px;font-weight:700;letter-spacing:-.5px">CeraVe vs. La Roche-Posay</div><div class="type-meta">Inter 700 · 28px · Page heading</div></div>
+    <div class="type-specimen"><div class="sample" style="font-size:18px;font-weight:600">Design Parameters</div><div class="type-meta">Inter 600 · 18px · Section heading</div></div>
+    <div class="type-specimen"><div class="sample" style="font-size:15px;line-height:1.6;color:var(--gray-600)">This experiment is not blinded — you'll know which product you're using, which can influence ratings. Results reflect your personal experience under this specific protocol.</div><div class="type-meta">Inter 400 · 15px · Body</div></div>
+    <div class="type-specimen"><div class="sample" style="font-family:var(--font-mono);font-size:14px;color:var(--pink-500)">Welch's t-test · 95% CI [0.4, 2.2] · p = 0.012</div><div class="type-meta">JetBrains Mono 400 · 14px · Data / statistics</div></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Buttons</div>
+    <div class="comp-row"><button class="btn btn-primary">Lock Protocol</button><button class="btn btn-secondary">Edit Conditions</button><button class="btn btn-ghost">Export CSV</button><button class="btn btn-danger">Stop Experiment</button></div>
+    <p class="ds-note">Primary for the single most important action per view. Max one primary per screen.</p>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Safety Tiers</div>
+    <div class="comp-row"><span class="badge badge-safe badge-dot">Green — Safe to Run</span><span class="badge badge-caution badge-dot">Yellow — Review Carefully</span><span class="badge badge-danger badge-dot">Red — Not Recommended</span></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Evidence Strength</div>
+    <div class="comp-row"><span class="evidence evidence-strong">Strong</span><span class="evidence evidence-moderate">Moderate</span><span class="evidence evidence-weak">Weak</span><span class="evidence evidence-novel">Novel</span></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Quality Grades</div>
+    <div class="comp-row">
+      <div style="text-align:center"><div class="grade grade-a">A</div><div class="type-meta" style="margin-top:6px">Excellent</div></div>
+      <div style="text-align:center"><div class="grade grade-b">B</div><div class="type-meta" style="margin-top:6px">Good</div></div>
+      <div style="text-align:center"><div class="grade grade-c">C</div><div class="type-meta" style="margin-top:6px">Fair</div></div>
+      <div style="text-align:center"><div class="grade grade-d">D</div><div class="type-meta" style="margin-top:6px">Poor</div></div>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Info Tooltips</div>
+    <div class="comp-row">
+      <span style="font-size:15px">Primary Outcome <button class="info-i" aria-label="What is a primary outcome?" tabindex="0">i<span class="tt" role="tooltip">The single measurement that determines which condition wins. Locked to prevent bias.</span></button></span>
+      <span style="font-size:15px">Protocol Lock <button class="info-i" aria-label="Why lock the protocol?" tabindex="0">i<span class="tt" role="tooltip">Prevents changing goals or methods mid-trial, protecting result validity.</span></button></span>
+    </div>
+    <p class="ds-note">Hover + keyboard focus. Pink highlight on interaction. <code>role="tooltip"</code> + <code>aria-label</code>.</p>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Cards</div>
+    <div class="card-demo"><h3>Skincare A/B</h3><p>Compare two products over 6 weeks with daily check-ins and randomized scheduling.</p></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Conversational Input</div>
+    <div class="chat-demo">
+      <div class="chat-input-demo">
+        <textarea rows="1" placeholder='"Is CeraVe or La Roche-Posay better for my dry skin?"' readonly></textarea>
+        <button class="chat-send-demo" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+    <p class="ds-note">Focus ring shifts to pink. Mirrors ChatGPT's centered minimal input.</p>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Outcome Slider</div>
+    <div class="slider-demo"><input type="range" min="0" max="10" value="7" oninput="this.nextElementSibling.textContent=this.value"><div class="slider-val">7</div></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Radio Pills</div>
+    <div class="comp-row"><button class="radio-pill selected">Yes</button><button class="radio-pill">No</button><button class="radio-pill">Partial</button></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Progress Bar</div>
+    <div class="progress-demo"><div class="progress-bar"><div class="progress-fill" style="width:33%"></div></div><p class="ds-note" style="margin-top:8px">Day 14 of 42</p></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Toggle</div>
+    <div class="comp-row"><button class="toggle on" onclick="this.classList.toggle('on')"></button><span style="font-size:14px;color:var(--gray-500)">Daily Reminders</span></div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Spacing Scale</div>
+    <div class="spacing-demo">
+      <div class="spacing-box" style="width:4px;height:4px"><span>4</span></div>
+      <div class="spacing-box" style="width:8px;height:8px"><span>8</span></div>
+      <div class="spacing-box" style="width:12px;height:12px"><span>12</span></div>
+      <div class="spacing-box" style="width:16px;height:16px"><span>16</span></div>
+      <div class="spacing-box" style="width:20px;height:20px"><span>20</span></div>
+      <div class="spacing-box" style="width:24px;height:24px"><span>24</span></div>
+      <div class="spacing-box" style="width:32px;height:32px"><span>32</span></div>
+      <div class="spacing-box" style="width:40px;height:40px"><span>40</span></div>
+      <div class="spacing-box" style="width:48px;height:48px"><span>48</span></div>
+      <div class="spacing-box" style="width:64px;height:64px"><span>64</span></div>
+    </div>
+  </section>
+
+  <section class="ds-section">
+    <div class="ds-section-title">Design Principles</div>
+    <div class="principles-grid">
+      <div class="principle"><div class="principle-icon">◉</div><h3>Bold Simplicity</h3><p>One typeface. One accent color. Strip away everything that doesn't earn its place. The interface disappears so the science becomes obvious.</p></div>
+      <div class="principle"><div class="principle-icon">◠</div><h3>Progressive Disclosure</h3><p>Show the answer first, then the evidence, then the methodology. Statistical details live behind (i) tooltips — accessible but never in the way.</p></div>
+      <div class="principle"><div class="principle-icon">◇</div><h3>Honest Uncertainty</h3><p>Always show confidence intervals, not just point estimates. Always show caveats, not just results. Designed to prevent overconfidence in personal data.</p></div>
+      <div class="principle"><div class="principle-icon">▷</div><h3>Conversational Entry</h3><p>You don't "configure an experiment" — you ask a question. The system meets you where you are and handles the science behind the scenes.</p></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PitGPT — Personal Experiment Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --white:#FFFFFF;--gray-50:#FAFAFA;--gray-100:#F5F5F5;--gray-200:#E5E5E5;
+  --gray-300:#D4D4D4;--gray-400:#A3A3A3;--gray-500:#737373;--gray-600:#525252;
+  --gray-700:#404040;--gray-800:#262626;--gray-900:#171717;--black:#0A0A0A;
+  --pink-50:#FFF0F6;--pink-100:#FFD6E8;--pink-200:#FFB3D9;--pink-300:#FF80B5;
+  --pink-400:#FF4D94;--pink-500:#FF006E;--pink-600:#D4005C;--pink-700:#A80049;
+  --safe:#16A34A;--safe-bg:#F0FDF4;--caution:#CA8A04;--caution-bg:#FEFCE8;
+  --danger:#DC2626;--danger-bg:#FEF2F2;--info:#2563EB;--info-bg:#EFF6FF;
+  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono','SF Mono',monospace;
+  --r-sm:6px;--r-md:10px;--r-lg:16px;--r-xl:24px;--r-full:9999px;
+  --sh-sm:0 1px 2px rgba(0,0,0,.05);--sh-md:0 2px 8px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  --sh-lg:0 8px 24px rgba(0,0,0,.12),0 2px 4px rgba(0,0,0,.04);
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);font-size:15px;color:var(--black);background:var(--white);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--pink-500);text-decoration:none}a:hover{text-decoration:underline}
+
+/* APP SHELL */
+.app{display:flex;min-height:100vh}
+.sidebar{width:240px;background:var(--gray-50);border-right:1px solid var(--gray-200);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:50;transition:transform .3s var(--ease)}
+.sidebar-header{padding:20px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--gray-200)}
+.sidebar-logo{display:flex;align-items:center;gap:6px}
+.sidebar-logo svg{flex-shrink:0}
+.sidebar-logo span{font-size:20px;font-weight:700;letter-spacing:-.5px}
+.sidebar-logo span em{font-style:normal;color:var(--pink-500)}
+.sidebar-nav{flex:1;padding:16px 12px;display:flex;flex-direction:column;gap:2px}
+.nav-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:var(--r-md);font-size:14px;font-weight:500;color:var(--gray-500);cursor:pointer;transition:all .15s;border:none;background:none;width:100%;text-align:left;font-family:var(--font)}
+.nav-item:hover{background:var(--gray-100);color:var(--black)}
+.nav-item.active{background:var(--pink-50);color:var(--pink-600);font-weight:600}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;opacity:.6}
+.nav-item.active svg{opacity:1}
+.nav-divider{height:1px;background:var(--gray-200);margin:8px 14px}
+.sidebar-footer{padding:16px 24px;border-top:1px solid var(--gray-200);font-size:11px;color:var(--gray-400);font-family:var(--mono)}
+
+.main{margin-left:240px;flex:1;min-height:100vh;display:flex;flex-direction:column}
+.page{display:none;flex:1;flex-direction:column}.page.active{display:flex}
+
+/* SHARED */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 24px;border-radius:var(--r-full);font-family:var(--font);font-size:14px;font-weight:600;border:none;cursor:pointer;transition:all .15s var(--ease);text-decoration:none;line-height:1.4}
+.btn-p{background:var(--pink-500);color:#fff}.btn-p:hover{background:var(--pink-600);transform:translateY(-1px);box-shadow:var(--sh-md);text-decoration:none}
+.btn-s{background:var(--white);color:var(--black);border:1.5px solid var(--gray-200)}.btn-s:hover{background:var(--gray-50);border-color:var(--gray-300);text-decoration:none}
+.btn-g{background:transparent;color:var(--pink-500);padding:10px 16px}.btn-g:hover{background:var(--pink-50);text-decoration:none}
+.btn-d{background:transparent;color:var(--danger);border:1.5px solid #FECACA}.btn-d:hover{background:var(--danger-bg);text-decoration:none}
+.btn-sm{padding:6px 16px;font-size:13px}
+
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:var(--r-full);font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+.badge-safe{background:var(--safe-bg);color:var(--safe)}.badge-caution{background:var(--caution-bg);color:var(--caution)}
+.badge-danger{background:var(--danger-bg);color:var(--danger)}.badge-info{background:var(--info-bg);color:var(--info)}
+.badge-neutral{background:var(--gray-100);color:var(--gray-600)}
+.badge-pink{background:var(--pink-50);color:var(--pink-600)}
+.badge-dot::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
+
+.info-i{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--gray-100);color:var(--gray-500);font-size:10px;font-weight:700;cursor:help;position:relative;border:none;font-family:var(--font);vertical-align:middle;margin-left:3px;transition:all .15s;flex-shrink:0}
+.info-i:hover,.info-i:focus{background:var(--pink-50);color:var(--pink-500);outline:none}
+.info-i:focus-visible{outline:2px solid var(--pink-500);outline-offset:2px}
+.info-i .tt{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--gray-900);color:#fff;padding:10px 14px;border-radius:var(--r-md);font-size:12px;font-weight:400;line-height:1.5;width:max-content;max-width:260px;opacity:0;pointer-events:none;transition:opacity .15s;z-index:100;text-transform:none;letter-spacing:0;text-align:left}
+.info-i .tt::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--gray-900)}
+.info-i:hover .tt,.info-i:focus .tt{opacity:1;pointer-events:auto}
+
+.card{background:var(--white);border-radius:var(--r-lg);border:1px solid var(--gray-200);padding:24px;transition:box-shadow .25s var(--ease)}
+.card:hover{box-shadow:var(--sh-md)}
+.progress-bar{height:6px;background:var(--gray-100);border-radius:var(--r-full);overflow:hidden}
+.progress-bar .fill{height:100%;background:var(--pink-500);border-radius:var(--r-full);transition:width .5s var(--ease)}
+.grade-badge{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:var(--r-md);font-family:var(--mono);font-size:18px;font-weight:700;color:#fff}
+.grade-a{background:var(--safe)}.grade-b{background:#22C55E}.grade-c{background:var(--caution)}.grade-d{background:var(--danger)}
+
+/* PAGE 1: HOME */
+.home-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;max-width:720px;margin:0 auto;width:100%}
+.home-greeting{text-align:center;margin-bottom:40px}
+.home-greeting h1{font-size:38px;font-weight:800;letter-spacing:-1.5px;margin-bottom:12px;line-height:1.1}
+.home-greeting p{color:var(--gray-500);font-size:16px;max-width:460px;margin:0 auto}
+.chat-input-wrap{width:100%;max-width:620px;margin-bottom:32px}
+.chat-input{display:flex;align-items:flex-end;background:var(--white);border:1.5px solid var(--gray-200);border-radius:22px;padding:8px 8px 8px 20px;gap:8px;transition:border-color .15s,box-shadow .15s}
+.chat-input:focus-within{border-color:var(--pink-500);box-shadow:0 0 0 3px var(--pink-100)}
+.chat-input textarea{flex:1;border:none;outline:none;font-family:var(--font);font-size:15px;color:var(--black);resize:none;min-height:24px;max-height:120px;line-height:1.5;background:transparent;padding:6px 0}
+.chat-input textarea::placeholder{color:var(--gray-400)}
+.chat-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.chat-action-btn{width:36px;height:36px;border-radius:50%;border:none;background:transparent;color:var(--gray-400);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.chat-action-btn:hover{background:var(--gray-100);color:var(--gray-600)}
+.chat-send{width:36px;height:36px;border-radius:50%;background:var(--pink-500);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;transition:background .15s}
+.chat-send:hover{background:var(--pink-600)}
+.templates-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);margin-bottom:12px;text-align:center}
+.template-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%;max-width:620px}
+.template-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:16px;cursor:pointer;transition:all .2s var(--ease);text-align:left}
+.template-card:hover{border-color:var(--pink-300);box-shadow:var(--sh-md);transform:translateY(-2px)}
+.template-icon{width:36px;height:36px;border-radius:var(--r-md);background:var(--pink-50);color:var(--pink-500);display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:18px}
+.template-card h3{font-size:14px;font-weight:700;margin-bottom:4px}
+.template-card p{font-size:12px;color:var(--gray-500);line-height:1.4}
+.quick-prompts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:24px;max-width:620px}
+.quick-prompt{padding:6px 14px;border-radius:var(--r-full);border:1px solid var(--gray-200);background:var(--white);font-size:13px;color:var(--gray-500);cursor:pointer;transition:all .15s;font-family:var(--font)}
+.quick-prompt:hover{border-color:var(--pink-300);background:var(--pink-50);color:var(--pink-600)}
+
+/* PAGE 2: PROTOCOL */
+.protocol-page{padding:32px;max-width:800px;margin:0 auto;width:100%}
+.protocol-header{margin-bottom:32px}
+.protocol-header .back-link{font-size:13px;color:var(--gray-400);display:flex;align-items:center;gap:6px;margin-bottom:16px;cursor:pointer}
+.protocol-header .back-link:hover{color:var(--pink-500)}
+.protocol-header h1{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-bottom:8px}
+.protocol-header .subtitle{color:var(--gray-500);font-size:15px}
+.protocol-meta{display:flex;gap:12px;margin:20px 0;flex-wrap:wrap}
+.protocol-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);margin-bottom:20px;overflow:hidden}
+.protocol-card-header{padding:16px 24px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between;background:var(--gray-50)}
+.protocol-card-header h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500)}
+.protocol-card-body{padding:24px}
+.protocol-detail{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.protocol-detail-item label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-400);margin-bottom:4px}
+.protocol-detail-item .value{font-size:16px;font-weight:600}
+.protocol-detail-item .value.mono{font-family:var(--mono);font-size:14px}
+.schedule-vis{display:flex;gap:4px;margin-top:16px;flex-wrap:wrap}
+.schedule-block{padding:6px 10px;border-radius:var(--r-sm);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;text-align:center;min-width:54px}
+.schedule-a{background:var(--pink-50);color:var(--pink-600);border:1px solid var(--pink-100)}
+.schedule-b{background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200)}
+.schedule-hidden{background:var(--gray-50);color:var(--gray-400);border:1px dashed var(--gray-300);font-style:italic}
+.caveats-box{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--r-md);padding:16px 20px;margin-top:16px}
+.caveats-box h4{font-size:13px;font-weight:700;margin-bottom:8px;color:var(--gray-600)}
+.caveats-box ul{list-style:none;padding:0}
+.caveats-box li{font-size:13px;color:var(--gray-500);padding:4px 0;padding-left:20px;position:relative}
+.caveats-box li::before{content:'⚠';position:absolute;left:0;font-size:12px}
+.protocol-actions{display:flex;gap:12px;justify-content:flex-end;margin-top:24px;padding-top:24px;border-top:1px solid var(--gray-200)}
+
+/* PAGE 3: TRIAL */
+.trial-page{padding:32px;max-width:800px;margin:0 auto;width:100%}
+.trial-hero{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:28px;margin-bottom:24px}
+.trial-hero-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.trial-hero h2{font-size:26px;font-weight:800;letter-spacing:-.5px}
+.trial-hero .day-counter{text-align:right}
+.trial-hero .day-counter .day{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--pink-500);line-height:1}
+.trial-hero .day-counter .day-label{font-size:12px;color:var(--gray-400)}
+.trial-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}
+.trial-stat{text-align:center;padding:12px}
+.trial-stat .stat-value{font-family:var(--mono);font-size:20px;font-weight:700;color:var(--pink-500)}
+.trial-stat .stat-label{font-size:12px;color:var(--gray-400);margin-top:2px}
+.assignment-card{background:var(--pink-50);border:1.5px solid var(--pink-100);border-radius:var(--r-lg);padding:24px;margin-bottom:24px;display:flex;align-items:center;gap:20px}
+.assignment-letter{width:48px;height:48px;border-radius:var(--r-md);background:var(--pink-500);color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:22px;font-weight:700;flex-shrink:0}
+.assignment-info h3{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--pink-600);margin-bottom:4px}
+.assignment-info p{font-size:17px;font-weight:600}
+.checkin-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:28px;margin-bottom:20px}
+.checkin-card h3{font-size:18px;font-weight:700;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.checkin-card h3 .time-est{font-size:12px;color:var(--gray-400);font-weight:400;font-family:var(--mono)}
+.form-group{margin-bottom:24px}
+.form-label{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;margin-bottom:10px}
+.outcome-slider{width:100%}
+.slider-anchors{display:flex;justify-content:space-between;margin-bottom:6px}
+.slider-anchors span{font-size:12px;color:var(--gray-400)}
+.slider-input{width:100%;height:8px;border-radius:4px;background:linear-gradient(to right,var(--gray-200),var(--pink-200),var(--pink-500));-webkit-appearance:none;appearance:none;outline:none;cursor:pointer}
+.slider-input::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--pink-500);cursor:pointer;box-shadow:var(--sh-md);border:3px solid #fff}
+.slider-numbers{display:flex;justify-content:space-between;margin-top:6px}
+.slider-numbers span{font-family:var(--mono);font-size:11px;color:var(--gray-400);width:22px;text-align:center}
+.slider-current{text-align:center;margin-top:8px;font-family:var(--mono);font-size:24px;font-weight:700;color:var(--pink-500)}
+.radio-group{display:flex;gap:8px}
+.radio-pill{padding:8px 18px;border-radius:var(--r-full);border:1.5px solid var(--gray-200);background:var(--white);font-family:var(--font);font-size:14px;cursor:pointer;transition:all .15s;color:var(--gray-500)}
+.radio-pill:hover{border-color:var(--gray-300)}
+.radio-pill.selected{border-color:var(--pink-500);background:var(--pink-50);color:var(--pink-600);font-weight:600}
+.radio-pill.danger-selected{border-color:var(--danger);background:var(--danger-bg);color:var(--danger);font-weight:600}
+.optional-note{border:1px solid var(--gray-200);border-radius:var(--r-md);padding:12px 16px;font-family:var(--font);font-size:14px;width:100%;resize:vertical;min-height:60px;outline:none;color:var(--black);transition:border-color .15s}
+.optional-note:focus{border-color:var(--pink-500);box-shadow:0 0 0 3px var(--pink-100)}
+.optional-note::placeholder{color:var(--gray-400)}
+.checkin-submit{display:flex;justify-content:flex-end;margin-top:8px}
+.no-peek-banner{background:var(--info-bg);border:1px solid #BFDBFE;border-radius:var(--r-md);padding:14px 20px;font-size:13px;color:var(--info);display:flex;align-items:center;gap:10px}
+.no-peek-banner svg{flex-shrink:0}
+
+/* PAGE 4: RESULTS */
+.results-page{padding:32px;max-width:860px;margin:0 auto;width:100%}
+.results-header{margin-bottom:28px}
+.results-header h1{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px}
+.results-header .completed{font-size:13px;color:var(--gray-400);font-family:var(--mono)}
+.verdict-card{background:var(--pink-50);border:1.5px solid var(--pink-200);border-radius:var(--r-lg);padding:24px 28px;margin-bottom:24px}
+.verdict-card h2{font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:8px}
+.verdict-card p{font-size:15px;color:var(--gray-600);line-height:1.6}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:20px;text-align:center}
+.stat-card .stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-400);margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:4px}
+.stat-card .stat-value{font-family:var(--mono);font-size:22px;font-weight:700}
+.stat-card .stat-sub{font-size:12px;color:var(--gray-400);margin-top:4px}
+.stat-positive{color:var(--pink-500)}
+.stat-neutral{color:var(--black)}
+.chart-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--r-lg);margin-bottom:24px;overflow:hidden}
+.chart-header{padding:16px 24px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
+.chart-header h3{font-size:14px;font-weight:700}
+.chart-legend{display:flex;gap:16px}
+.chart-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-500)}
+.chart-legend-dot{width:10px;height:10px;border-radius:50%}
+.chart-body{padding:24px;min-height:200px}
+.chart-svg{width:100%;height:200px}
+.chart-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.chart-dot{r:4;stroke:#fff;stroke-width:2}
+.chart-grid-line{stroke:var(--gray-200);stroke-width:1}
+.chart-label{font-family:var(--mono);font-size:10px;fill:var(--gray-400)}
+.caveats-card{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--r-lg);padding:20px 24px}
+.caveats-card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.caveats-card p{font-size:13px;color:var(--gray-500);line-height:1.6;margin-bottom:8px}
+.caveats-card p:last-child{margin-bottom:0}
+.results-actions{display:flex;gap:12px;margin-top:24px}
+
+/* PAGE 5: SETTINGS */
+.settings-page{padding:32px;max-width:640px;margin:0 auto;width:100%}
+.settings-page h1{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-bottom:32px}
+.settings-section{margin-bottom:32px}
+.settings-section h2{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--gray-200)}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--gray-100)}
+.setting-row:last-child{border:none}
+.setting-label h3{font-size:15px;font-weight:600;margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.setting-label p{font-size:13px;color:var(--gray-400)}
+.toggle{width:44px;height:24px;border-radius:12px;background:var(--gray-300);position:relative;cursor:pointer;transition:background .2s;border:none;padding:0;flex-shrink:0}
+.toggle.on{background:var(--pink-500)}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh-sm);transition:transform .2s var(--ease)}
+.toggle.on::after{transform:translateX(20px)}
+.time-input{padding:8px 14px;border-radius:var(--r-md);border:1px solid var(--gray-200);font-family:var(--font);font-size:14px;outline:none;width:110px;text-align:center}
+.time-input:focus{border-color:var(--pink-500);box-shadow:0 0 0 3px var(--pink-100)}
+.danger-zone{background:var(--danger-bg);border:1px solid #FECACA;border-radius:var(--r-lg);padding:20px 24px}
+.danger-zone h3{font-size:14px;font-weight:700;color:var(--danger);margin-bottom:8px}
+.danger-zone p{font-size:13px;color:var(--gray-600);margin-bottom:16px}
+
+/* MOBILE */
+.mobile-header{display:none;position:fixed;top:0;left:0;right:0;height:56px;background:var(--white);border-bottom:1px solid var(--gray-200);z-index:60;padding:0 16px;align-items:center;gap:12px}
+.hamburger{width:36px;height:36px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--black);border-radius:var(--r-md)}
+.hamburger:hover{background:var(--gray-100)}
+.mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:45}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}
+  .mobile-header{display:flex}.mobile-overlay.open{display:block}
+  .main{margin-left:0;padding-top:56px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .template-grid{grid-template-columns:1fr 1fr}
+  .protocol-detail{grid-template-columns:1fr}
+}
+@media(max-width:480px){.template-grid{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp .5s var(--ease) both}
+.fade-up-1{animation-delay:.05s}.fade-up-2{animation-delay:.1s}.fade-up-3{animation-delay:.15s}
+.fade-up-4{animation-delay:.2s}.fade-up-5{animation-delay:.25s}
+</style>
+</head>
+<body>
+
+<div class="mobile-header">
+  <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+  <div class="sidebar-logo">
+    <svg width="26" height="26" viewBox="50 120 410 270"><defs><linearGradient id="m-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF006E"/><stop offset="100%" stop-color="#FF4D94"/></linearGradient><linearGradient id="m-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D94"/><stop offset="100%" stop-color="#FF80B5"/></linearGradient></defs><circle cx="200" cy="256" r="115" fill="url(#m-a)" opacity=".9"/><circle cx="312" cy="256" r="115" fill="url(#m-b)" opacity=".75"/></svg>
+    <span style="font-size:18px;font-weight:700;letter-spacing:-.5px">Pit<em style="font-style:normal;color:var(--pink-500)">GPT</em></span>
+  </div>
+</div>
+<div class="mobile-overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+<div class="app">
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <svg width="30" height="30" viewBox="50 120 410 270"><defs><linearGradient id="s-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF006E"/><stop offset="100%" stop-color="#FF4D94"/></linearGradient><linearGradient id="s-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FF4D94"/><stop offset="100%" stop-color="#FF80B5"/></linearGradient></defs><circle cx="200" cy="256" r="115" fill="url(#s-a)" opacity=".9"/><circle cx="312" cy="256" r="115" fill="url(#s-b)" opacity=".75"/></svg>
+      <span>Pit<em>GPT</em></span>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active" onclick="showPage('home',this)">
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v6M7 10h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      New Experiment
+    </button>
+    <button class="nav-item" onclick="showPage('protocol',this)">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M4 4h12v12H4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8h6M7 11h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Protocol Review
+    </button>
+    <button class="nav-item" onclick="showPage('trial',this)">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M3 10l5 5L17 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Active Trial
+    </button>
+    <button class="nav-item" onclick="showPage('results',this)">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M3 17V10M8 17V6M13 17V8M18 17V3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Results
+    </button>
+    <div class="nav-divider"></div>
+    <button class="nav-item" onclick="showPage('settings',this)">
+      <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.2 4.2l2.1 2.1M13.7 13.7l2.1 2.1M15.8 4.2l-2.1 2.1M6.3 13.7l-2.1 2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Settings
+    </button>
+  </nav>
+  <div class="sidebar-footer">v1.0 · Private · No tracking</div>
+</aside>
+
+<main class="main">
+
+  <!-- PAGE 1: HOME -->
+  <div class="page active" id="page-home">
+    <div class="home-center">
+      <div class="home-greeting fade-up">
+        <h1>What do you want to test?</h1>
+        <p>Ask a question, paste a link, or upload a study — and get a structured personal experiment in minutes.</p>
+      </div>
+      <div class="chat-input-wrap fade-up fade-up-1">
+        <div class="chat-input">
+          <textarea rows="1" placeholder="&quot;Is CeraVe or La Roche-Posay better for my dry skin?&quot;" oninput="autoResize(this)"></textarea>
+          <div class="chat-actions">
+            <button class="chat-action-btn" aria-label="Upload PDF"><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 2v12M6 6l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 14v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="chat-action-btn" aria-label="Paste link"><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M8 12l4-4M6.5 9.5l-2 2a3 3 0 004.24 4.24l2-2M13.5 10.5l2-2a3 3 0 00-4.24-4.24l-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+            <button class="chat-send" aria-label="Generate protocol"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="templates-label fade-up fade-up-2">Or start from a template</div>
+      <div class="template-grid fade-up fade-up-3">
+        <div class="template-card" onclick="showPage('protocol',document.querySelectorAll('.nav-item')[1])"><div class="template-icon">🧴</div><h3>Skincare A/B</h3><p>Compare two products over 6 weeks</p></div>
+        <div class="template-card"><div class="template-icon">🌅</div><h3>Morning Routine</h3><p>Test which routine works better</p></div>
+        <div class="template-card"><div class="template-icon">💤</div><h3>Sleep Routine</h3><p>Compare sleep habits over 4 weeks</p></div>
+        <div class="template-card"><div class="template-icon">💇</div><h3>Haircare</h3><p>Which product gives better results?</p></div>
+        <div class="template-card"><div class="template-icon">🌙</div><h3>Evening Routine</h3><p>A/B test your night routine</p></div>
+        <div class="template-card"><div class="template-icon">⚗️</div><h3>Custom A/B</h3><p>Design your own experiment</p></div>
+      </div>
+      <div class="quick-prompts fade-up fade-up-4">
+        <button class="quick-prompt">"Does retinol actually help?"</button>
+        <button class="quick-prompt">"Vitamin C serum vs niacinamide"</button>
+        <button class="quick-prompt">"Is my morning routine worth it?"</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 2: PROTOCOL -->
+  <div class="page" id="page-protocol">
+    <div class="protocol-page">
+      <div class="protocol-header fade-up">
+        <div class="back-link" onclick="showPage('home',document.querySelectorAll('.nav-item')[0])"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 4l-4 4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Back to new experiment</div>
+        <h1>Generated Protocol</h1>
+        <p class="subtitle">Review the experiment design below. You can edit condition labels, but the scientific parameters are locked for validity.</p>
+      </div>
+      <div class="protocol-meta fade-up fade-up-1">
+        <span class="badge badge-safe badge-dot">Green — Safe to Run</span>
+        <span class="badge badge-info">Moderate Evidence</span>
+        <span class="badge badge-neutral">Skincare Template</span>
+      </div>
+      <div class="protocol-card fade-up fade-up-2">
+        <div class="protocol-card-header"><h3>Conditions</h3><button class="info-i" aria-label="What are conditions?" tabindex="0">i<span class="tt">The two routines or products you're comparing. Each will be randomly assigned to different weeks.</span></button></div>
+        <div class="protocol-card-body">
+          <div class="protocol-detail">
+            <div class="protocol-detail-item"><label>Condition A</label><div class="value" style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:50%;background:var(--pink-500);flex-shrink:0"></span>CeraVe Moisturizing Cream</div></div>
+            <div class="protocol-detail-item"><label>Condition B</label><div class="value" style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:50%;background:var(--pink-300);flex-shrink:0"></span>La Roche-Posay Toleriane</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="protocol-card fade-up fade-up-3">
+        <div class="protocol-card-header"><h3>Design Parameters</h3><span style="font-size:11px;color:var(--gray-400);font-family:var(--mono)">LOCKED</span></div>
+        <div class="protocol-card-body">
+          <div class="protocol-detail">
+            <div class="protocol-detail-item"><label>Primary Outcome <button class="info-i" aria-label="What is primary outcome?" tabindex="0">i<span class="tt">The single measurement that determines which condition wins. Locked to prevent unconscious bias from changing goals mid-trial.</span></button></label><div class="value">Skin Satisfaction (0–10)</div></div>
+            <div class="protocol-detail-item"><label>Duration</label><div class="value">6 weeks (42 days)</div></div>
+            <div class="protocol-detail-item"><label>Block Length <button class="info-i" aria-label="What is block length?" tabindex="0">i<span class="tt">Each "block" is a pair of weeks — one assigned to A and one to B, in random order. This controls for time trends.</span></button></label><div class="value">1-week blocks (3 pairs)</div></div>
+            <div class="protocol-detail-item"><label>Check-in Cadence</label><div class="value">Daily</div></div>
+            <div class="protocol-detail-item"><label>Washout <button class="info-i" aria-label="What is washout?" tabindex="0">i<span class="tt">A gap between conditions to let the previous product's effects fade. Not needed for most topical skincare.</span></button></label><div class="value">None required</div></div>
+            <div class="protocol-detail-item"><label>Analysis Method</label><div class="value mono">Welch's t-test + 95% CI</div></div>
+          </div>
+          <div style="margin-top:20px">
+            <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-400);margin-bottom:10px">Randomized Schedule <button class="info-i" aria-label="Why is the schedule concealed?" tabindex="0">i<span class="tt">You only see the current week's assignment. Future assignments are hidden to prevent bias.</span></button></label>
+            <div class="schedule-vis">
+              <div class="schedule-block schedule-a">Wk 1: A</div><div class="schedule-block schedule-b">Wk 2: B</div>
+              <div class="schedule-block schedule-hidden">Wk 3: ?</div><div class="schedule-block schedule-hidden">Wk 4: ?</div>
+              <div class="schedule-block schedule-hidden">Wk 5: ?</div><div class="schedule-block schedule-hidden">Wk 6: ?</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="protocol-card fade-up fade-up-4">
+        <div class="protocol-card-header"><h3>Research Basis</h3></div>
+        <div class="protocol-card-body">
+          <p style="font-size:14px;color:var(--gray-500);margin-bottom:12px">This protocol is informed by 3 studies found in the provided research:</p>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="badge badge-info" style="font-size:10px">Moderate</span> Ceramide-based moisturizers in atopic dermatitis — J Dermatol 2021</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="badge badge-neutral" style="font-size:10px">Weak</span> Consumer preference survey — La Roche-Posay (industry-funded)</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px"><span class="badge badge-info" style="font-size:10px">Moderate</span> Barrier repair comparison — Skin Pharmacol Physiol 2019</div>
+          </div>
+        </div>
+      </div>
+      <div class="caveats-box fade-up fade-up-5"><h4>Before you start</h4><ul><li>This experiment is not blinded — you'll know which product you're using, which can influence ratings.</li><li>Results reflect your personal experience under this specific protocol, not a general medical claim.</li><li>Once locked, the primary outcome and analysis method cannot be changed.</li></ul></div>
+      <div class="protocol-actions fade-up fade-up-5">
+        <button class="btn btn-s" onclick="showPage('home',document.querySelectorAll('.nav-item')[0])">Edit Conditions</button>
+        <button class="btn btn-p" onclick="showPage('trial',document.querySelectorAll('.nav-item')[2])"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Lock Protocol & Start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 3: TRIAL -->
+  <div class="page" id="page-trial">
+    <div class="trial-page">
+      <div class="trial-hero fade-up">
+        <div class="trial-hero-top">
+          <div><span class="badge badge-safe badge-dot" style="margin-bottom:8px">Active</span><h2>CeraVe vs. La Roche-Posay</h2><p style="color:var(--gray-500);font-size:14px;margin-top:4px">Skincare comparison · 6-week trial</p></div>
+          <div class="day-counter"><div class="day">14</div><div class="day-label">of 42 days</div></div>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width:33%"></div></div>
+        <div class="trial-stats">
+          <div class="trial-stat"><div class="stat-value">86%</div><div class="stat-label">Adherence</div></div>
+          <div class="trial-stat"><div class="stat-value">12/14</div><div class="stat-label">Days Logged</div></div>
+          <div class="trial-stat"><div class="stat-value">0</div><div class="stat-label">Adverse Events</div></div>
+        </div>
+      </div>
+      <div class="assignment-card fade-up fade-up-1"><div class="assignment-letter">A</div><div class="assignment-info"><h3>Today's Assignment</h3><p>CeraVe Moisturizing Cream</p></div></div>
+      <div class="no-peek-banner fade-up fade-up-2" style="margin-bottom:24px">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M1 10s3-6 9-6 9 6 9 6-3 6-9 6-9-6-9-6z" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M3 17L17 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        No mid-trial comparisons are shown. This prevents bias in your daily ratings.
+        <button class="info-i" aria-label="Why no mid-trial results?" tabindex="0" style="margin-left:auto">i<span class="tt">If you saw "A is winning" partway through, you'd unconsciously rate A higher. Hiding comparisons is what makes this a valid experiment.</span></button>
+      </div>
+      <div class="checkin-card fade-up fade-up-3">
+        <h3>Daily Check-In <span class="time-est">&lt; 20 seconds</span></h3>
+        <div class="form-group">
+          <div class="form-label">Skin Satisfaction <button class="info-i" aria-label="How to rate" tabindex="0">i<span class="tt">Rate how your skin looks and feels right now. 0 = worst it's ever been, 10 = best it's ever been. Use your gut feeling.</span></button></div>
+          <div class="outcome-slider">
+            <div class="slider-anchors"><span>Poor</span><span>Excellent</span></div>
+            <input type="range" class="slider-input" min="0" max="10" value="7" oninput="document.getElementById('sliderVal').textContent=this.value">
+            <div class="slider-numbers"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+            <div class="slider-current" id="sliderVal">7</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">Any irritation or discomfort? <button class="info-i" aria-label="Why track adverse events?" tabindex="0">i<span class="tt">If you report irritation 3+ days in a row, we'll recommend stopping. Your safety matters more than completing the experiment.</span></button></div>
+          <div class="radio-group"><button class="radio-pill selected" onclick="selectRadio(this)">No</button><button class="radio-pill" onclick="selectRadio(this,'danger')">Yes</button></div>
+        </div>
+        <div class="form-group">
+          <div class="form-label">Did you use the assigned product today?</div>
+          <div class="radio-group"><button class="radio-pill selected" onclick="selectRadio(this)">Yes</button><button class="radio-pill" onclick="selectRadio(this)">No</button><button class="radio-pill" onclick="selectRadio(this)">Partial</button></div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <div class="form-label" style="color:var(--gray-400);font-weight:400;font-size:13px">Optional note <button class="info-i" aria-label="What notes are useful?" tabindex="0">i<span class="tt">Log anything that might affect your skin: travel, stress, sleep, menstrual cycle, weather. These help interpret results.</span></button></div>
+          <textarea class="optional-note" placeholder="Travel, stress, sleep, weather..."></textarea>
+        </div>
+        <div class="checkin-submit"><button class="btn btn-p"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l4 4 8-8" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Submit Check-In</button></div>
+      </div>
+      <div style="text-align:center;margin-top:8px"><button class="btn btn-d btn-sm">Stop Experiment Early</button></div>
+    </div>
+  </div>
+
+  <!-- PAGE 4: RESULTS -->
+  <div class="page" id="page-results">
+    <div class="results-page">
+      <div class="results-header fade-up"><h1>CeraVe vs. La Roche-Posay</h1><span class="completed">Completed Apr 2, 2026 · 42 days · Skincare comparison</span></div>
+      <div class="verdict-card fade-up fade-up-1"><h2>Condition A scored higher on 72% of days.</h2><p><strong>CeraVe Moisturizing Cream</strong> showed an average skin satisfaction score 1.3 points higher than La Roche-Posay Toleriane, with a 95% confidence interval of [0.4, 2.2]. This suggests a meaningful personal preference in your trial.</p></div>
+      <div class="stats-grid fade-up fade-up-2">
+        <div class="stat-card"><div class="stat-label">Mean A <button class="info-i" aria-label="Mean for Condition A" tabindex="0">i<span class="tt">The average daily skin satisfaction score on days you used CeraVe.</span></button></div><div class="stat-value stat-positive">7.2</div><div class="stat-sub">CeraVe</div></div>
+        <div class="stat-card"><div class="stat-label">Mean B <button class="info-i" aria-label="Mean for Condition B" tabindex="0">i<span class="tt">The average daily skin satisfaction score on days you used La Roche-Posay.</span></button></div><div class="stat-value stat-neutral">5.9</div><div class="stat-sub">La Roche-Posay</div></div>
+        <div class="stat-card"><div class="stat-label">Difference <button class="info-i" aria-label="What does the difference mean?" tabindex="0">i<span class="tt">Mean A minus Mean B. The confidence interval tells you how certain this difference is.</span></button></div><div class="stat-value stat-positive">+1.3</div><div class="stat-sub" style="font-family:var(--mono);font-size:11px">CI: [0.4, 2.2]</div></div>
+        <div class="stat-card"><div class="stat-label">Quality <button class="info-i" aria-label="What is the quality grade?" tabindex="0">i<span class="tt">Grade B means good personal evidence. ≥70% adherence and ≥75% of days logged.</span></button></div><div class="stat-value"><span class="grade-badge grade-b">B</span></div><div class="stat-sub">Good evidence</div></div>
+      </div>
+      <div class="chart-card fade-up fade-up-3">
+        <div class="chart-header"><h3>Daily Scores by Condition</h3><div class="chart-legend"><div class="chart-legend-item"><div class="chart-legend-dot" style="background:var(--pink-500)"></div>CeraVe (A)</div><div class="chart-legend-item"><div class="chart-legend-dot" style="background:var(--pink-300)"></div>La Roche-Posay (B)</div></div></div>
+        <div class="chart-body">
+          <svg class="chart-svg" viewBox="0 0 760 200" preserveAspectRatio="none">
+            <text x="4" y="20" class="chart-label">10</text><text x="8" y="60" class="chart-label">8</text><text x="8" y="100" class="chart-label">6</text><text x="8" y="140" class="chart-label">4</text><text x="8" y="180" class="chart-label">2</text>
+            <line x1="30" y1="18" x2="760" y2="18" class="chart-grid-line" stroke-dasharray="4,4"/><line x1="30" y1="58" x2="760" y2="58" class="chart-grid-line" stroke-dasharray="4,4"/><line x1="30" y1="98" x2="760" y2="98" class="chart-grid-line" stroke-dasharray="4,4"/><line x1="30" y1="138" x2="760" y2="138" class="chart-grid-line" stroke-dasharray="4,4"/><line x1="30" y1="178" x2="760" y2="178" class="chart-grid-line" stroke-dasharray="4,4"/>
+            <line x1="152" y1="8" x2="152" y2="190" stroke="var(--gray-200)" stroke-width="1" stroke-dasharray="2,3"/><line x1="274" y1="8" x2="274" y2="190" stroke="var(--gray-200)" stroke-width="1" stroke-dasharray="2,3"/><line x1="396" y1="8" x2="396" y2="190" stroke="var(--gray-200)" stroke-width="1" stroke-dasharray="2,3"/><line x1="518" y1="8" x2="518" y2="190" stroke="var(--gray-200)" stroke-width="1" stroke-dasharray="2,3"/><line x1="640" y1="8" x2="640" y2="190" stroke="var(--gray-200)" stroke-width="1" stroke-dasharray="2,3"/>
+            <text x="91" y="198" class="chart-label" text-anchor="middle">Wk 1 (A)</text><text x="213" y="198" class="chart-label" text-anchor="middle">Wk 2 (B)</text><text x="335" y="198" class="chart-label" text-anchor="middle">Wk 3 (B)</text><text x="457" y="198" class="chart-label" text-anchor="middle">Wk 4 (A)</text><text x="579" y="198" class="chart-label" text-anchor="middle">Wk 5 (A)</text><text x="701" y="198" class="chart-label" text-anchor="middle">Wk 6 (B)</text>
+            <polyline class="chart-line" stroke="#FF006E" points="47,62 64,58 81,50 98,54 115,46 132,42 149,50 440,46 457,38 474,42 491,38 508,34 525,42 562,42 579,38 596,46 613,42 630,34 647,38"/>
+            <polyline class="chart-line" stroke="#FF80B5" points="169,86 186,98 203,90 220,94 237,102 254,86 271,90 291,94 308,102 325,90 342,98 359,106 376,94 393,98 657,94 674,102 691,86 708,98 725,106 742,94"/>
+            <g fill="#FF006E"><circle cx="47" cy="62" class="chart-dot"/><circle cx="64" cy="58" class="chart-dot"/><circle cx="81" cy="50" class="chart-dot"/><circle cx="98" cy="54" class="chart-dot"/><circle cx="115" cy="46" class="chart-dot"/><circle cx="132" cy="42" class="chart-dot"/><circle cx="149" cy="50" class="chart-dot"/><circle cx="440" cy="46" class="chart-dot"/><circle cx="457" cy="38" class="chart-dot"/><circle cx="474" cy="42" class="chart-dot"/><circle cx="491" cy="38" class="chart-dot"/><circle cx="508" cy="34" class="chart-dot"/><circle cx="525" cy="42" class="chart-dot"/><circle cx="562" cy="42" class="chart-dot"/><circle cx="579" cy="38" class="chart-dot"/><circle cx="596" cy="46" class="chart-dot"/><circle cx="613" cy="42" class="chart-dot"/><circle cx="630" cy="34" class="chart-dot"/><circle cx="647" cy="38" class="chart-dot"/></g>
+            <g fill="#FF80B5"><circle cx="169" cy="86" class="chart-dot"/><circle cx="186" cy="98" class="chart-dot"/><circle cx="203" cy="90" class="chart-dot"/><circle cx="220" cy="94" class="chart-dot"/><circle cx="237" cy="102" class="chart-dot"/><circle cx="254" cy="86" class="chart-dot"/><circle cx="271" cy="90" class="chart-dot"/><circle cx="291" cy="94" class="chart-dot"/><circle cx="308" cy="102" class="chart-dot"/><circle cx="325" cy="90" class="chart-dot"/><circle cx="342" cy="98" class="chart-dot"/><circle cx="359" cy="106" class="chart-dot"/><circle cx="376" cy="94" class="chart-dot"/><circle cx="393" cy="98" class="chart-dot"/><circle cx="657" cy="94" class="chart-dot"/><circle cx="674" cy="102" class="chart-dot"/><circle cx="691" cy="86" class="chart-dot"/><circle cx="708" cy="98" class="chart-dot"/><circle cx="725" cy="106" class="chart-dot"/><circle cx="742" cy="94" class="chart-dot"/></g>
+          </svg>
+        </div>
+      </div>
+      <div class="caveats-card fade-up fade-up-4">
+        <h3><svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 2l8 14H2L10 2z" stroke="var(--caution)" stroke-width="1.5" stroke-linejoin="round" fill="var(--caution-bg)"/><path d="M10 8v3M10 13v1" stroke="var(--caution)" stroke-width="1.5" stroke-linecap="round"/></svg> Important Caveats</h3>
+        <p><strong>Expectancy effect:</strong> This experiment was not blinded. You knew which product you were using, which can unconsciously influence your satisfaction ratings.</p>
+        <p><strong>Regression to the mean:</strong> If you started the trial during a particularly good or bad skin period, some "change" may simply be a return to your baseline.</p>
+        <p><strong>Personal evidence only:</strong> This result applies to you, under these conditions, with this protocol. It is not generalizable and does not constitute medical advice.</p>
+        <p><strong>Evidence basis:</strong> The underlying research was rated as <em>Moderate</em> — pilot studies and small trials, not large-scale RCTs.</p>
+      </div>
+      <div class="results-actions fade-up fade-up-5">
+        <button class="btn btn-s"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 11v3h3M14 5V2h-3M2 11l4-4M14 5l-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Export CSV</button>
+        <button class="btn btn-s"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 8h8M4 4h8M4 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Export JSON</button>
+        <button class="btn btn-p" onclick="showPage('home',document.querySelectorAll('.nav-item')[0])"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="#fff" stroke-width="1.5"/><path d="M8 6v4M6 8h4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg> New Experiment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE 5: SETTINGS -->
+  <div class="page" id="page-settings">
+    <div class="settings-page">
+      <h1 class="fade-up">Settings</h1>
+      <div class="settings-section fade-up fade-up-1">
+        <h2>Reminders</h2>
+        <div class="setting-row"><div class="setting-label"><h3>Daily Reminder <button class="info-i" aria-label="About daily reminders" tabindex="0">i<span class="tt">Get a notification at your chosen time to complete your daily check-in. Consistency improves your data quality grade.</span></button></h3><p>In-app banner at your chosen time</p></div><button class="toggle on" onclick="this.classList.toggle('on')" aria-label="Toggle daily reminder"></button></div>
+        <div class="setting-row"><div class="setting-label"><h3>Reminder Time</h3><p>When should we nudge you?</p></div><input type="time" class="time-input" value="21:00"></div>
+        <div class="setting-row"><div class="setting-label"><h3>Email Reminders <button class="info-i" aria-label="About email reminders" tabindex="0">i<span class="tt">Optional backup reminder via email. Stored locally and never shared.</span></button></h3><p>Backup notification via email</p></div><button class="toggle" onclick="this.classList.toggle('on')" aria-label="Toggle email reminder"></button></div>
+      </div>
+      <div class="settings-section fade-up fade-up-2">
+        <h2>Data & Privacy</h2>
+        <div class="setting-row"><div class="setting-label"><h3>Export All Data</h3><p>Download all your trial data as CSV or JSON</p></div><div style="display:flex;gap:8px"><button class="btn btn-s btn-sm">CSV</button><button class="btn btn-s btn-sm">JSON</button></div></div>
+        <div class="setting-row"><div class="setting-label"><h3>Storage <button class="info-i" aria-label="Where is data stored?" tabindex="0">i<span class="tt">All data is stored locally on your device. Nothing is sent to a server. You are the only person who can see your experiments.</span></button></h3><p>All data stored locally on this device</p></div><span style="font-family:var(--mono);font-size:12px;color:var(--gray-400)">~24 KB used</span></div>
+      </div>
+      <div class="settings-section fade-up fade-up-3">
+        <h2>About</h2>
+        <div class="setting-row"><div class="setting-label"><h3>Version</h3><p>PitGPT v1.0 — Personal Experiment Engine</p></div><span style="font-family:var(--mono);font-size:12px;color:var(--gray-400)">v1.0.0</span></div>
+        <div class="setting-row"><div class="setting-label"><h3>Privacy</h3><p>No analytics, no trackers, no third-party data sharing</p></div><span class="badge badge-safe" style="font-size:10px">Private</span></div>
+      </div>
+      <div class="danger-zone fade-up fade-up-4"><h3>Danger Zone</h3><p>Permanently delete all your data, including all trials, check-ins, and results. This action cannot be undone.</p><button class="btn btn-d btn-sm">Delete All Data</button></div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+function showPage(id,navBtn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page-'+id).classList.add('active');document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));if(navBtn)navBtn.classList.add('active');document.getElementById('sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('open');window.scrollTo(0,0)}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('open')}
+function selectRadio(el,type){el.parentElement.querySelectorAll('.radio-pill').forEach(p=>{p.classList.remove('selected','danger-selected')});if(type==='danger'){el.classList.add('danger-selected')}else{el.classList.add('selected')}}
+function autoResize(el){el.style.height='auto';el.style.height=el.scrollHeight+'px'}
+</script>
+</body>
+</html>
