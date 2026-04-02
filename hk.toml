@@ -1,8 +1,0 @@
-[pre-commit.ruff-format]
-run = "uv run ruff format --check ."
-
-[pre-commit.ruff-check]
-run = "uv run ruff check ."
-
-[pre-commit.mypy]
-run = "uv run mypy pitgpt/"

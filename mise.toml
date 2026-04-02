@@ -1,5 +1,9 @@
 [tools]
 python = "3.12"
+hk = "1.40.0"
+actionlint = "latest"
+zizmor = "latest"
+act = "latest"
 
 [env]
 _.source = ["scripts/mise-env.sh"]

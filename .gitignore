@@ -9,3 +9,8 @@ build/
 .venv/
 benchmarks/runs/
 .env
+hk.local.pkl
+
+# Override global ignore for mise bootstrap
+!bin/
+!bin/mise

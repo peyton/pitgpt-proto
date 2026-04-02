@@ -1,7 +1,12 @@
 default:
     @just --list
 
-# Install all dependencies
+# Bootstrap mise and install all tools + dependencies
+setup:
+    ./bin/mise install
+    uv sync
+
+# Install Python dependencies
 install:
     uv sync
 
@@ -9,14 +14,26 @@ install:
 test *args:
     uv run pytest {{args}}
 
-# Run linters via hk
+# Run linters via hk (pre-commit checks)
 lint:
     hk run pre-commit --all
+
+# Run all checks (lint + GHA linting)
+check:
+    hk run check --all
+
+# Auto-fix code with ruff
+fix:
+    hk run fix --all
 
 # Format code with ruff
 fmt:
     uv run ruff format .
     uv run ruff check --fix .
+
+# Type-check
+typecheck:
+    uv run mypy pitgpt/
 
 # Start the API server
 serve port="8000":
@@ -53,6 +70,10 @@ ingest query model="":
 analyze protocol observations:
     uv run pitgpt analyze --protocol {{protocol}} --observations {{observations}}
 
-# Type-check
-typecheck:
-    uv run mypy pitgpt/
+# Run CI checks locally via act
+ci:
+    act -j ci
+
+# Regenerate bin/mise bootstrap script
+bootstrap:
+    mise generate bootstrap --write ./bin/mise
