@@ -94,6 +94,7 @@ class TestAnalysisScoring:
     def test_perfect_match(self):
         result = ResultCard(
             quality_grade=QualityGrade.A,
+            verdict="favors_a",
             mean_a=7.06,
             mean_b=5.76,
             difference=1.3,
@@ -104,6 +105,11 @@ class TestAnalysisScoring:
             adherence_rate=0.9,
             days_logged_pct=1.0,
             early_stop=False,
+            summary=(
+                "Mean A: 7.06, Mean B: 5.76, difference: +1.30. "
+                "95% CI: [0.98, 1.62]. "
+                "Result favors Condition A with strong evidence (Grade A)."
+            ),
         )
         expected = {
             "quality_grade": "A",
@@ -117,6 +123,7 @@ class TestAnalysisScoring:
         assert scores["difference_accuracy"] == 1.0
         assert scores["ci_accuracy"] == 1.0
         assert scores["early_stop_match"] == 1.0
+        assert scores["summary_quality"] == 1.0
         assert scores["overall"] == 1.0
 
     def test_wrong_grade(self):
@@ -125,6 +132,7 @@ class TestAnalysisScoring:
             difference=1.3,
             ci_lower=0.98,
             ci_upper=1.62,
+            summary="Result favors Condition A with good evidence (Grade B).",
         )
         expected = {
             "quality_grade": "A",
@@ -138,7 +146,29 @@ class TestAnalysisScoring:
         assert scores["overall"] < 1.0
 
     def test_grade_d_no_numbers(self):
-        result = ResultCard(quality_grade=QualityGrade.D)
+        result = ResultCard(
+            quality_grade=QualityGrade.D,
+            summary="Insufficient data for reliable inference.",
+        )
         expected = {"quality_grade": "D", "early_stop": False}
         scores = score_analysis(result, expected)
         assert scores["grade_match"] == 1.0
+        assert scores["summary_quality"] == 1.0
+
+    def test_summary_quality_mismatch(self):
+        result = ResultCard(
+            quality_grade=QualityGrade.A,
+            difference=1.3,
+            ci_lower=0.98,
+            ci_upper=1.62,
+            summary="Result favors Condition B with strong evidence (Grade A).",
+        )
+        expected = {
+            "quality_grade": "A",
+            "difference": 1.3,
+            "ci_lower": 0.98,
+            "ci_upper": 1.62,
+            "early_stop": False,
+        }
+        scores = score_analysis(result, expected)
+        assert scores["summary_quality"] < 1.0

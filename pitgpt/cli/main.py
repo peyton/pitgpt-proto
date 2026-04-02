@@ -200,8 +200,16 @@ def _print_result_card(result):
     grade_colors = {"A": "green", "B": "cyan", "C": "yellow", "D": "red"}
     color = grade_colors.get(result.quality_grade.value, "white")
 
+    verdict_display = {
+        "favors_a": "Favors A",
+        "favors_b": "Favors B",
+        "inconclusive": "Inconclusive",
+        "insufficient_data": "Insufficient Data",
+    }
+
     content_parts = [
         f"[bold]Quality Grade:[/bold] [{color}]{result.quality_grade.value}[/{color}]",
+        f"[bold]Verdict:[/bold] {verdict_display.get(result.verdict, result.verdict)}",
     ]
 
     if result.mean_a is not None:
@@ -213,6 +221,8 @@ def _print_result_card(result):
                 f"[bold]95% CI:[/bold] [{result.ci_lower:.2f}, {result.ci_upper:.2f}]",
             ]
         )
+        if result.cohens_d is not None:
+            content_parts.append(f"[bold]Effect Size:[/bold] Cohen's d = {result.cohens_d:+.2f}")
 
     content_parts.extend(
         [
@@ -220,6 +230,24 @@ def _print_result_card(result):
             f"[bold]Adherence:[/bold] {result.adherence_rate:.1%}",
             f"[bold]Days Logged:[/bold] {result.days_logged_pct:.1%}",
             f"[bold]Early Stop:[/bold] {result.early_stop}",
+        ]
+    )
+
+    if result.late_backfill_excluded > 0:
+        content_parts.append(
+            f"[bold]Late Backfills Excluded:[/bold] {result.late_backfill_excluded}"
+        )
+
+    if result.sensitivity_excluding_partial:
+        s = result.sensitivity_excluding_partial
+        if s.difference is not None:
+            content_parts.append(
+                f"[bold]Sensitivity (no partial):[/bold] "
+                f"diff={s.difference:+.2f}, CI=[{s.ci_lower:.2f}, {s.ci_upper:.2f}]"
+            )
+
+    content_parts.extend(
+        [
             "",
             f"[italic]{result.summary}[/italic]",
             "",

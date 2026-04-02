@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -63,17 +64,41 @@ class Observation(BaseModel):
     backfill_days: float | None = None
 
 
-class ResultCard(BaseModel):
-    quality_grade: QualityGrade
-    mean_a: float | None = None
-    mean_b: float | None = None
+class BlockBreakdown(BaseModel):
+    block_index: int
+    condition: str
+    mean: float
+    n: int
+
+
+class SensitivityResult(BaseModel):
     difference: float | None = None
     ci_lower: float | None = None
     ci_upper: float | None = None
     n_used_a: int = 0
     n_used_b: int = 0
+
+
+Verdict = Literal["favors_a", "favors_b", "inconclusive", "insufficient_data"]
+
+
+class ResultCard(BaseModel):
+    quality_grade: QualityGrade
+    verdict: Verdict = "insufficient_data"
+    mean_a: float | None = None
+    mean_b: float | None = None
+    difference: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    cohens_d: float | None = None
+    n_used_a: int = 0
+    n_used_b: int = 0
     adherence_rate: float = 0.0
     days_logged_pct: float = 0.0
     early_stop: bool = False
+    late_backfill_excluded: int = 0
+    block_breakdown: list[BlockBreakdown] = []
+    sensitivity_excluding_partial: SensitivityResult | None = None
+    planned_days_defaulted: bool = False
     summary: str = ""
     caveats: str = ""
