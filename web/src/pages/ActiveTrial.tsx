@@ -1,0 +1,254 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useApp } from "../lib/AppContext";
+import { analyze } from "../lib/api";
+import { InfoTooltip } from "../components/InfoTooltip";
+import {
+  buildObservation,
+  checkAdverseEventStreak,
+  getConditionLabel,
+  getCurrentAssignment,
+  getTrialProgress,
+  hasCheckedInToday,
+  isTrialComplete,
+  protocolToDict,
+} from "../lib/trial";
+
+export function ActiveTrial() {
+  const { state, addObservation, completeTrial } = useApp();
+  const navigate = useNavigate();
+  const trial = state.trial;
+
+  const [score, setScore] = useState(5);
+  const [irritation, setIrritation] = useState<"yes" | "no">("no");
+  const [adherence, setAdherence] = useState<"yes" | "no" | "partial">("yes");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  if (!trial || trial.status !== "active") {
+    return (
+      <div className="page-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ color: "var(--gray-500)", marginBottom: 16 }}>No active trial.</p>
+          <button className="btn btn-p" onClick={() => navigate("/")}>Start a New Experiment</button>
+        </div>
+      </div>
+    );
+  }
+
+  const progress = getTrialProgress(trial);
+  const assignment = getCurrentAssignment(trial);
+  const todayDone = hasCheckedInToday(trial) || submitted;
+  const trialComplete = isTrialComplete(trial);
+  const aeStreak = checkAdverseEventStreak(trial);
+
+  const handleCheckin = () => {
+    if (todayDone) return;
+    setSubmitting(true);
+    const obs = buildObservation(trial, score, irritation, adherence, note);
+    addObservation(obs);
+    setSubmitted(true);
+    setSubmitting(false);
+    setNote("");
+  };
+
+  const handleComplete = async () => {
+    setAnalyzing(true);
+    try {
+      const result = await analyze(protocolToDict(trial.protocol), trial.observations);
+      const completedTrial = { ...trial, status: "completed" as const, completedAt: new Date().toISOString() };
+      completeTrial({ trial: completedTrial, result });
+      navigate("/results");
+    } catch {
+      alert("Failed to analyze results. Please try again.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleStop = () => {
+    if (!confirm("Stop this experiment early? Your data will be preserved and analyzed.")) return;
+    handleComplete();
+  };
+
+  return (
+    <div className="page-container">
+      {/* Hero */}
+      <div className="trial-hero fade-up">
+        <div className="trial-hero-top">
+          <div>
+            <span className="badge badge-safe badge-dot" style={{ marginBottom: 8 }}>Active</span>
+            <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-.5px" }}>
+              {trial.conditionALabel} vs. {trial.conditionBLabel}
+            </h2>
+            <p style={{ color: "var(--gray-500)", fontSize: 14, marginTop: 4 }}>
+              {trial.protocol.template ?? "Custom"} · {trial.protocol.duration_weeks}-week trial
+            </p>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 28, fontWeight: 700, color: "var(--pink-500)", lineHeight: 1 }}>
+              {Math.min(progress.dayIndex, progress.totalDays)}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--gray-400)" }}>of {progress.totalDays} days</div>
+          </div>
+        </div>
+        <div className="progress-bar">
+          <div className="fill" style={{ width: `${Math.min((progress.dayIndex / progress.totalDays) * 100, 100)}%` }} />
+        </div>
+        <div className="trial-stats">
+          <div className="trial-stat">
+            <div className="stat-value">{progress.adherenceRate}%</div>
+            <div className="stat-label">Adherence</div>
+          </div>
+          <div className="trial-stat">
+            <div className="stat-value">{progress.daysLogged}/{Math.min(progress.dayIndex, progress.totalDays)}</div>
+            <div className="stat-label">Days Logged</div>
+          </div>
+          <div className="trial-stat">
+            <div className="stat-value">{progress.adverseEvents}</div>
+            <div className="stat-label">Adverse Events</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Trial complete banner */}
+      {trialComplete && (
+        <div style={{ background: "var(--safe-bg)", border: "1px solid #BBF7D0", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 14, color: "var(--safe)", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }} className="fade-up fade-up-1">
+          <span>Trial complete! Ready to see your results.</span>
+          <button className="btn btn-p btn-sm" onClick={handleComplete} disabled={analyzing}>
+            {analyzing ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : "View Results"}
+          </button>
+        </div>
+      )}
+
+      {/* AE Streak Warning */}
+      {aeStreak && (
+        <div style={{ background: "var(--danger-bg)", border: "1px solid #FECACA", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 13, color: "var(--danger)", marginBottom: 24 }} className="fade-up fade-up-1">
+          You've reported irritation for 3+ consecutive days. We recommend stopping this experiment for your safety.
+        </div>
+      )}
+
+      {/* Assignment */}
+      {assignment && !trialComplete && (
+        <div className="assignment-card fade-up fade-up-1">
+          <div className="assignment-letter">{assignment.condition}</div>
+          <div className="assignment-info">
+            <h3>Today's Assignment</h3>
+            <p>{getConditionLabel(trial, assignment.condition)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* No Peek Banner */}
+      {!trialComplete && (
+        <div className="no-peek-banner fade-up fade-up-2">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path d="M1 10s3-6 9-6 9 6 9 6-3 6-9 6-9-6-9-6z" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="10" cy="10" r="3" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M3 17L17 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          No mid-trial comparisons are shown. This prevents bias in your daily ratings.
+          <InfoTooltip text="If you saw 'A is winning' partway through, you'd unconsciously rate A higher. Hiding comparisons is what makes this a valid experiment." />
+        </div>
+      )}
+
+      {/* Check-in */}
+      {!trialComplete && (
+        <div className="checkin-card fade-up fade-up-3">
+          <h3>Daily Check-In <span className="time-est">&lt; 20 seconds</span></h3>
+
+          {todayDone ? (
+            <div style={{ textAlign: "center", padding: 24 }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
+              <p style={{ color: "var(--safe)", fontWeight: 600 }}>Today's check-in submitted!</p>
+              <p style={{ color: "var(--gray-400)", fontSize: 13, marginTop: 4 }}>Come back tomorrow for your next check-in.</p>
+            </div>
+          ) : (
+            <>
+              <div className="form-group">
+                <div className="form-label">
+                  {trial.protocol.primary_outcome_question || "Satisfaction"}
+                  <InfoTooltip text="Rate how your skin looks and feels right now. 0 = worst it's ever been, 10 = best it's ever been." />
+                </div>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--gray-400)" }}>Poor</span>
+                    <span style={{ fontSize: 12, color: "var(--gray-400)" }}>Excellent</span>
+                  </div>
+                  <input
+                    type="range"
+                    className="slider-input"
+                    min="0"
+                    max="10"
+                    value={score}
+                    onChange={(e) => setScore(Number(e.target.value))}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                    {Array.from({ length: 11 }, (_, i) => (
+                      <span key={i} style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--gray-400)", width: 22, textAlign: "center" }}>{i}</span>
+                    ))}
+                  </div>
+                  <div style={{ textAlign: "center", marginTop: 8, fontFamily: "var(--mono)", fontSize: 24, fontWeight: 700, color: "var(--pink-500)" }}>
+                    {score}
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <div className="form-label">
+                  Any irritation or discomfort?
+                  <InfoTooltip text="If you report irritation 3+ days in a row, we'll recommend stopping. Your safety matters more than completing the experiment." />
+                </div>
+                <div className="radio-group">
+                  <button className={`radio-pill${irritation === "no" ? " selected" : ""}`} onClick={() => setIrritation("no")}>No</button>
+                  <button className={`radio-pill${irritation === "yes" ? " danger-selected" : ""}`} onClick={() => setIrritation("yes")}>Yes</button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <div className="form-label">Did you use the assigned product today?</div>
+                <div className="radio-group">
+                  <button className={`radio-pill${adherence === "yes" ? " selected" : ""}`} onClick={() => setAdherence("yes")}>Yes</button>
+                  <button className={`radio-pill${adherence === "no" ? " selected" : ""}`} onClick={() => setAdherence("no")}>No</button>
+                  <button className={`radio-pill${adherence === "partial" ? " selected" : ""}`} onClick={() => setAdherence("partial")}>Partial</button>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 16 }}>
+                <div className="form-label" style={{ color: "var(--gray-400)", fontWeight: 400, fontSize: 13 }}>
+                  Optional note
+                  <InfoTooltip text="Log anything that might affect your skin: travel, stress, sleep, menstrual cycle, weather." />
+                </div>
+                <textarea
+                  className="optional-note"
+                  placeholder="Travel, stress, sleep, weather..."
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                <button className="btn btn-p" onClick={handleCheckin} disabled={submitting}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 8l4 4 8-8" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Submit Check-In
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {!trialComplete && (
+        <div style={{ textAlign: "center", marginTop: 8 }}>
+          <button className="btn btn-d btn-sm" onClick={handleStop} disabled={analyzing}>
+            Stop Experiment Early
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

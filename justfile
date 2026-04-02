@@ -5,6 +5,7 @@ default:
 setup:
     ./bin/mise install
     uv sync
+    cd web && npm install
 
 # Install Python dependencies
 install:
@@ -73,6 +74,18 @@ analyze protocol observations:
 # Run CI checks locally via act
 ci:
     act -j ci
+
+# Install web frontend dependencies
+web-install:
+    cd web && npm install
+
+# Start web frontend dev server
+web-dev:
+    cd web && npm run dev
+
+# Build web frontend for production
+web-build:
+    cd web && npm run build
 
 # Regenerate bin/mise bootstrap script
 bootstrap:
