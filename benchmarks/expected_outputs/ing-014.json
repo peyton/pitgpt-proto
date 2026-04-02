@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-014",
+  "stage": "ingestion",
+  "decision": "generate_protocol_with_restrictions",
+  "safety_tier": "YELLOW",
+  "evidence_quality": "novel",
+  "evidence_conflict": false,
+  "template": "Custom A/B",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily at 3 p.m.",
+    "washout": "None",
+    "primary_outcome_question": "How much energy did you have at 3 p.m. today? (0=none, 10=very high)",
+    "screening": "Exclude users with exercise restrictions, current injury, or physician-directed rehab plans. Require stable medications.",
+    "warnings": "Do not increase total exercise load during the trial."
+  },
+  "block_reason": null,
+  "user_message": "PitGPT can allow this as a restricted exercise comparison with extra safety checks.",
+  "notes": "Must generate a behavior protocol, not a training recommendation engine."
+}

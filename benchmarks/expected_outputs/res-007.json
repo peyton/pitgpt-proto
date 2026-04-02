@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-007",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "B",
+  "mean_a": 6.71,
+  "mean_b": 5.97,
+  "difference": 0.73,
+  "ci_lower": 0.44,
+  "ci_upper": 1.03,
+  "n_used_a": 19,
+  "n_used_b": 15,
+  "adherence_rate": 0.9524,
+  "days_logged_pct": 0.8571,
+  "early_stop": false,
+  "expected_summary": "Condition A should still be ahead, but days backfilled more than 2 days late must be treated as missing and drop the grade below A.",
+  "caveats": "Backfill guard should reduce data quality."
+}

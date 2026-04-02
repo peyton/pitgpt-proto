@@ -1,0 +1,11 @@
+# Narrative review: caffeine timing and perceived sleep quality
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF review
+Use: deterministic fixture for research-ingestion tests.
+
+Summary: caffeine intake within 6 hours of bedtime is associated with worse self-reported sleep quality and longer sleep latency. The article recommends comparing a pre-specified caffeine cutoff against usual behavior for at least four weeks.
+
+Suggested outcomes: morning sleep quality rating, time-to-sleep estimate, next-day alertness.
+Risks: users should keep medications stable and avoid adding supplements during the experiment.
+Evidence basis: multiple controlled studies are referenced, but the review itself is narrative rather than a meta-analysis.

@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-001",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "A",
+  "mean_a": 7.06,
+  "mean_b": 5.76,
+  "difference": 1.3,
+  "ci_lower": 0.98,
+  "ci_upper": 1.62,
+  "n_used_a": 20,
+  "n_used_b": 20,
+  "adherence_rate": 0.9048,
+  "days_logged_pct": 1.0,
+  "early_stop": false,
+  "expected_summary": "Condition A should win clearly with Grade A evidence.",
+  "caveats": "Unblinded routine comparison."
+}

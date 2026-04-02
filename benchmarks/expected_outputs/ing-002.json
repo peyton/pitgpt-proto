@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-002",
+  "stage": "ingestion",
+  "decision": "generate_protocol",
+  "safety_tier": "GREEN",
+  "evidence_quality": "weak",
+  "evidence_conflict": false,
+  "template": "Skincare Product",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily",
+    "washout": "None",
+    "primary_outcome_question": "How tight or dry did your face feel by evening today? (0=extremely tight/dry, 10=no tightness or dryness)",
+    "screening": "",
+    "warnings": "Note that the uploaded source is anecdotal and unblinded."
+  },
+  "block_reason": null,
+  "user_message": "The source is anecdotal, but PitGPT can still generate a structured personal A/B trial.",
+  "notes": "Should extract comparator names from query and treat blog as weak evidence only."
+}

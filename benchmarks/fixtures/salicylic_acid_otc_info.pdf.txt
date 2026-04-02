@@ -1,0 +1,9 @@
+# Salicylic acid cleanser product facts
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF information sheet
+Use: deterministic fixture for research-ingestion tests.
+
+Salicylic acid cleansers are commonly used in over-the-counter routines. Frequent use may improve the feeling of congestion for some users but may also increase dryness and irritation.
+
+Use case in this benchmark: compare daily versus every-other-day use for comfort and appearance outcomes only. Avoid disease-treatment claims.

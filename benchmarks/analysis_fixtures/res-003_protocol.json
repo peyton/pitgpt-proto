@@ -1,0 +1,8 @@
+{
+  "case_id": "RES-003",
+  "template": "Custom A/B",
+  "planned_days": 42,
+  "block_length_days": 7,
+  "analysis": "Welch two-sample t-test on daily scores excluding adherence=no; backfills older than 2 days treated as missing",
+  "primary_outcome_question": "How smooth and comfortable did your skin look this morning? (0=very rough/irritated, 10=very smooth/comfortable)"
+}

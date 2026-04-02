@@ -1,0 +1,8 @@
+{
+  "case_id": "RES-001",
+  "template": "Skincare Product",
+  "planned_days": 42,
+  "block_length_days": 7,
+  "analysis": "Welch two-sample t-test on daily scores excluding adherence=no; backfills older than 2 days treated as missing",
+  "primary_outcome_question": "How comfortable and hydrated did your skin feel by evening today? (0=very dry/tight, 10=very comfortable/hydrated)"
+}

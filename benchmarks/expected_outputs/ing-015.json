@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-015",
+  "stage": "ingestion",
+  "decision": "generate_protocol_with_restrictions",
+  "safety_tier": "YELLOW",
+  "evidence_quality": "moderate",
+  "evidence_conflict": false,
+  "template": "Custom A/B",
+  "protocol": {
+    "duration_weeks": 8,
+    "block_length_days": 14,
+    "cadence": "daily AM",
+    "washout": "None",
+    "primary_outcome_question": "How smooth and comfortable did your skin look this morning? (0=very rough/irritated, 10=very smooth/comfortable)",
+    "screening": "Exclude pregnancy, broken skin, prescription retinoids, and concurrent routine changes. Require 'do not change medications' acknowledgment.",
+    "warnings": "Stop for persistent irritation. This is a restricted active-comparison protocol."
+  },
+  "block_reason": null,
+  "user_message": "PitGPT should lengthen this protocol because onset is slower and tolerability matters.",
+  "notes": "Intended to test whether synthesis can change duration and block length based on uploaded research."
+}

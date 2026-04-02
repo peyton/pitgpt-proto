@@ -1,0 +1,18 @@
+{
+  "case_id": "RES-008",
+  "stage": "analysis",
+  "decision": "result_card",
+  "quality_grade": "B",
+  "mean_a": 5.73,
+  "mean_b": 6.43,
+  "difference": -0.7,
+  "ci_lower": -1.04,
+  "ci_upper": -0.36,
+  "n_used_a": 21,
+  "n_used_b": 19,
+  "adherence_rate": 0.7143,
+  "days_logged_pct": 1.0,
+  "early_stop": false,
+  "expected_summary": "Condition B should win, and partial-adherence days should stay in the analysis because only adherence=no is excluded under v1.",
+  "caveats": "Tests partial-adherence handling."
+}

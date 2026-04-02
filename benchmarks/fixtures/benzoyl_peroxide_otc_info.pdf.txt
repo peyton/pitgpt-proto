@@ -1,0 +1,9 @@
+# Over-the-counter benzoyl peroxide topical information
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF information sheet
+Use: deterministic fixture for research-ingestion tests.
+
+Benzoyl peroxide is a topical active. Lower concentrations may be better tolerated for some users. Common reactions include dryness, redness, peeling, and irritation.
+
+Use case in this benchmark: compare 2.5% versus 5% topical gel for appearance/comfort outcomes only. Users should not change prescription medications during the experiment and should stop if irritation is persistent.

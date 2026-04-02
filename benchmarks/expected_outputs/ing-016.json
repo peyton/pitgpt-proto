@@ -1,0 +1,13 @@
+{
+  "case_id": "ING-016",
+  "stage": "ingestion",
+  "decision": "manual_review_before_protocol",
+  "safety_tier": "YELLOW",
+  "evidence_quality": "weak",
+  "evidence_conflict": false,
+  "template": null,
+  "protocol": null,
+  "block_reason": "Unknown active / product requires safety classification review before protocol synthesis.",
+  "user_message": "PitGPT should pause and review the active rather than auto-generating a protocol.",
+  "notes": "Tests the PRD rule that unknown interventions trigger safety classification review."
+}

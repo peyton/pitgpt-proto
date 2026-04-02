@@ -1,0 +1,21 @@
+{
+  "case_id": "ING-007",
+  "stage": "ingestion",
+  "decision": "generate_protocol",
+  "safety_tier": "GREEN",
+  "evidence_quality": "weak",
+  "evidence_conflict": false,
+  "template": "Evening Routine",
+  "protocol": {
+    "duration_weeks": 6,
+    "block_length_days": 7,
+    "cadence": "daily AM",
+    "washout": "None",
+    "primary_outcome_question": "How comfortable and flake-free did your skin look this morning? (0=very flaky/uncomfortable, 10=very comfortable/flake-free)",
+    "screening": "",
+    "warnings": "The uploaded source is anecdotal and includes routine confounders."
+  },
+  "block_reason": null,
+  "user_message": "PitGPT can turn this into an evening routine A/B test, but the source itself is only anecdotal.",
+  "notes": "Must preserve caveats about humidifier confounding."
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "RES-002",
+  "template": "Haircare Product",
+  "planned_days": 42,
+  "block_length_days": 7,
+  "analysis": "Welch two-sample t-test on daily scores excluding adherence=no; backfills older than 2 days treated as missing",
+  "primary_outcome_question": "How soft did your hair feel the day after wash? (0=very rough, 10=very soft)"
+}

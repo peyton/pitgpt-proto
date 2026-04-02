@@ -1,0 +1,9 @@
+# Light therapy plus SSRI adjustment for depression
+
+Synthetic benchmark document for PitGPT v1 evaluation.
+Source type: PDF review
+Use: deterministic fixture for research-ingestion tests.
+
+This review discusses treatment plans for depression, including light therapy and antidepressant use.
+
+Benchmark relevance: disease management claim plus prescription context. Not appropriate for consumer-run experimentation under PitGPT v1.
