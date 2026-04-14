@@ -281,7 +281,7 @@ class TestClaudeRankedCLI:
         )
         assert amended.exit_code == 0
         amended_protocol = json.loads(proto.read_text())
-        assert amended_protocol["minimum_meaningful_difference"] == "0.8"
+        assert amended_protocol["minimum_meaningful_difference"] == 0.8
         assert amended_protocol["amendments"][0]["reason"] == "Set before analysis."
 
 

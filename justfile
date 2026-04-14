@@ -64,6 +64,10 @@ bench model="" track="all" cases="":
 bench-analysis:
     {{uv_run}} pitgpt benchmark run --track analysis
 
+# Compare Python and Rust deterministic analysis outputs
+parity-analysis:
+    {{uv_run}} python -m scripts.parity_analysis
+
 # Run ingestion benchmarks through the configured LLM provider
 bench-ingestion model="":
     #!/usr/bin/env bash

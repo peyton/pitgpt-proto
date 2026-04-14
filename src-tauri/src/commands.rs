@@ -6,11 +6,11 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 use tokio::sync::oneshot;
 
-use crate::analysis::analyze_result;
+use crate::analysis::{analyze_result, validate_analysis_inputs};
 use crate::ingestion::ingest_local_result;
 use crate::models::{
     AdverseEventSeverity, Assignment, Observation, ProviderInfo, ProviderKind, ResultCard,
-    TrialTemplate,
+    TrialTemplate, ValidationReport,
 };
 use crate::notifications::{plan_trial_reminders_result, ReminderPlan};
 use crate::providers::discover_provider_infos;
@@ -93,6 +93,14 @@ pub fn plan_trial_reminders(
 #[tauri::command]
 pub fn analyze(protocol: Value, observations: Vec<Observation>) -> Result<ResultCard, String> {
     analyze_result(protocol, observations)
+}
+
+#[tauri::command]
+pub fn validate_trial(
+    protocol: Value,
+    observations: Vec<Observation>,
+) -> Result<ValidationReport, String> {
+    Ok(validate_analysis_inputs(protocol, &observations))
 }
 
 #[tauri::command]
@@ -205,12 +213,15 @@ fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String>
                     .map_err(|err| format!("invalid secondary_scores: {err}"))?
             };
             Ok(Observation {
+                observation_id: String::new(),
                 day_index: get("day_index")
                     .parse()
                     .map_err(|err| format!("invalid day_index: {err}"))?,
                 date: get("date").to_string(),
                 condition: serde_json::from_str(&format!("\"{}\"", get("condition")))
                     .map_err(|err| format!("invalid condition: {err}"))?,
+                assigned_condition: None,
+                actual_condition: None,
                 primary_score: get("primary_score").parse().ok(),
                 irritation: serde_json::from_str(&format!("\"{}\"", get("irritation")))
                     .unwrap_or(crate::models::YesNo::No),
@@ -224,6 +235,16 @@ fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String>
                 adverse_event_severity: severity,
                 adverse_event_description: get("adverse_event_description").to_string(),
                 secondary_scores,
+                recorded_at: String::new(),
+                timezone: String::new(),
+                planned_checkin_time: String::new(),
+                minutes_from_planned_checkin: None,
+                exposure_start_at: String::new(),
+                exposure_end_at: String::new(),
+                measurement_timing: String::new(),
+                deviation_codes: vec![],
+                confounders: BTreeMap::new(),
+                rescue_action: String::new(),
             })
         })
         .collect()

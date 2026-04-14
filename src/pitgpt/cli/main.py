@@ -25,6 +25,7 @@ from pitgpt.core.models import (
     Condition,
     Observation,
     ProtocolAmendment,
+    ResultCard,
     TrialBundle,
     TrialBundleManifest,
     YesNo,
@@ -51,6 +52,8 @@ _OBSERVATION_HEADERS = [
     "day_index",
     "date",
     "condition",
+    "assigned_condition",
+    "actual_condition",
     "primary_score",
     "irritation",
     "adherence",
@@ -61,6 +64,16 @@ _OBSERVATION_HEADERS = [
     "adverse_event_severity",
     "adverse_event_description",
     "secondary_scores",
+    "recorded_at",
+    "timezone",
+    "planned_checkin_time",
+    "minutes_from_planned_checkin",
+    "exposure_start_at",
+    "exposure_end_at",
+    "measurement_timing",
+    "deviation_codes",
+    "confounders",
+    "rescue_action",
 ]
 
 
@@ -195,7 +208,11 @@ def validate_command(
     fmt = _detect_format(format)
     try:
         proto_data = load_analysis_protocol(protocol)
-        obs_data = parse_observations_csv(_read_file_or_exit(observations)) if observations else []
+        obs_data = (
+            parse_observations_csv(_read_file_or_exit(observations), strict=True)
+            if observations
+            else []
+        )
     except FileNotFoundError as e:
         console.print(f"[red]File not found: {e.filename}[/red]")
         raise typer.Exit(1) from e
@@ -511,10 +528,20 @@ def trial_import_command(
 
     if source.suffix == ".zip":
         with zipfile.ZipFile(source) as archive:
-            protocol_path.write_text(archive.read("protocol.json").decode())
-            observations_path.write_text(archive.read("observations.csv").decode())
-            if "result.json" in archive.namelist():
-                result_path.write_text(archive.read("result.json").decode())
+            protocol_text = archive.read("protocol.json").decode()
+            observations_text = archive.read("observations.csv").decode()
+            result_text = (
+                archive.read("result.json").decode() if "result.json" in archive.namelist() else ""
+            )
+            parsed_protocol = AnalysisProtocol.model_validate(json.loads(protocol_text))
+            parsed_observations = parse_observations_csv(observations_text, strict=True)
+            parsed_result = (
+                ResultCard.model_validate(json.loads(result_text)) if result_text else None
+            )
+            protocol_path.write_text(parsed_protocol.model_dump_json(indent=2) + "\n")
+            observations_path.write_text(_observations_to_csv(parsed_observations))
+            if parsed_result is not None:
+                result_path.write_text(parsed_result.model_dump_json(indent=2) + "\n")
     else:
         parsed = TrialBundle.model_validate(json.loads(source.read_text()))
         protocol_path.write_text(parsed.protocol.model_dump_json(indent=2) + "\n")
@@ -535,14 +562,16 @@ def trial_amend_command(
     path = Path(protocol)
     raw = json.loads(path.read_text())
     amendments = raw.setdefault("amendments", [])
-    old_value = _json_or_text(raw.get(field, ""))
-    raw[field] = value
+    old_raw = raw.get(field, "")
+    old_value = _json_or_text(old_raw)
+    new_raw = _parse_typed_value(value)
+    raw[field] = new_raw
     amendments.append(
         ProtocolAmendment(
             date=date.today().isoformat(),
             field=field,
             old_value=old_value,
-            new_value=value,
+            new_value=_json_or_text(new_raw),
             reason=reason,
         ).model_dump(mode="json")
     )
@@ -601,6 +630,8 @@ def checkin_add_command(
             writer.writeheader()
         row = observation.model_dump(mode="json")
         row["secondary_scores"] = json.dumps(row.get("secondary_scores", {}), sort_keys=True)
+        row["deviation_codes"] = json.dumps(row.get("deviation_codes", []), sort_keys=True)
+        row["confounders"] = json.dumps(row.get("confounders", {}), sort_keys=True)
         writer.writerow({header: row.get(header, "") for header in _OBSERVATION_HEADERS})
     console.print(f"[green]Observation appended to {path}[/green]")
 
@@ -612,8 +643,17 @@ def _observations_to_csv(observations: list[Observation]) -> str:
     for observation in observations:
         row = observation.model_dump(mode="json")
         row["secondary_scores"] = json.dumps(row.get("secondary_scores", {}), sort_keys=True)
+        row["deviation_codes"] = json.dumps(row.get("deviation_codes", []), sort_keys=True)
+        row["confounders"] = json.dumps(row.get("confounders", {}), sort_keys=True)
         writer.writerow({header: row.get(header, "") for header in _OBSERVATION_HEADERS})
     return output.getvalue()
+
+
+def _parse_typed_value(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
 
 
 def _normal_quantile(p: float) -> float:

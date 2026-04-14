@@ -14,6 +14,7 @@ from pitgpt.core.models import (
     SuitabilityScore,
 )
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
+from pitgpt.core.safety import prefilter_query, validate_protocol_safety_text
 from pitgpt.core.settings import load_settings
 
 MAX_DOCUMENT_CHARS = 12_000
@@ -39,6 +40,10 @@ async def ingest(
     max_total_document_chars: int | None = None,
 ) -> IngestionResult:
     _validate_inputs(query, documents, max_document_chars, max_total_document_chars)
+    prefiltered = prefilter_query(query, documents)
+    if prefiltered is not None:
+        return prefiltered
+
     user_parts = [f"User query: {query}"]
     for i, doc in enumerate(documents, 1):
         user_parts.append(f"\n--- Uploaded Document {i} ---\n{doc}")
@@ -50,6 +55,26 @@ async def ingest(
     protocol = None
     if protocol_data and isinstance(protocol_data, dict):
         protocol = Protocol.model_validate(protocol_data)
+        unsafe_reasons = validate_protocol_safety_text(protocol)
+        if unsafe_reasons:
+            reason = " ".join(dict.fromkeys(unsafe_reasons))
+            return IngestionResult(
+                decision=IngestionDecision.BLOCK,
+                safety_tier=SafetyTier.RED,
+                evidence_quality=EvidenceQuality(str(raw.get("evidence_quality", "weak"))),
+                evidence_conflict=bool(raw.get("evidence_conflict", False)),
+                risk_level=RiskLevel.HIGH,
+                risk_rationale=reason,
+                protocol=None,
+                block_reason=reason,
+                user_message=(
+                    "The generated protocol crossed PitGPT's safety boundary, so it was blocked "
+                    "before lock."
+                ),
+                policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
+                model=model_id or client.model,
+                response_validation_status="blocked_generated_protocol_safety_text",
+            )
 
     return IngestionResult(
         decision=IngestionDecision(str(raw["decision"])),

@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 use crate::models::{
-    Adherence, AdverseEventSeverity, AnalysisMethod, AnalysisProtocol, BlockBreakdown, Condition,
-    Observation, PairedBlockEstimate, QualityGrade, ResultCard, SecondaryOutcomeResult,
-    SensitivityResult, Verdict, YesNo,
+    ActionabilityClass, Adherence, AdverseEventSeverity, AnalysisDatasetSnapshot, AnalysisMethod,
+    AnalysisProtocol, BlockBreakdown, Condition, DenominatorPolicy, MethodsAppendix, Observation,
+    PairedBlockEstimate, QualityGrade, ResultCard, RowExclusion, SecondaryOutcomeResult,
+    SensitivityAnalysisResult, SensitivityResult, TrialLock, ValidationReport, Verdict, YesNo,
 };
 
 pub fn analyze_result(
@@ -14,7 +17,7 @@ pub fn analyze_result(
     observations: Vec<Observation>,
 ) -> Result<ResultCard, String> {
     let planned_days_defaulted = AnalysisProtocol::planned_days_defaulted(&protocol_value);
-    let protocol: AnalysisProtocol = serde_json::from_value(protocol_value)
+    let protocol: AnalysisProtocol = serde_json::from_value(protocol_value.clone())
         .map_err(|err| format!("invalid analysis protocol: {err}"))?;
     if protocol.planned_days == 0 {
         return Err("planned_days must be positive".to_string());
@@ -35,16 +38,19 @@ pub fn analyze_result(
         protocol.planned_days
     } as f64;
 
-    let filtered = filter_observations(&observations);
+    let filtered = filter_observations(&observations, protocol.max_backfill_days);
     let scores_a = scores_for_condition(&filtered, Condition::A);
     let scores_b = scores_for_condition(&filtered, Condition::B);
+    let row_exclusions = row_exclusions(&observations, protocol.max_backfill_days);
 
     let scored_not_late_backfill = observations
         .iter()
         .filter(|obs| {
             obs.primary_score.is_some()
                 && !(obs.is_backfill == YesNo::Yes
-                    && obs.backfill_days.is_some_and(|days| days > 2.0))
+                    && obs
+                        .backfill_days
+                        .is_some_and(|days| days > protocol.max_backfill_days))
         })
         .count();
     let fully_adherent = observations
@@ -54,7 +60,10 @@ pub fn analyze_result(
     let late_backfill_excluded = observations
         .iter()
         .filter(|obs| {
-            obs.is_backfill == YesNo::Yes && obs.backfill_days.is_some_and(|days| days > 2.0)
+            obs.is_backfill == YesNo::Yes
+                && obs
+                    .backfill_days
+                    .is_some_and(|days| days > protocol.max_backfill_days)
         })
         .count();
 
@@ -71,6 +80,19 @@ pub fn analyze_result(
 
     if scores_a.len() < 2 || scores_b.len() < 2 {
         let adverse_event_by_severity = count_adverse_events(&observations);
+        let dataset_snapshot = dataset_snapshot(
+            &observations,
+            0,
+            &row_exclusions,
+            protocol.analysis_plan.denominator_policy,
+        );
+        let methods_appendix = build_methods_appendix(
+            &protocol_value,
+            &protocol,
+            &observations,
+            &[],
+            &row_exclusions,
+        );
         let mut caveats_parts =
             vec!["Too few usable observations to compute effect size.".to_string()];
         if planned_days_defaulted {
@@ -89,6 +111,7 @@ pub fn analyze_result(
             cohens_d: None,
             relative_change_pct: None,
             paired_block: None,
+            welch_sensitivity: None,
             n_used_a: scores_a.len(),
             n_used_b: scores_b.len(),
             adherence_rate: round4(adherence_rate),
@@ -96,14 +119,23 @@ pub fn analyze_result(
             early_stop,
             late_backfill_excluded,
             adverse_event_count: adverse_event_by_severity.values().copied().sum(),
-            adverse_event_by_severity,
+            adverse_event_by_severity: adverse_event_by_severity.clone(),
             block_breakdown: vec![],
             sensitivity_excluding_partial: None,
+            sensitivity_analyses: vec![],
             secondary_outcomes: compute_secondary_outcomes(&filtered, &protocol),
             protocol_amendment_count: protocol.amendments.len(),
             planned_days_defaulted,
             minimum_meaningful_difference: protocol.minimum_meaningful_difference,
             meets_minimum_meaningful_effect: None,
+            equivalence_margin: None,
+            supports_no_meaningful_difference: None,
+            randomization_p_value: None,
+            actionability: ActionabilityClass::InsufficientData,
+            harm_benefit_summary: harm_benefit_summary(&adverse_event_by_severity),
+            reliability_warnings: reliability_warnings(&observations),
+            dataset_snapshot,
+            methods_appendix,
             data_warnings,
             summary: "Insufficient data for reliable inference.".to_string(),
             caveats: caveats_parts.join(" "),
@@ -113,20 +145,64 @@ pub fn analyze_result(
     let mean_a = mean(&scores_a);
     let mean_b = mean(&scores_b);
     let raw_diff = mean_a - mean_b;
-    let difference = round2(raw_diff);
-    let (ci_lower, ci_upper) = welch_ci(&scores_a, &scores_b, raw_diff);
+    let welch_difference = round2(raw_diff);
+    let (welch_ci_lower, welch_ci_upper) = welch_ci(&scores_a, &scores_b, raw_diff);
     let cohens_d = compute_cohens_d(&scores_a, &scores_b);
     let relative_change_pct = compute_relative_change(raw_diff, mean_b);
-    let verdict = compute_verdict(difference, ci_lower, ci_upper);
-    let meets_minimum = difference.abs() >= protocol.minimum_meaningful_difference;
     let grade = compute_grade(adherence_rate, days_logged_pct, early_stop);
     let block_breakdown = compute_block_breakdown(&filtered, &protocol);
     let paired_block = compute_paired_block_estimate(&block_breakdown);
-    let sensitivity = compute_sensitivity(&observations);
+    let use_paired_primary = paired_block.as_ref().is_some_and(|estimate| {
+        estimate.n_pairs >= 2
+            && estimate.difference.is_some()
+            && estimate.ci_lower.is_some()
+            && estimate.ci_upper.is_some()
+    });
+    let (analysis_method, difference, ci_lower, ci_upper) = if use_paired_primary {
+        let estimate = paired_block.as_ref().unwrap();
+        (
+            AnalysisMethod::PairedBlocks,
+            estimate.difference.unwrap(),
+            estimate.ci_lower.unwrap(),
+            estimate.ci_upper.unwrap(),
+        )
+    } else {
+        (
+            AnalysisMethod::Welch,
+            welch_difference,
+            welch_ci_lower,
+            welch_ci_upper,
+        )
+    };
+    let verdict = compute_directional_verdict(
+        difference,
+        ci_lower,
+        ci_upper,
+        primary_higher_is_better(&protocol),
+    );
+    let equivalence_margin = equivalence_margin(&protocol, difference);
+    let supports_no_meaningful_difference =
+        ci_lower >= -equivalence_margin && ci_upper <= equivalence_margin;
+    let meets_minimum =
+        difference.abs() >= equivalence_margin && !supports_no_meaningful_difference;
+    let sensitivity = compute_sensitivity(&observations, protocol.max_backfill_days);
     let secondary_outcomes = compute_secondary_outcomes(&filtered, &protocol);
     let adverse_event_by_severity = count_adverse_events(&observations);
+    let welch_sensitivity = SensitivityAnalysisResult {
+        name: "welch_daily_mean".to_string(),
+        method: "Welch confidence interval on usable daily scores".to_string(),
+        summary: "Daily-score Welch analysis retained as sensitivity; paired periods are primary when complete pairs exist.".to_string(),
+        difference: Some(welch_difference),
+        ci_lower: Some(welch_ci_lower),
+        ci_upper: Some(welch_ci_upper),
+        n_used_a: scores_a.len(),
+        n_used_b: scores_b.len(),
+    };
+    let sensitivity_analyses = sensitivity_analyses(&welch_sensitivity, sensitivity.as_ref());
     let imbalance_warning = check_imbalance(scores_a.len(), scores_b.len());
     let underpowered_warning = check_underpowered(difference, ci_lower, ci_upper);
+    let mut diagnostic_warnings = reliability_warnings(&observations);
+    diagnostic_warnings.extend(data_warnings.clone());
     let summary = generate_summary(SummaryInputs {
         mean_a,
         mean_b,
@@ -137,6 +213,8 @@ pub fn analyze_result(
         early_stop,
         cohens_d,
         verdict,
+        analysis_method,
+        supports_no_meaningful_difference,
     });
     let caveats = generate_caveats(
         early_stop,
@@ -145,21 +223,33 @@ pub fn analyze_result(
         imbalance_warning,
         underpowered_warning,
         planned_days_defaulted,
-        &data_warnings,
+        &diagnostic_warnings,
     );
+    let dataset_snapshot = dataset_snapshot(
+        &observations,
+        rows_used_primary(&filtered, &protocol, analysis_method),
+        &row_exclusions,
+        protocol.analysis_plan.denominator_policy,
+    );
+    let sensitivity_names = sensitivity_analyses
+        .iter()
+        .map(|analysis| analysis.name.clone())
+        .collect::<Vec<_>>();
+    let methods_appendix = build_methods_appendix(
+        &protocol_value,
+        &protocol,
+        &observations,
+        &sensitivity_names,
+        &row_exclusions,
+    );
+    let randomization_p_value = paired_block
+        .as_ref()
+        .and_then(|estimate| estimate.randomization_p_value);
 
     Ok(ResultCard {
         quality_grade: grade,
         verdict,
-        analysis_method: if paired_block
-            .as_ref()
-            .and_then(|estimate| estimate.difference)
-            .is_some()
-        {
-            AnalysisMethod::PairedBlocks
-        } else {
-            AnalysisMethod::Welch
-        },
+        analysis_method,
         mean_a: Some(round2(mean_a)),
         mean_b: Some(round2(mean_b)),
         difference: Some(difference),
@@ -168,6 +258,7 @@ pub fn analyze_result(
         cohens_d,
         relative_change_pct,
         paired_block,
+        welch_sensitivity: Some(welch_sensitivity),
         n_used_a: scores_a.len(),
         n_used_b: scores_b.len(),
         adherence_rate: round4(adherence_rate),
@@ -175,18 +266,72 @@ pub fn analyze_result(
         early_stop,
         late_backfill_excluded,
         adverse_event_count: adverse_event_by_severity.values().copied().sum(),
-        adverse_event_by_severity,
+        adverse_event_by_severity: adverse_event_by_severity.clone(),
         block_breakdown,
         sensitivity_excluding_partial: sensitivity,
+        sensitivity_analyses,
         secondary_outcomes,
         protocol_amendment_count: protocol.amendments.len(),
         planned_days_defaulted,
         minimum_meaningful_difference: protocol.minimum_meaningful_difference,
         meets_minimum_meaningful_effect: Some(meets_minimum),
+        equivalence_margin: Some(equivalence_margin),
+        supports_no_meaningful_difference: Some(supports_no_meaningful_difference),
+        randomization_p_value,
+        actionability: actionability(
+            grade,
+            verdict,
+            meets_minimum,
+            supports_no_meaningful_difference,
+            &adverse_event_by_severity,
+            early_stop,
+        ),
+        harm_benefit_summary: harm_benefit_summary(&adverse_event_by_severity),
+        reliability_warnings: reliability_warnings(&observations),
+        dataset_snapshot,
+        methods_appendix,
         data_warnings,
         summary,
         caveats,
     })
+}
+
+pub fn validate_analysis_inputs(
+    protocol_value: Value,
+    observations: &[Observation],
+) -> ValidationReport {
+    let planned_days = protocol_value
+        .get("planned_days")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok());
+    let block_length_days = protocol_value
+        .get("block_length_days")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok());
+
+    let mut errors = vec![];
+    let mut warnings = vec![];
+    match serde_json::from_value::<AnalysisProtocol>(protocol_value) {
+        Ok(protocol) => {
+            if protocol.planned_days == 0 {
+                errors.push("planned_days must be positive".to_string());
+            }
+            if protocol.block_length_days == 0 {
+                errors.push("block_length_days must be positive".to_string());
+            }
+            warnings = validate_observations(observations, &protocol);
+        }
+        Err(err) => errors.push(format!("invalid analysis protocol: {err}")),
+    }
+
+    ValidationReport {
+        valid: errors.is_empty(),
+        errors,
+        warnings,
+        observation_count: observations.len(),
+        planned_days,
+        block_length_days,
+    }
 }
 
 fn validate_observations(observations: &[Observation], protocol: &AnalysisProtocol) -> Vec<String> {
@@ -244,7 +389,7 @@ fn validate_observations(observations: &[Observation], protocol: &AnalysisProtoc
         warnings.push(format!("Missing day_index value(s): {preview}{suffix}."));
     }
 
-    let usable = filter_observations(observations);
+    let usable = filter_observations(observations, protocol.max_backfill_days);
     let n_a = scores_for_condition(&usable, Condition::A).len();
     let n_b = scores_for_condition(&usable, Condition::B).len();
     if n_a == 0 || n_b == 0 {
@@ -270,12 +415,15 @@ where
         .collect()
 }
 
-fn filter_observations(observations: &[Observation]) -> Vec<Observation> {
+fn filter_observations(observations: &[Observation], max_backfill_days: f64) -> Vec<Observation> {
     observations
         .iter()
         .filter(|obs| obs.adherence != Adherence::No)
         .filter(|obs| {
-            !(obs.is_backfill == YesNo::Yes && obs.backfill_days.is_some_and(|days| days > 2.0))
+            !(obs.is_backfill == YesNo::Yes
+                && obs
+                    .backfill_days
+                    .is_some_and(|days| days > max_backfill_days))
         })
         .cloned()
         .collect()
@@ -370,14 +518,46 @@ fn compute_relative_change(raw_diff: f64, mean_b: f64) -> Option<f64> {
     }
 }
 
-fn compute_verdict(difference: f64, ci_lower: f64, ci_upper: f64) -> Verdict {
+fn compute_directional_verdict(
+    difference: f64,
+    ci_lower: f64,
+    ci_upper: f64,
+    higher_is_better: bool,
+) -> Verdict {
     if ci_lower <= 0.0 && ci_upper >= 0.0 {
         Verdict::Inconclusive
-    } else if difference > 0.0 {
+    } else if higher_is_better {
+        if difference > 0.0 {
+            Verdict::FavorsA
+        } else {
+            Verdict::FavorsB
+        }
+    } else if difference < 0.0 {
         Verdict::FavorsA
     } else {
         Verdict::FavorsB
     }
+}
+
+fn primary_higher_is_better(protocol: &AnalysisProtocol) -> bool {
+    protocol
+        .primary_outcome
+        .as_ref()
+        .map(|outcome| outcome.higher_is_better)
+        .unwrap_or(true)
+}
+
+fn equivalence_margin(protocol: &AnalysisProtocol, difference: f64) -> f64 {
+    protocol
+        .primary_outcome
+        .as_ref()
+        .map_or(protocol.minimum_meaningful_difference, |outcome| {
+            if difference >= 0.0 {
+                outcome.minimum_meaningful_difference_positive
+            } else {
+                outcome.minimum_meaningful_difference_negative
+            }
+        })
 }
 
 fn compute_grade(adherence_rate: f64, days_logged_pct: f64, early_stop: bool) -> QualityGrade {
@@ -452,6 +632,7 @@ fn compute_paired_block_estimate(
             ci_lower: None,
             ci_upper: None,
             n_pairs: paired_diffs.len(),
+            randomization_p_value: None,
         });
     }
 
@@ -474,10 +655,40 @@ fn compute_paired_block_estimate(
         ci_lower: Some(ci_lower),
         ci_upper: Some(ci_upper),
         n_pairs: paired_diffs.len(),
+        randomization_p_value: exact_sign_randomization_p_value(&paired_diffs),
     })
 }
 
-fn compute_sensitivity(observations: &[Observation]) -> Option<SensitivityResult> {
+fn exact_sign_randomization_p_value(paired_diffs: &[f64]) -> Option<f64> {
+    if paired_diffs.is_empty() {
+        return None;
+    }
+    let total = 2usize.checked_pow(paired_diffs.len() as u32)?;
+    if total > 1_048_576 {
+        return None;
+    }
+    let observed = (paired_diffs.iter().sum::<f64>() / paired_diffs.len() as f64).abs();
+    let mut extreme = 0usize;
+    for mask in 0..total {
+        let mut signed_sum = 0.0;
+        for (index, value) in paired_diffs.iter().enumerate() {
+            if ((mask >> index) & 1) == 1 {
+                signed_sum += value;
+            } else {
+                signed_sum -= value;
+            }
+        }
+        if (signed_sum / paired_diffs.len() as f64).abs() >= observed - 1e-12 {
+            extreme += 1;
+        }
+    }
+    Some(round4(extreme as f64 / total as f64))
+}
+
+fn compute_sensitivity(
+    observations: &[Observation],
+    max_backfill_days: f64,
+) -> Option<SensitivityResult> {
     if !observations
         .iter()
         .any(|obs| obs.adherence == Adherence::Partial)
@@ -488,7 +699,10 @@ fn compute_sensitivity(observations: &[Observation]) -> Option<SensitivityResult
         .iter()
         .filter(|obs| obs.adherence == Adherence::Yes)
         .filter(|obs| {
-            !(obs.is_backfill == YesNo::Yes && obs.backfill_days.is_some_and(|days| days > 2.0))
+            !(obs.is_backfill == YesNo::Yes
+                && obs
+                    .backfill_days
+                    .is_some_and(|days| days > max_backfill_days))
         })
         .cloned()
         .collect();
@@ -512,6 +726,158 @@ fn compute_sensitivity(observations: &[Observation]) -> Option<SensitivityResult
         n_used_a: scores_a.len(),
         n_used_b: scores_b.len(),
     })
+}
+
+fn sensitivity_analyses(
+    welch: &SensitivityAnalysisResult,
+    partial: Option<&SensitivityResult>,
+) -> Vec<SensitivityAnalysisResult> {
+    let mut analyses = vec![welch.clone()];
+    if let Some(partial) = partial {
+        analyses.push(SensitivityAnalysisResult {
+            name: "exclude_partial_adherence".to_string(),
+            method: "Welch confidence interval after excluding partial-adherence rows".to_string(),
+            summary: "Checks whether partial-adherence rows drive the result.".to_string(),
+            difference: partial.difference,
+            ci_lower: partial.ci_lower,
+            ci_upper: partial.ci_upper,
+            n_used_a: partial.n_used_a,
+            n_used_b: partial.n_used_b,
+        });
+    }
+    analyses
+}
+
+fn row_exclusions(observations: &[Observation], max_backfill_days: f64) -> Vec<RowExclusion> {
+    observations
+        .iter()
+        .filter_map(|obs| {
+            let reason = if obs.primary_score.is_none() {
+                Some("missing primary_score")
+            } else if obs.adherence == Adherence::No {
+                Some("adherence=no")
+            } else if obs.is_backfill == YesNo::Yes
+                && obs
+                    .backfill_days
+                    .is_some_and(|days| days > max_backfill_days)
+            {
+                Some("late backfill beyond allowed window")
+            } else {
+                None
+            }?;
+            Some(RowExclusion {
+                day_index: obs.day_index,
+                date: obs.date.clone(),
+                condition: Some(obs.condition),
+                reason: reason.to_string(),
+                safety_retained: true,
+            })
+        })
+        .collect()
+}
+
+fn dataset_snapshot(
+    observations: &[Observation],
+    rows_used_primary: usize,
+    row_exclusions: &[RowExclusion],
+    denominator_policy: DenominatorPolicy,
+) -> AnalysisDatasetSnapshot {
+    AnalysisDatasetSnapshot {
+        rows_total: observations.len(),
+        rows_used_primary,
+        rows_used_safety: observations.len(),
+        rows_excluded_primary: row_exclusions.len(),
+        exclusions: row_exclusions.to_vec(),
+        denominator_policy,
+    }
+}
+
+fn rows_used_primary(
+    filtered: &[Observation],
+    protocol: &AnalysisProtocol,
+    method: AnalysisMethod,
+) -> usize {
+    let scored: Vec<&Observation> = filtered
+        .iter()
+        .filter(|obs| obs.primary_score.is_some())
+        .collect();
+    if method != AnalysisMethod::PairedBlocks {
+        return scored.len();
+    }
+    let mut block_conditions = BTreeMap::<u32, BTreeSet<Condition>>::new();
+    for obs in &scored {
+        let block_index = (obs.day_index - 1) / protocol.block_length_days;
+        block_conditions
+            .entry(block_index / 2)
+            .or_default()
+            .insert(obs.condition);
+    }
+    let complete_pairs: BTreeSet<u32> = block_conditions
+        .into_iter()
+        .filter_map(|(pair_index, conditions)| {
+            (conditions.contains(&Condition::A) && conditions.contains(&Condition::B))
+                .then_some(pair_index)
+        })
+        .collect();
+    scored
+        .iter()
+        .filter(|obs| {
+            let block_index = (obs.day_index - 1) / protocol.block_length_days;
+            complete_pairs.contains(&(block_index / 2))
+        })
+        .count()
+}
+
+fn build_methods_appendix(
+    protocol_value: &Value,
+    protocol: &AnalysisProtocol,
+    observations: &[Observation],
+    sensitivity_methods: &[String],
+    row_exclusions: &[RowExclusion],
+) -> MethodsAppendix {
+    let mut input_hashes = BTreeMap::new();
+    input_hashes.insert("protocol".to_string(), sha256_json(protocol_value));
+    input_hashes.insert(
+        "analysis_plan".to_string(),
+        sha256_json(&protocol.analysis_plan),
+    );
+    input_hashes.insert("observations".to_string(), sha256_json(&observations));
+
+    let mut software_versions = BTreeMap::new();
+    software_versions.insert(
+        "pitgpt-tauri".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
+
+    MethodsAppendix {
+        method_version: protocol.analysis_plan.method_version.clone(),
+        estimand: protocol.analysis_plan.estimand.clone(),
+        analysis_plan: protocol.analysis_plan.clone(),
+        trial_lock: TrialLock {
+            protocol_hash: input_hashes.get("protocol").cloned().unwrap_or_default(),
+            analysis_plan_hash: input_hashes
+                .get("analysis_plan")
+                .cloned()
+                .unwrap_or_default(),
+            schedule_hash: String::new(),
+            estimand_hash: sha256_json(&protocol.analysis_plan.estimand),
+            locked_at: String::new(),
+            hash_algorithm: "sha256".to_string(),
+        },
+        input_hashes,
+        sensitivity_methods: sensitivity_methods.to_vec(),
+        row_exclusion_reasons: row_exclusions
+            .iter()
+            .map(|exclusion| exclusion.reason.clone())
+            .collect(),
+        software_versions,
+        pre_specified: protocol.analysis_plan.pre_specified,
+    }
+}
+
+fn sha256_json<T: Serialize>(value: &T) -> String {
+    let payload = serde_json::to_vec(value).unwrap_or_default();
+    format!("{:x}", Sha256::digest(payload))
 }
 
 fn compute_secondary_outcomes(
@@ -585,6 +951,83 @@ fn count_adverse_events(observations: &[Observation]) -> BTreeMap<String, usize>
     counts
 }
 
+fn harm_benefit_summary(adverse_event_by_severity: &BTreeMap<String, usize>) -> String {
+    if adverse_event_by_severity.is_empty() {
+        return "No adverse events or discomfort were recorded.".to_string();
+    }
+    let parts = adverse_event_by_severity
+        .iter()
+        .map(|(severity, count)| format!("{count} {severity}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("Adverse events or discomfort recorded: {parts}.")
+}
+
+fn reliability_warnings(observations: &[Observation]) -> Vec<String> {
+    let scores: Vec<f64> = observations
+        .iter()
+        .filter_map(|obs| obs.primary_score)
+        .collect();
+    if scores.len() < 4 {
+        return vec![];
+    }
+    let mut warnings = vec![];
+    let distinct = scores
+        .iter()
+        .map(|score| (score * 100.0).round() as i64)
+        .collect::<BTreeSet<_>>()
+        .len();
+    if distinct <= 2 {
+        warnings.push(
+            "Primary scores used only one or two distinct values; range compression may hide signal."
+                .to_string(),
+        );
+    }
+    let edge_count = scores
+        .iter()
+        .filter(|score| **score == 0.0 || **score == 10.0)
+        .count();
+    if edge_count as f64 / scores.len() as f64 >= 0.25 {
+        warnings.push(
+            "Many scores are at the 0 or 10 edge; ceiling/floor effects are possible.".to_string(),
+        );
+    }
+    warnings
+}
+
+fn actionability(
+    grade: QualityGrade,
+    verdict: Verdict,
+    meets_minimum: bool,
+    supports_no_meaningful_difference: bool,
+    adverse_event_by_severity: &BTreeMap<String, usize>,
+    early_stop: bool,
+) -> ActionabilityClass {
+    if adverse_event_by_severity
+        .get("severe")
+        .copied()
+        .unwrap_or(0)
+        > 0
+        || (early_stop && adverse_event_by_severity.values().sum::<usize>() > 0)
+    {
+        return ActionabilityClass::StopForSafety;
+    }
+    if grade == QualityGrade::D {
+        return ActionabilityClass::InsufficientData;
+    }
+    if supports_no_meaningful_difference {
+        return ActionabilityClass::InconclusiveNoAction;
+    }
+    if verdict == Verdict::Inconclusive || !meets_minimum {
+        return ActionabilityClass::RepeatWithBetterControls;
+    }
+    if verdict == Verdict::FavorsA {
+        ActionabilityClass::KeepCurrent
+    } else {
+        ActionabilityClass::Switch
+    }
+}
+
 fn check_imbalance(n_a: usize, n_b: usize) -> Option<String> {
     if n_a == 0 || n_b == 0 {
         return None;
@@ -621,6 +1064,8 @@ struct SummaryInputs {
     early_stop: bool,
     cohens_d: Option<f64>,
     verdict: Verdict,
+    analysis_method: AnalysisMethod,
+    supports_no_meaningful_difference: bool,
 }
 
 fn generate_summary(inputs: SummaryInputs) -> String {
@@ -634,6 +1079,8 @@ fn generate_summary(inputs: SummaryInputs) -> String {
         early_stop,
         cohens_d,
         verdict,
+        analysis_method,
+        supports_no_meaningful_difference,
     } = inputs;
     if grade == QualityGrade::D {
         return "Insufficient data for reliable inference.".to_string();
@@ -657,10 +1104,21 @@ fn generate_summary(inputs: SummaryInputs) -> String {
         ),
         format!("95% CI: [{:.2}, {:.2}].", ci_lower, ci_upper),
         format!(
+            "Primary method: {}.",
+            if analysis_method == AnalysisMethod::PairedBlocks {
+                "paired-period estimate"
+            } else {
+                "daily-score Welch estimate"
+            }
+        ),
+        format!(
             "Result {direction_text} with {grade_desc} evidence (Grade {:?}).",
             grade
         ),
     ];
+    if supports_no_meaningful_difference {
+        parts.push("The confidence interval fits within the meaningful-change margin.".to_string());
+    }
     if let Some(d) = cohens_d {
         parts.push(format!(
             "Effect size: Cohen's d = {:+.2} ({}).",
@@ -825,6 +1283,7 @@ mod tests {
                         .unwrap_or("")
                 };
                 Observation {
+                    observation_id: String::new(),
                     day_index: get("day_index").parse().unwrap(),
                     date: get("date").to_string(),
                     condition: match get("condition") {
@@ -832,6 +1291,8 @@ mod tests {
                         "B" => Condition::B,
                         other => panic!("unexpected condition {other}"),
                     },
+                    assigned_condition: None,
+                    actual_condition: None,
                     primary_score: get("primary_score").parse().ok(),
                     irritation: if get("irritation") == "yes" {
                         YesNo::Yes
@@ -859,6 +1320,16 @@ mod tests {
                     },
                     adverse_event_description: get("adverse_event_description").to_string(),
                     secondary_scores: BTreeMap::new(),
+                    recorded_at: String::new(),
+                    timezone: String::new(),
+                    planned_checkin_time: String::new(),
+                    minutes_from_planned_checkin: None,
+                    exposure_start_at: String::new(),
+                    exposure_end_at: String::new(),
+                    measurement_timing: String::new(),
+                    deviation_codes: vec![],
+                    confounders: BTreeMap::new(),
+                    rescue_action: String::new(),
                 }
             })
             .collect()

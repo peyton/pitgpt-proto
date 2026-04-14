@@ -61,9 +61,10 @@ describe("storage", () => {
 
     expect(csv).toContain('"sleep, ""travel"""');
     expect(csv.split("\n")[0]).toBe(
-      '"day_index","date","condition","primary_score","irritation","adherence","adherence_reason","note","is_backfill","backfill_days","adverse_event_severity","adverse_event_description","secondary_scores"',
+      '"observation_id","day_index","date","condition","assigned_condition","actual_condition","primary_score","irritation","adherence","adherence_reason","note","is_backfill","backfill_days","adverse_event_severity","adverse_event_description","secondary_scores","recorded_at","timezone","planned_checkin_time","minutes_from_planned_checkin","exposure_start_at","exposure_end_at","measurement_timing","deviation_codes","confounders","rescue_action"',
     );
     expect(csv).toContain('"{}"');
+    expect(csv).toContain('"[]"');
   });
 
   it("migrates provider settings with reserved on-device runtime disabled", () => {
@@ -124,5 +125,8 @@ describe("storage", () => {
     expect(state.trial?.protocol.secondary_outcomes).toEqual([]);
     expect(state.trial?.protocol.amendments).toEqual([]);
     expect(state.trial?.observations[0]?.secondary_scores).toEqual({});
+    expect(state.trial?.observations[0]?.actual_condition).toBe("A");
+    expect(state.trial?.observations[0]?.deviation_codes).toEqual([]);
+    expect(state.trial?.observations[0]?.confounders).toEqual({});
   });
 });

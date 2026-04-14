@@ -154,4 +154,25 @@ describe("api", () => {
       ?.[1] as Record<string, unknown> | undefined;
     expect(cancelArgs?.requestId).toBe(ingestArgs?.requestId);
   });
+
+  it("uses native validation instead of the old success stub in Tauri", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    invokeMock.mockResolvedValue({
+      valid: false,
+      errors: ["planned_days must be positive"],
+      warnings: [],
+      observation_count: 0,
+      planned_days: 0,
+      block_length_days: 7,
+    });
+
+    const result = await validateTrial({ planned_days: 0, block_length_days: 7 }, []);
+
+    expect(invokeMock).toHaveBeenCalledWith("validate_trial", {
+      protocol: { planned_days: 0, block_length_days: 7 },
+      observations: [],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("planned_days must be positive");
+  });
 });

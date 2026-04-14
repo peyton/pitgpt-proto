@@ -39,7 +39,9 @@ Expected behavior:
 
 - Exit code `0`
 - JSON output with `quality_grade`, `verdict`, `mean_a`, `mean_b`,
-  `difference`, `ci_lower`, `ci_upper`, `summary`, and `caveats`
+  `difference`, `ci_lower`, `ci_upper`, `analysis_method`, `paired_block`,
+  `sensitivity_analyses`, `dataset_snapshot`, `methods_appendix`, `summary`,
+  and `caveats`
 - No network access
 
 Common failures:
@@ -86,6 +88,10 @@ Validate files before analysis:
 pitgpt validate --protocol my-trial/protocol.json --observations my-trial/observations.csv
 ```
 
+Strict validation is used by bundle import and catches unknown CSV columns,
+duplicate day/date rows, unsorted rows, and invalid typed result/protocol JSON
+before writing restored files.
+
 Additional local operators:
 
 ```sh
@@ -97,6 +103,9 @@ pitgpt trial export --protocol my-trial/protocol.json --observations my-trial/ob
 pitgpt trial import --bundle my-trial.zip --output-dir restored-trial
 pitgpt trial amend --protocol my-trial/protocol.json --field warnings --value "Stop if discomfort persists." --reason "Clarified stop criteria before starting."
 ```
+
+`trial amend` parses JSON values before writing. For example `--value 0.8`
+stores a numeric value, while quoted text stays text.
 
 ## Run Research Ingestion
 
@@ -296,6 +305,12 @@ Analysis-only benchmarks work without an API key:
 
 ```sh
 just bench-analysis
+```
+
+Python/Rust analysis parity also works without an API key:
+
+```sh
+just parity-analysis
 ```
 
 All benchmarks include LLM ingestion cases and require `OPENROUTER_API_KEY`:

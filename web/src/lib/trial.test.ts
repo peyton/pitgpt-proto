@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendObservationIfNew, buildObservationForDate } from "./trial";
+import { appendObservationIfNew, buildObservationForDate, canonicalJson, stableHash } from "./trial";
 import type { Observation, Trial } from "./types";
 
 const baseObservation: Observation = {
@@ -102,5 +102,18 @@ describe("appendObservationIfNew", () => {
     expect(observation.adverse_event_severity).toBe("mild");
     expect(observation.adverse_event_description).toBe("Redness.");
     expect(observation.secondary_scores).toEqual({ sleep: 4 });
+    expect(observation.assigned_condition).toBe("A");
+    expect(observation.actual_condition).toBe("A");
+    expect(observation.observation_id).toMatch(/^obs-/);
+    expect(observation.deviation_codes).toEqual([]);
+    expect(observation.confounders).toEqual({});
+  });
+});
+
+describe("stableHash", () => {
+  it("uses canonical JSON and SHA-256 integrity hashes", () => {
+    expect(canonicalJson({ b: 2, a: 1 })).toBe('{"a":1,"b":2}');
+    expect(stableHash({ b: 2, a: 1 })).toBe(stableHash({ a: 1, b: 2 }));
+    expect(stableHash("abc")).toBe("6cc43f858fbb763301637b5af970e2a46b46f461f27e5a0f41e009c59b827b25");
   });
 });

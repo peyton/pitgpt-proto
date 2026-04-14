@@ -436,3 +436,55 @@ class TestSafetyPolicy:
         assert "condition-adjacent" in prompt
         assert "Acute, urgent, crisis" in prompt
         assert "skincare product comparisons" in prompt
+
+
+class TestDeterministicSafetyGates:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_red_prefilter_blocks_before_llm(self, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(500, json={"detail": "should not be called"})
+        )
+
+        result = await ingest("Can I stop my prescription medication for a week?", [], client)
+
+        assert result.decision == IngestionDecision.BLOCK
+        assert result.safety_tier == SafetyTier.RED
+        assert result.response_validation_status.startswith("prefiltered:")
+        assert route.call_count == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_generated_protocol_safety_text_is_blocked(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "weak",
+                        "protocol": {
+                            "template": "Custom A/B",
+                            "duration_weeks": 2,
+                            "block_length_days": 7,
+                            "cadence": "daily",
+                            "washout": "None",
+                            "primary_outcome_question": "How did the dose affect symptoms?",
+                            "screening": "",
+                            "warnings": "",
+                            "condition_a_label": "Ozempic dose A",
+                            "condition_b_label": "Ozempic dose B",
+                        },
+                        "block_reason": None,
+                        "user_message": "Ready.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("Compare two morning routines", [], client)
+
+        assert result.decision == IngestionDecision.BLOCK
+        assert result.safety_tier == SafetyTier.RED
+        assert result.response_validation_status == "blocked_generated_protocol_safety_text"
