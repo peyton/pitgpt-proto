@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "PitGPT native Tauri shell"
 edition = "2021"
 rust-version = "1.77"
+default-run = "pitgpt-tauri"
 
 [lib]
 name = "pitgpt_tauri"
