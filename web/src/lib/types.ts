@@ -19,6 +19,19 @@ export type IngestionDecision =
   | "manual_review_before_protocol"
   | "block";
 export type Verdict = "favors_a" | "favors_b" | "inconclusive" | "insufficient_data";
+export type AiProviderKind =
+  | "openrouter"
+  | "ollama"
+  | "claude_cli"
+  | "codex_cli"
+  | "chatgpt_cli"
+  | "ios_on_device";
+export type AiToolStatus =
+  | "available"
+  | "installed_unavailable"
+  | "not_found"
+  | "unsupported_platform"
+  | "reserved";
 
 export interface Protocol {
   template: string | null;
@@ -209,6 +222,10 @@ export interface Settings {
   reminderEnabled: boolean;
   reminderTime: string;
   emailReminderEnabled: boolean;
+  preferredProvider: AiProviderKind;
+  preferredModel: string;
+  localAiConsentByProvider: Partial<Record<AiProviderKind, boolean>>;
+  onDeviceModelRuntimeEnabled: false;
 }
 
 export interface AppState {
@@ -221,4 +238,14 @@ export interface AppState {
 export interface CompletedTrial {
   trial: Trial;
   result: ResultCard;
+}
+
+export interface AiProviderInfo {
+  kind: AiProviderKind;
+  label: string;
+  status: AiToolStatus;
+  is_local: boolean;
+  is_offline: boolean;
+  models: string[];
+  detail: string;
 }

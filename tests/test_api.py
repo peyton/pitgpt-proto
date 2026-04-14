@@ -35,6 +35,20 @@ class TestReadEndpoints:
         assert resp.status_code == 200
         assert len(resp.json()["templates"]) >= 1
 
+    def test_providers(self, api_client):
+        resp = api_client.get("/providers")
+
+        assert resp.status_code == 200
+        kinds = {item["kind"] for item in resp.json()}
+        assert {
+            "openrouter",
+            "ollama",
+            "claude_cli",
+            "codex_cli",
+            "chatgpt_cli",
+            "ios_on_device",
+        }.issubset(kinds)
+
     def test_schedule(self, api_client):
         resp = api_client.post(
             "/schedule",
@@ -138,12 +152,43 @@ class TestIngestEndpoint:
         assert resp.status_code == 200
         assert resp.json()["decision"] == "generate_protocol"
 
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest")
+    def test_ingest_defaults_to_openrouter_provider(self, mock_ingest, api_client):
+        mock_ingest.return_value = IngestionResult(
+            decision=IngestionDecision.GENERATE_PROTOCOL,
+            safety_tier=SafetyTier.GREEN,
+            evidence_quality=EvidenceQuality.NOVEL,
+            protocol=Protocol(
+                duration_weeks=6,
+                block_length_days=7,
+                cadence="daily",
+                washout="None",
+                primary_outcome_question="Test?",
+            ),
+            user_message="Ready.",
+        )
+
+        resp = api_client.post("/ingest", json={"query": "Test CeraVe vs Cetaphil"})
+
+        assert resp.status_code == 200
+        assert mock_ingest.call_args.args[3] == "anthropic/claude-sonnet-4"
+
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": ""})
     def test_ingest_no_api_key(self, api_client):
         resp = api_client.post("/ingest", json={"query": "Test"})
         assert resp.status_code == 503
         assert resp.json()["error"]["message"] == "OPENROUTER_API_KEY not set"
         assert "X-Request-ID" in resp.headers
+
+    def test_unsupported_provider_rejected(self, api_client):
+        resp = api_client.post(
+            "/ingest",
+            json={"query": "Test", "provider": "ios_on_device"},
+        )
+
+        assert resp.status_code == 400
+        assert "not supported" in resp.json()["detail"]
 
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
     @patch("pitgpt.api.main.ingest", side_effect=LLMError("malformed provider response"))

@@ -10,15 +10,22 @@
     "test:unit": "vitest run src",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "tauri": "cd .. && npm --prefix web exec tauri --",
+    "tauri:dev": "cd .. && npm --prefix web exec tauri -- dev",
+    "tauri:build": "cd .. && npm --prefix web exec tauri -- build",
+    "tauri:ios:dev": "cd .. && npm --prefix web exec tauri -- ios dev",
+    "tauri:ios:build": "cd .. && npm --prefix web exec tauri -- ios build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.1",

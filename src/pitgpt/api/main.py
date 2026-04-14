@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from pitgpt.core.analysis import analyze
-from pitgpt.core.ingestion import IngestionInputError, ingest
-from pitgpt.core.llm import LLMClient, LLMError
+from pitgpt.core.ingestion import CompletionClient, IngestionInputError, ingest
+from pitgpt.core.llm import LLMClient, LLMError, OllamaClient
 from pitgpt.core.models import (
     AnalysisProtocol,
     IngestionResult,
@@ -17,6 +17,7 @@ from pitgpt.core.models import (
     ResultCard,
     ScheduleAssignment,
 )
+from pitgpt.core.providers import ProviderInfo, ProviderKind, list_providers
 from pitgpt.core.schedule import generate_schedule
 from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import templates_as_dicts
@@ -35,6 +36,7 @@ class IngestRequest(BaseModel):
     query: str = Field(examples=["Compare CeraVe and La Roche-Posay for evening skin comfort"])
     documents: list[str] = Field(default_factory=list)
     model: str | None = None
+    provider: ProviderKind | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -87,6 +89,11 @@ async def templates():
     return {"templates": templates_as_dicts()}
 
 
+@app.get("/providers", response_model=list[ProviderInfo])
+async def providers():
+    return list_providers()
+
+
 @app.post("/schedule", response_model=list[ScheduleAssignment])
 async def schedule_endpoint(req: ScheduleRequest):
     return generate_schedule(req.duration_weeks, req.block_length_days, req.seed)
@@ -107,19 +114,34 @@ async def analyze_example_endpoint():
 @app.post("/ingest", response_model=IngestionResult)
 async def ingest_endpoint(req: IngestRequest):
     settings = load_settings()
-    api_key = settings.openrouter_api_key
-    if not api_key:
-        raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
-    client = LLMClient(
-        model=req.model or settings.default_model,
-        api_key=api_key,
-        base_url=settings.llm_base_url,
-        temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
-        timeout_s=settings.llm_timeout_s,
-    )
+    provider = req.provider or ProviderKind.OPENROUTER
+    if provider == ProviderKind.OPENROUTER:
+        api_key = settings.openrouter_api_key
+        if not api_key:
+            raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
+        model_id = req.model or settings.default_model
+        client: CompletionClient = LLMClient(
+            model=model_id,
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+            timeout_s=settings.llm_timeout_s,
+        )
+    elif provider == ProviderKind.OLLAMA:
+        model_id = req.model or settings.ollama_default_model
+        client = OllamaClient(
+            model=model_id,
+            base_url=settings.ollama_base_url,
+            temperature=settings.llm_temperature,
+            timeout_s=settings.llm_timeout_s,
+        )
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Provider {provider.value} is not supported by API"
+        )
     try:
-        return await ingest(req.query, req.documents, client, req.model or settings.default_model)
+        return await ingest(req.query, req.documents, client, model_id)
     except IngestionInputError as e:
         raise HTTPException(status_code=413, detail=str(e)) from e
     except (KeyError, ValidationError, ValueError) as e:

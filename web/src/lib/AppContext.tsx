@@ -2,12 +2,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 import type { AppState, CompletedTrial, IngestionResult, Observation, Settings, Trial } from "./types";
-import { defaultState, loadState, saveState } from "./storage";
+import { defaultState, loadState, loadStateAsync, saveState } from "./storage";
 import { appendObservationIfNew } from "./trial";
 
 interface AppContextValue {
@@ -27,6 +28,16 @@ const Ctx = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(loadState);
   const [ingestionResult, setIngestionResult] = useState<IngestionResult | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadStateAsync().then((loaded) => {
+      if (active) setState(loaded);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const persist = useCallback((next: AppState | ((current: AppState) => AppState)) => {
     setState((current) => {

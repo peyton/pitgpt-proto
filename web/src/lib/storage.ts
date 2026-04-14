@@ -1,4 +1,5 @@
 import { generateSchedule } from "./randomize";
+import { isTauriRuntime, invokeNative } from "./runtime";
 import { stableHash } from "./trial";
 import type { AppState, Observation, Settings, Trial } from "./types";
 
@@ -9,6 +10,10 @@ export const defaultSettings: Settings = {
   reminderEnabled: true,
   reminderTime: "21:00",
   emailReminderEnabled: false,
+  preferredProvider: "openrouter",
+  preferredModel: "",
+  localAiConsentByProvider: {},
+  onDeviceModelRuntimeEnabled: false,
 };
 
 export function defaultState(): AppState {
@@ -16,6 +21,7 @@ export function defaultState(): AppState {
 }
 
 export function loadState(): AppState {
+  if (isTauriRuntime()) return defaultState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return normalizeState(JSON.parse(raw));
@@ -25,7 +31,22 @@ export function loadState(): AppState {
   return defaultState();
 }
 
+export async function loadStateAsync(): Promise<AppState> {
+  if (!isTauriRuntime()) return loadState();
+  try {
+    const raw = await invokeNative<unknown | null>("load_app_state");
+    if (raw) return normalizeState(raw);
+  } catch {
+    // Native state is optional; corrupt or missing state starts fresh.
+  }
+  return defaultState();
+}
+
 export function saveState(state: AppState): void {
+  if (isTauriRuntime()) {
+    void invokeNative("save_app_state", { state: normalizeState(state) });
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeState(state)));
 }
 
@@ -38,6 +59,10 @@ export function restoreStateFromJSON(content: string): AppState {
 }
 
 export function clearAllData(): void {
+  if (isTauriRuntime()) {
+    void invokeNative("clear_app_state");
+    return;
+  }
   localStorage.removeItem(STORAGE_KEY);
 }
 
@@ -82,6 +107,10 @@ export function exportJSON(state: AppState): string {
 }
 
 export function downloadFile(content: string, filename: string, type: string): void {
+  if (isTauriRuntime()) {
+    void invokeNative("export_file", { filename, content });
+    return;
+  }
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -117,6 +146,15 @@ function normalizeSettings(value: unknown): Settings {
     reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : "21:00",
     emailReminderEnabled:
       typeof value.emailReminderEnabled === "boolean" ? value.emailReminderEnabled : false,
+    preferredProvider:
+      typeof value.preferredProvider === "string"
+        ? (value.preferredProvider as Settings["preferredProvider"])
+        : "openrouter",
+    preferredModel: typeof value.preferredModel === "string" ? value.preferredModel : "",
+    localAiConsentByProvider: isRecord(value.localAiConsentByProvider)
+      ? value.localAiConsentByProvider
+      : {},
+    onDeviceModelRuntimeEnabled: false,
   };
 }
 
