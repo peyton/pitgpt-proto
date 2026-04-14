@@ -99,6 +99,16 @@ export function ProtocolReview() {
           <h3>Protocol not ready to lock</h3>
           <p>{user_message}</p>
           {block_reason && <p style={{ marginTop: 12 }}>{block_reason}</p>}
+          {ingestionResult.next_steps && ingestionResult.next_steps.length > 0 && (
+            <>
+              <h3 style={{ marginTop: 18 }}>Follow-up questions</h3>
+              <ul>
+                {ingestionResult.next_steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            </>
+          )}
           <p style={{ marginTop: 12 }}>
             Try narrowing the comparison to two everyday routines or products with a single 0-10 outcome.
           </p>

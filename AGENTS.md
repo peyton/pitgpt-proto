@@ -231,8 +231,8 @@ clinical care.
 - `PITGPT_LLM_MAX_TOKENS` — Defaults to `4096`
 - `PITGPT_LLM_REFERER` — Optional `HTTP-Referer` header for LLM calls
 - `PITGPT_LLM_TITLE` — Optional `X-Title` header for LLM calls
-- `PITGPT_MAX_DOCUMENT_CHARS` — Defaults to `12000`
-- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` — Defaults to `40000`
+- `PITGPT_MAX_DOCUMENT_CHARS` — Optional per-source character limit; unset by default
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` — Optional total source character limit; unset by default
 - `PITGPT_LLM_CACHE` — Opt-in deterministic local LLM response cache
 - `PITGPT_LLM_CACHE_DIR` — Optional cache directory; default `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`

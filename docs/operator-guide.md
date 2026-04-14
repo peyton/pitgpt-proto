@@ -152,9 +152,10 @@ discovered as local tools but may require an account or network access.
 Optional LLM settings:
 
 - `PITGPT_LLM_REFERER` and `PITGPT_LLM_TITLE` add provider metadata headers.
-- `PITGPT_MAX_DOCUMENT_CHARS` and `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` control
-  source-size guards. The CLI `ingest --no-limit` flag is for trusted local
-  runs only.
+- `PITGPT_MAX_DOCUMENT_CHARS` and `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` optionally
+  restore source-size guards. They are unset by default so full articles and
+  large source text can be provided. The CLI `ingest --no-limit` flag bypasses
+  configured limits.
 - `PITGPT_LLM_CACHE=1` enables deterministic local response caching for
   benchmark/development work. Normal API ingestion leaves caching off by
   default.

@@ -57,6 +57,7 @@ test.beforeEach(async ({ page }) => {
 test("query and source upload flow reaches results", async ({ page }) => {
   let ingestBody: Record<string, unknown> | null = null;
   let analyzeBody: Record<string, unknown> | null = null;
+  const sourceBody = `A small cosmetic study reports comfort outcomes. ${"x".repeat(13_000)}`;
 
   await page.route("**/api/ingest", async (route) => {
     ingestBody = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
@@ -80,14 +81,14 @@ test("query and source upload flow reaches results", async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles({
     name: "study.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("A small cosmetic study reports comfort outcomes."),
+    buffer: Buffer.from(sourceBody),
   });
   await expect(page.getByText("study.md")).toBeVisible();
 
   await page.getByLabel("Generate protocol").click();
   await expect(page.getByRole("heading", { name: "Generated Protocol" })).toBeVisible();
   expect(ingestBody?.query).toBe("Compare CeraVe and La Roche-Posay");
-  expect(ingestBody?.documents).toEqual(["A small cosmetic study reports comfort outcomes."]);
+  expect(ingestBody?.documents).toEqual([sourceBody]);
 
   await page.getByPlaceholder("CeraVe Moisturizing Cream").fill("CeraVe");
   await page.getByPlaceholder("La Roche-Posay Toleriane").fill("La Roche-Posay");
@@ -180,6 +181,10 @@ test("blocked and manual-review ingestion responses are gated", async ({ page })
     protocol: null,
     block_reason: "The active ingredient needs review.",
     user_message: "This source is not ready for a locked protocol.",
+    next_steps: [
+      "What exact two products should be compared?",
+      "What single daily 0-10 outcome should be tracked?",
+    ],
   });
 
   await page.getByRole("button", { name: "Try a Different Question" }).click();
@@ -187,6 +192,8 @@ test("blocked and manual-review ingestion responses are gated", async ({ page })
   await page.getByLabel("Generate protocol").click();
   await expect(page.getByRole("heading", { name: "Manual Review Needed" })).toBeVisible();
   await expect(page.getByText("Protocol not ready to lock")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Follow-up questions" })).toBeVisible();
+  await expect(page.getByText("What exact two products should be compared?")).toBeVisible();
 });
 
 test("yellow protocol requires acknowledgement before starting", async ({ page }) => {

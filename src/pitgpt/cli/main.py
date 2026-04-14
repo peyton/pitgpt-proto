@@ -149,7 +149,7 @@ def ingest_command(
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="Model identifier"),
     no_limit: bool = typer.Option(
-        False, "--no-limit", help="Skip source character limits for trusted local runs"
+        False, "--no-limit", help="Skip configured source character limits"
     ),
     format: str = FORMAT_OPTION,
 ):
@@ -323,7 +323,10 @@ def doctor_command(format: str = FORMAT_OPTION):
         {
             "name": "Document limits",
             "ok": True,
-            "detail": f"{settings.max_document_chars}/{settings.max_total_document_chars} chars",
+            "detail": _document_limit_detail(
+                settings.max_document_chars,
+                settings.max_total_document_chars,
+            ),
         },
     ]
     payload = {
@@ -337,6 +340,14 @@ def doctor_command(format: str = FORMAT_OPTION):
         marker = "[green]ok[/green]" if item["ok"] else "[yellow]missing[/yellow]"
         detail = f" — {item.get('detail', '')}" if item.get("detail") else ""
         console.print(f"{marker} {item['name']}{detail}")
+
+
+def _document_limit_detail(per_document: int | None, total: int | None) -> str:
+    if per_document is None and total is None:
+        return "unlimited"
+    per_doc_label = "unlimited" if per_document is None else f"{per_document} chars"
+    total_label = "unlimited" if total is None else f"{total} chars"
+    return f"{per_doc_label}/{total_label}"
 
 
 @demo_app.command("analyze")

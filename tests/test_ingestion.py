@@ -6,9 +6,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 import respx
-from pydantic import ValidationError
 
-from pitgpt.core.ingestion import MAX_DOCUMENT_CHARS, IngestionInputError, ingest
+from pitgpt.core.ingestion import IngestionInputError, ingest
 from pitgpt.core.llm import LLMClient, LLMError
 from pitgpt.core.models import EvidenceQuality, IngestionDecision, SafetyTier
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
@@ -245,7 +244,7 @@ class TestLLMErrors:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_generated_protocol_missing_required_fields_rejected(self, client):
+    async def test_generated_protocol_missing_required_fields_asks_follow_up(self, client):
         respx.post("https://test.api/chat/completions").mock(
             return_value=httpx.Response(
                 200,
@@ -264,13 +263,63 @@ class TestLLMErrors:
                 ),
             )
         )
-        with pytest.raises(ValidationError):
-            await ingest("test", [], client)
 
+        result = await ingest("test", [], client)
+
+        assert result.decision == IngestionDecision.MANUAL_REVIEW_BEFORE_PROTOCOL
+        assert result.protocol is None
+        assert result.response_validation_status == "provider_protocol_invalid"
+        assert result.next_steps
+        assert "two routines" in result.next_steps[0]
+
+    @respx.mock
     @pytest.mark.asyncio
-    async def test_large_document_rejected_before_llm_call(self, client):
-        with pytest.raises(IngestionInputError, match="too large"):
-            await ingest("test", ["x" * (MAX_DOCUMENT_CHARS + 1)], client)
+    async def test_generated_protocol_missing_protocol_asks_follow_up(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "novel",
+                        "protocol": None,
+                        "user_message": "Ready.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("test", [], client)
+
+        assert result.decision == IngestionDecision.MANUAL_REVIEW_BEFORE_PROTOCOL
+        assert result.protocol is None
+        assert result.block_reason == "The model did not return a complete protocol."
+        assert result.response_validation_status == "provider_protocol_missing"
+        assert result.next_steps
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_large_document_allowed_by_default(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("test", ["x" * 120_001], client)
+
+        assert result.decision == IngestionDecision.BLOCK
 
     @patch.dict(
         "os.environ",
@@ -338,6 +387,62 @@ class TestLLMErrors:
         request = json.loads(route.calls[0].request.content)
         assert request["messages"][1]["content"] == "User query: test"
         assert result.source_summaries == ["useful"]
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_url_source_is_fetched_before_provider_prompt(self, client):
+        respx.get("https://example.com/article").mock(
+            return_value=httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text="<html><body><h1>Trial evidence</h1><script>bad()</script><p>Comfort improved.</p></body></html>",
+            )
+        )
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        await ingest("test", ["https://example.com/article"], client)
+
+        request = json.loads(route.calls[0].request.content)
+        user_prompt = request["messages"][1]["content"]
+        assert "Source URL: https://example.com/article" in user_prompt
+        assert "Trial evidence" in user_prompt
+        assert "Comfort improved." in user_prompt
+        assert "bad()" not in user_prompt
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_document_limit_applies_to_fetched_url_content(self, client):
+        route = respx.get("https://example.com/article").mock(
+            return_value=httpx.Response(
+                200,
+                headers={"content-type": "text/html"},
+                text=f"<html><body><p>{'x' * 80}</p></body></html>",
+            )
+        )
+
+        with pytest.raises(IngestionInputError, match="Document 1 is too large"):
+            await ingest(
+                "test",
+                ["https://example.com/article"],
+                client,
+                max_document_chars=60,
+            )
+
+        assert route.called
 
     @respx.mock
     @pytest.mark.asyncio

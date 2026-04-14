@@ -19,6 +19,13 @@ def test_settings_reject_non_positive_numeric_limits() -> None:
         load_settings({"PITGPT_MAX_DOCUMENT_CHARS": "0"})
 
 
+def test_source_limits_are_unset_by_default() -> None:
+    settings = load_settings({})
+
+    assert settings.max_document_chars is None
+    assert settings.max_total_document_chars is None
+
+
 def test_settings_reject_non_positive_timeouts() -> None:
     with pytest.raises(ValueError, match="PITGPT_LLM_TIMEOUT_S must be greater than 0"):
         load_settings({"PITGPT_LLM_TIMEOUT_S": "-1"})

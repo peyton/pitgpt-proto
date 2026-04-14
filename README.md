@@ -124,8 +124,8 @@ Optional configuration:
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
 - `PITGPT_LLM_REFERER`: optional `HTTP-Referer` header for LLM calls
 - `PITGPT_LLM_TITLE`: optional `X-Title` header for LLM calls
-- `PITGPT_MAX_DOCUMENT_CHARS`: defaults to `12000`
-- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS`: defaults to `40000`
+- `PITGPT_MAX_DOCUMENT_CHARS`: optional per-source character limit; unset by default
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS`: optional total source character limit; unset by default
 - `PITGPT_LLM_CACHE`: set to `1`/`true` for deterministic local LLM caching
 - `PITGPT_LLM_CACHE_DIR`: optional cache directory, defaulting to `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`

@@ -10,8 +10,6 @@ DEFAULT_LLM_TEMPERATURE = 0.0
 DEFAULT_LLM_MAX_TOKENS = 4096
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
-DEFAULT_MAX_DOCUMENT_CHARS = 12_000
-DEFAULT_MAX_TOTAL_DOCUMENT_CHARS = 40_000
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
@@ -29,8 +27,8 @@ class Settings:
     llm_title: str = ""
     llm_cache_enabled: bool = False
     llm_cache_dir: str = ""
-    max_document_chars: int = DEFAULT_MAX_DOCUMENT_CHARS
-    max_total_document_chars: int = DEFAULT_MAX_TOTAL_DOCUMENT_CHARS
+    max_document_chars: int | None = None
+    max_total_document_chars: int | None = None
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
     ollama_default_model: str = DEFAULT_OLLAMA_MODEL
 
@@ -53,11 +51,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_title=source.get("PITGPT_LLM_TITLE", ""),
         llm_cache_enabled=_bool_from_env(source, "PITGPT_LLM_CACHE", False),
         llm_cache_dir=source.get("PITGPT_LLM_CACHE_DIR", ""),
-        max_document_chars=_positive_int_from_env(
-            source, "PITGPT_MAX_DOCUMENT_CHARS", DEFAULT_MAX_DOCUMENT_CHARS
-        ),
-        max_total_document_chars=_positive_int_from_env(
-            source, "PITGPT_MAX_TOTAL_DOCUMENT_CHARS", DEFAULT_MAX_TOTAL_DOCUMENT_CHARS
+        max_document_chars=_optional_positive_int_from_env(source, "PITGPT_MAX_DOCUMENT_CHARS"),
+        max_total_document_chars=_optional_positive_int_from_env(
+            source, "PITGPT_MAX_TOTAL_DOCUMENT_CHARS"
         ),
         ollama_base_url=source.get("PITGPT_OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
         ollama_default_model=source.get("PITGPT_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
@@ -87,6 +83,16 @@ def _positive_float_from_env(source: Mapping[str, str], key: str, default: float
 
 def _positive_int_from_env(source: Mapping[str, str], key: str, default: int) -> int:
     parsed = _int_from_env(source, key, default)
+    if parsed <= 0:
+        raise ValueError(f"{key} must be greater than 0.")
+    return parsed
+
+
+def _optional_positive_int_from_env(source: Mapping[str, str], key: str) -> int | None:
+    value = source.get(key)
+    if value is None or value == "":
+        return None
+    parsed = int(value)
     if parsed <= 0:
         raise ValueError(f"{key} must be greater than 0.")
     return parsed

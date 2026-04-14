@@ -188,6 +188,15 @@ describe("api", () => {
     expect(cancelArgs?.requestId).toBe(ingestArgs?.requestId);
   });
 
+  it("preserves native string rejection messages", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    invokeMock.mockRejectedValue("The model did not return a complete protocol.");
+
+    await expect(ingest("Compare moisturizers", [], undefined, "ollama")).rejects.toThrow(
+      "The model did not return a complete protocol.",
+    );
+  });
+
   it("uses native validation instead of the old success stub in Tauri", async () => {
     vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
     invokeMock.mockResolvedValue({

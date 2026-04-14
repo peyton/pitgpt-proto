@@ -19,5 +19,15 @@ export function isTauriRuntime(): boolean {
 
 export async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<T>(command, args);
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw normalizeNativeError(error);
+  }
+}
+
+function normalizeNativeError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  if (typeof error === "string" && error.trim()) return new Error(error);
+  return new Error("Native command failed.");
 }

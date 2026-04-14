@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "reac
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyzeExample, ingest } from "../lib/api";
-import { isTauriRuntime } from "../lib/runtime";
+import { getRuntimeMode, isTauriRuntime } from "../lib/runtime";
+import { readSourceFile } from "../lib/sourceFiles";
 import {
   createExampleCompletedTrial,
   templateToIngestionResult,
@@ -16,9 +17,6 @@ interface SourceDocument {
   name: string;
   content: string;
 }
-
-const MAX_SOURCE_CHARS = 12_000;
-const MAX_TOTAL_SOURCE_CHARS = 40_000;
 
 const quickPrompts = [
   '"CeraVe vs La Roche-Posay for dry skin"',
@@ -55,17 +53,8 @@ export function Home() {
   const addSource = useCallback((name: string, content: string) => {
     const trimmed = content.trim();
     if (!trimmed) return;
-    if (trimmed.length > MAX_SOURCE_CHARS) {
-      setError("That source is too large. Keep each source under 12,000 characters.");
-      return;
-    }
     if (sources.some((source) => source.content === trimmed)) {
       setError("That source is already attached.");
-      return;
-    }
-    const totalChars = sources.reduce((total, source) => total + source.content.length, 0);
-    if (totalChars + trimmed.length > MAX_TOTAL_SOURCE_CHARS) {
-      setError("Attached sources are too large in total. Keep all sources under 40,000 characters.");
       return;
     }
     setSourceOpen(true);
@@ -105,7 +94,13 @@ export function Home() {
         if (isAbortError(e) || controller.signal.aborted || activeIngestRef.current?.id !== requestId) {
           return;
         }
-        const message = e instanceof Error ? e.message : "Could not generate a protocol.";
+        const message = errorMessage(e);
+        console.warn("Protocol generation failed", {
+          message,
+          runtime: getRuntimeMode(),
+          provider: getProviderForRuntime(state.settings.preferredProvider),
+          sourceCount: sources.length,
+        });
         setError(
           message.includes("OPENROUTER_API_KEY")
             ? "Protocol generation needs an API key. You can still run the example or start from a local template."
@@ -135,19 +130,22 @@ export function Home() {
     (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        addSource(file.name, String(reader.result ?? ""));
-        event.target.value = "";
-      };
-      reader.onerror = () => setError("Could not read that source file.");
-      reader.readAsText(file);
+      const input = event.target;
+      void (async () => {
+        try {
+          addSource(file.name, await readSourceFile(file));
+        } catch (uploadError) {
+          setError(errorMessage(uploadError));
+        } finally {
+          input.value = "";
+        }
+      })();
     },
     [addSource],
   );
 
   const handleAddPastedSource = useCallback(() => {
-    addSource("Pasted source", sourceText);
+    addSource(sourceName(sourceText), sourceText);
     setSourceText("");
   }, [addSource, sourceText]);
 
@@ -256,7 +254,7 @@ export function Home() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.md,.csv,.json"
+              accept=".txt,.md,.csv,.json,.pdf,application/pdf"
               style={{ display: "none" }}
               onChange={handleFileUpload}
             />
@@ -297,12 +295,12 @@ export function Home() {
       <details className="source-panel fade-up fade-up-4" open={sourceOpen} onToggle={(event) => setSourceOpen(event.currentTarget.open)}>
         <summary className="source-panel-summary">
           <span>Add research source</span>
-          <small>Optional text, markdown, CSV, or JSON</small>
+          <small>Text, markdown, CSV, JSON, PDF, or article URL</small>
         </summary>
         <div className="source-panel-header">
           <div>
             <h2>Source Material</h2>
-            <p>Paste abstracts, notes, claims, or product details. Sources stay separate from your question.</p>
+            <p>Paste article URLs, abstracts, notes, claims, or product details. Sources stay separate from your question.</p>
           </div>
           <button
             className="btn btn-s btn-sm"
@@ -314,7 +312,7 @@ export function Home() {
         </div>
         <textarea
           className="source-textarea"
-          placeholder="Paste source text here..."
+          placeholder="Paste source text or an article URL here..."
           value={sourceText}
           onChange={(e) => setSourceText(e.target.value)}
           disabled={loading}
@@ -398,6 +396,26 @@ function enrichIngestionResult(result: IngestionResult, sources: SourceDocument[
   };
 }
 
+function sourceName(content: string): string {
+  const trimmed = content.trim();
+  if (!isLikelyUrl(trimmed)) return "Pasted source";
+  try {
+    return new URL(trimmed).hostname;
+  } catch {
+    return "Source link";
+  }
+}
+
+function isLikelyUrl(content: string): boolean {
+  return /^https?:\/\/\S+$/i.test(content);
+}
+
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "Could not generate a protocol.";
 }
