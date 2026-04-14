@@ -26,7 +26,7 @@ const evidenceClass: Record<string, string> = {
 };
 
 export function ProtocolReview() {
-  const { ingestionResult, setTrial } = useApp();
+  const { ingestionResult, protocolExperimentId, setTrial, linkExperimentTrial } = useApp();
   const navigate = useNavigate();
   const [condA, setCondA] = useState("");
   const [condB, setCondB] = useState("");
@@ -141,6 +141,9 @@ export function ProtocolReview() {
     const labelB = condB.trim() || protocol.condition_b_label?.trim() || "Condition B";
     const trial = createTrial(ingestionResult, labelA, labelB);
     setTrial(trial);
+    if (protocolExperimentId) {
+      linkExperimentTrial(protocolExperimentId, trial.id);
+    }
     navigate("/trial");
   };
 

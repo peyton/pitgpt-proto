@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
-import { analyzeExample, ingest } from "../lib/api";
-import { getRuntimeMode, isTauriRuntime } from "../lib/runtime";
+import { analyzeExample } from "../lib/api";
 import { readSourceFile } from "../lib/sourceFiles";
 import {
   createExampleCompletedTrial,
@@ -10,7 +9,6 @@ import {
   trialTemplates,
   type TrialTemplate,
 } from "../lib/templates";
-import type { AiProviderKind, IngestionResult } from "../lib/types";
 
 interface SourceDocument {
   id: string;
@@ -33,22 +31,12 @@ export function Home() {
   const [sourceText, setSourceText] = useState("");
   const [sources, setSources] = useState<SourceDocument[]>([]);
   const [sourceOpen, setSourceOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [loadingExample, setLoadingExample] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const activeIngestRef = useRef<{ id: number; controller: AbortController } | null>(null);
-  const requestIdRef = useRef(0);
   const navigate = useNavigate();
-  const { completeTrial, setIngestionResult, state } = useApp();
-
-  useEffect(() => {
-    return () => {
-      activeIngestRef.current?.controller.abort();
-      activeIngestRef.current = null;
-    };
-  }, []);
+  const { completeTrial, createExperiment } = useApp();
 
   const addSource = useCallback((name: string, content: string) => {
     const trimmed = content.trim();
@@ -72,59 +60,16 @@ export function Home() {
         setError("Add a question to frame the experiment.");
         return;
       }
-      if (activeIngestRef.current) return;
-      const controller = new AbortController();
-      const requestId = requestIdRef.current + 1;
-      requestIdRef.current = requestId;
-      activeIngestRef.current = { id: requestId, controller };
-      setLoading(true);
       setError(null);
-      try {
-        const result = await ingest(
-          trimmed,
-          sources.map((source) => source.content),
-          state.settings.preferredModel || undefined,
-          getProviderForRuntime(state.settings.preferredProvider),
-          { signal: controller.signal },
-        );
-        if (controller.signal.aborted || activeIngestRef.current?.id !== requestId) return;
-        setIngestionResult(enrichIngestionResult(result, sources));
-        navigate("/protocol");
-      } catch (e) {
-        if (isAbortError(e) || controller.signal.aborted || activeIngestRef.current?.id !== requestId) {
-          return;
-        }
-        const message = errorMessage(e);
-        console.warn("Protocol generation failed", {
-          message,
-          runtime: getRuntimeMode(),
-          provider: getProviderForRuntime(state.settings.preferredProvider),
-          sourceCount: sources.length,
-        });
-        setError(
-          message.includes("OPENROUTER_API_KEY")
-            ? "Protocol generation needs an API key. You can still run the example or start from a local template."
-            : message,
-        );
-      } finally {
-        if (activeIngestRef.current?.id === requestId) {
-          activeIngestRef.current = null;
-          setLoading(false);
-        }
-      }
+      const experiment = createExperiment({
+        query: trimmed,
+        documents: sources.map((source) => source.content),
+        sourceNames: sources.map((source) => source.name),
+      });
+      navigate(`/experiments/${experiment.id}`);
     },
-    [navigate, setIngestionResult, sources, state.settings.preferredModel, state.settings.preferredProvider],
+    [createExperiment, navigate, sources],
   );
-
-  const handleStopGeneration = useCallback(() => {
-    const active = activeIngestRef.current;
-    if (!active) return;
-    active.controller.abort();
-    activeIngestRef.current = null;
-    setError(null);
-    setLoading(false);
-    textareaRef.current?.focus();
-  }, []);
 
   const handleFileUpload = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -152,10 +97,14 @@ export function Home() {
   const handleTemplateStart = useCallback(
     (template: TrialTemplate) => {
       setError(null);
-      setIngestionResult(templateToIngestionResult(template));
-      navigate("/protocol");
+      const experiment = createExperiment({
+        query: `Start ${template.name}`,
+        ingestionResult: templateToIngestionResult(template),
+        status: "ready_to_lock",
+      });
+      navigate(`/experiments/${experiment.id}`);
     },
-    [navigate, setIngestionResult],
+    [createExperiment, navigate],
   );
 
   const handleRunExample = useCallback(async () => {
@@ -176,24 +125,6 @@ export function Home() {
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
   };
-
-  if (state.trial?.status === "active") {
-    return (
-      <div className="home-center">
-        <div className="fade-up" style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: 0, marginBottom: 12 }}>
-            Trial in Progress
-          </h1>
-          <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 460, margin: "0 auto 32px" }}>
-            Active trial: <strong>{state.trial.conditionALabel} vs. {state.trial.conditionBLabel}</strong>
-          </p>
-          <button className="btn btn-p" onClick={() => navigate("/trial")}>
-            Go to Active Trial
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="home-center">
@@ -247,7 +178,6 @@ export function Home() {
                 handleSubmit(query);
               }
             }}
-            disabled={loading}
             aria-label="Experiment question"
           />
           <div className="chat-actions">
@@ -262,7 +192,6 @@ export function Home() {
               className="chat-action-btn"
               aria-label="Upload source file"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
             >
               <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                 <path d="M10 2v12M6 6l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -270,20 +199,14 @@ export function Home() {
               </svg>
             </button>
             <button
-              className={`chat-send${loading ? " chat-stop" : ""}`}
-              aria-label={loading ? "Stop generation" : "Generate protocol"}
-              onClick={loading ? handleStopGeneration : () => handleSubmit(query)}
+              className="chat-send"
+              aria-label="Generate protocol"
+              onClick={() => handleSubmit(query)}
               type="button"
             >
-              {loading ? (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           </div>
         </div>
@@ -305,7 +228,7 @@ export function Home() {
           <button
             className="btn btn-s btn-sm"
             onClick={handleAddPastedSource}
-            disabled={!sourceText.trim() || loading}
+            disabled={!sourceText.trim()}
           >
             Add Source
           </button>
@@ -315,7 +238,6 @@ export function Home() {
           placeholder="Paste source text or an article URL here..."
           value={sourceText}
           onChange={(e) => setSourceText(e.target.value)}
-          disabled={loading}
           aria-label="Source material"
         />
         {sources.length > 0 && (
@@ -328,7 +250,6 @@ export function Home() {
                   type="button"
                   aria-label={`Remove ${source.name}`}
                   onClick={() => setSources((current) => current.filter((item) => item.id !== source.id))}
-                  disabled={loading}
                 >
                   x
                 </button>
@@ -375,27 +296,6 @@ export function Home() {
   );
 }
 
-function getProviderForRuntime(provider: AiProviderKind): AiProviderKind {
-  if (isTauriRuntime() && provider === "openrouter") return "ollama";
-  return provider;
-}
-
-function enrichIngestionResult(result: IngestionResult, sources: SourceDocument[]): IngestionResult {
-  if (sources.length === 0 || (result.sources?.length ?? 0) > 0) return result;
-  return {
-    ...result,
-    sources: sources.map((source, index) => ({
-      source_id: `source-${index + 1}`,
-      source_type: "text",
-      title: source.name,
-      locator: source.name,
-      evidence_quality: result.evidence_quality,
-      summary: result.source_summaries?.[index] ?? "User-provided source.",
-      rationale: "Attached by the user before protocol generation.",
-    })),
-  };
-}
-
 function sourceName(content: string): string {
   const trimmed = content.trim();
   if (!isLikelyUrl(trimmed)) return "Pasted source";
@@ -408,10 +308,6 @@ function sourceName(content: string): string {
 
 function isLikelyUrl(content: string): boolean {
   return /^https?:\/\/\S+$/i.test(content);
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function errorMessage(error: unknown): string {

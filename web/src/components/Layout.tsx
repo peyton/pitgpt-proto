@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { useApp } from "../lib/AppContext";
 import { LogoMark } from "./Logo";
 
 const navItems = [
@@ -45,6 +46,16 @@ const navItems = [
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { state, markExperimentRead } = useApp();
+  const conversations = useMemo(
+    () =>
+      [...state.experiments].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+    [state.experiments],
+  );
+  const primaryNav = navItems.slice(0, 1);
+  const workflowNav = navItems.slice(1);
 
   return (
     <>
@@ -76,7 +87,7 @@ export function Layout() {
             </div>
           </div>
           <nav className="sidebar-nav">
-            {navItems.map((item) => (
+            {primaryNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -88,7 +99,39 @@ export function Layout() {
                 {item.label}
               </NavLink>
             ))}
+            {conversations.length > 0 && (
+              <div className="conversation-nav" aria-label="Experiment conversations">
+                <div className="conversation-nav-label">Experiments</div>
+                {conversations.map((experiment) => (
+                  <NavLink
+                    key={experiment.id}
+                    to={`/experiments/${experiment.id}`}
+                    className={({ isActive }) => `conversation-item${isActive ? " active" : ""}`}
+                    onClick={() => {
+                      markExperimentRead(experiment.id);
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <span className={`conversation-status-dot status-${experiment.status}`} />
+                    <span className="conversation-title">{experiment.title}</span>
+                    {experiment.unread && <span className="conversation-unread-dot" aria-label="Unread updates" />}
+                  </NavLink>
+                ))}
+              </div>
+            )}
             <div className="nav-divider" />
+            {workflowNav.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/"}
+                className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+                onClick={() => setSidebarOpen(false)}
+              >
+                {item.icon}
+                {item.label}
+              </NavLink>
+            ))}
             <NavLink
               to="/settings"
               className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}

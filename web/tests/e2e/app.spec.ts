@@ -59,12 +59,15 @@ test("query and source upload flow reaches results", async ({ page }) => {
   let analyzeBody: Record<string, unknown> | null = null;
   const sourceBody = `A small cosmetic study reports comfort outcomes. ${"x".repeat(13_000)}`;
 
-  await page.route("**/api/ingest", async (route) => {
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
     ingestBody = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
     await route.fulfill({
       status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(generatedIngestion),
+      contentType: "application/x-ndjson",
+      body: streamEvents([
+        { type: "trace", message: "Checking safety boundaries and trial fit." },
+        { type: "result", message: "Experiment setup complete.", result: generatedIngestion },
+      ]),
     });
   });
   await page.route("**/api/analyze", async (route) => {
@@ -86,6 +89,9 @@ test("query and source upload flow reaches results", async ({ page }) => {
   await expect(page.getByText("study.md")).toBeVisible();
 
   await page.getByLabel("Generate protocol").click();
+  await expect(page.getByRole("heading", { name: "Compare CeraVe and La Roche-Posay" })).toBeVisible();
+  await expect(page.getByText("Checking safety boundaries and trial fit.")).toBeVisible();
+  await page.getByRole("button", { name: "Review Protocol" }).click();
   await expect(page.getByRole("heading", { name: "Generated Protocol" })).toBeVisible();
   expect(ingestBody?.query).toBe("Compare CeraVe and La Roche-Posay");
   expect(ingestBody?.documents).toEqual([sourceBody]);
@@ -112,7 +118,7 @@ test("generation can be stopped before ingest completes", async ({ page }) => {
   let releaseIngest: (() => void) | null = null;
   let ingestRequests = 0;
 
-  await page.route("**/api/ingest", async (route) => {
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
     ingestRequests += 1;
     await new Promise<void>((resolve) => {
       releaseIngest = resolve;
@@ -129,22 +135,53 @@ test("generation can be stopped before ingest completes", async ({ page }) => {
   await page.getByLabel("Generate protocol").click();
 
   await expect(page.getByLabel("Stop generation")).toBeVisible();
-  await expect(page.getByLabel("Experiment question")).toBeDisabled();
+  await expect(page.getByLabel("Reply to experiment setup")).toBeDisabled();
 
   await page.getByLabel("Stop generation").click();
 
-  await expect(page.getByLabel("Generate protocol")).toBeVisible();
-  await expect(page.getByLabel("Experiment question")).toBeEnabled();
+  await expect(page.getByText("Setup stopped. Send another message when you want to continue.")).toBeVisible();
+  await expect(page.getByLabel("Reply to experiment setup")).toBeEnabled();
   expect(ingestRequests).toBe(1);
 
   releaseIngest?.();
-  await expect(page.getByRole("heading", { name: "What do you want to test?" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Generated Protocol" })).toHaveCount(0);
+});
+
+test("sidebar marks unread experiment updates until opened", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === "mobile", "desktop sidebar state is covered here");
+  let releaseIngest: (() => void) | null = null;
+
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseIngest = resolve;
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: streamEvents([
+        { type: "trace", message: "Protocol draft is ready for review." },
+        { type: "result", message: "Experiment setup complete.", result: generatedIngestion },
+      ]),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Experiment question").fill("Compare morning routines");
+  await page.getByLabel("Generate protocol").click();
+  await expect(page.getByRole("heading", { name: "Compare morning routines" })).toBeVisible();
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  releaseIngest?.();
+
+  await expect(page.locator(".conversation-unread-dot")).toBeVisible();
+  await page.getByRole("link", { name: /Compare morning routines/ }).click();
+  await expect(page.locator(".conversation-unread-dot")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review Protocol" })).toBeVisible();
 });
 
 test("local template starts without calling ingest", async ({ page }) => {
   let ingestCalled = false;
-  await page.route("**/api/ingest", async (route) => {
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
     ingestCalled = true;
     await route.abort();
   });
@@ -152,8 +189,10 @@ test("local template starts without calling ingest", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Sleep Routine/ }).click();
 
-  await expect(page.getByRole("heading", { name: "Generated Protocol" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Start Sleep Routine" })).toBeVisible();
   await expect(page.getByText("Sleep Routine").first()).toBeVisible();
+  await page.getByRole("button", { name: "Review Protocol" }).click();
+  await expect(page.getByRole("heading", { name: "Generated Protocol" })).toBeVisible();
   expect(ingestCalled).toBe(false);
 });
 
@@ -171,7 +210,7 @@ test("blocked and manual-review ingestion responses are gated", async ({ page })
   await page.goto("/");
   await page.getByLabel("Experiment question").fill("Compare prescription timing");
   await page.getByLabel("Generate protocol").click();
-  await expect(page.getByRole("heading", { name: "Experiment Blocked" })).toBeVisible();
+  await expect(page.getByText("Choose an everyday routine or product comparison.")).toBeVisible();
 
   await mockIngest(page, {
     decision: "manual_review_before_protocol",
@@ -187,11 +226,9 @@ test("blocked and manual-review ingestion responses are gated", async ({ page })
     ],
   });
 
-  await page.getByRole("button", { name: "Try a Different Question" }).click();
+  await page.goto("/");
   await page.getByLabel("Experiment question").fill("Compare unclear cosmetic active");
   await page.getByLabel("Generate protocol").click();
-  await expect(page.getByRole("heading", { name: "Manual Review Needed" })).toBeVisible();
-  await expect(page.getByText("Protocol not ready to lock")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Follow-up questions" })).toBeVisible();
   await expect(page.getByText("What exact two products should be compared?")).toBeVisible();
 });
@@ -214,6 +251,7 @@ test("yellow protocol requires acknowledgement before starting", async ({ page }
   await page.goto("/");
   await page.getByLabel("Experiment question").fill("Compare two cosmetic actives");
   await page.getByLabel("Generate protocol").click();
+  await page.getByRole("button", { name: "Review Protocol" }).click();
 
   const start = page.getByRole("button", { name: "Lock Protocol & Start" });
   await expect(start).toBeDisabled();
@@ -226,6 +264,7 @@ test("yellow protocol requires acknowledgement before starting", async ({ page }
 test("backfill accepts only the last two days and records metadata", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: /Custom A\/B/ }).click();
+  await page.getByRole("button", { name: "Review Protocol" }).click();
   await page.getByRole("button", { name: "Lock Protocol & Start" }).click();
   await page.evaluate((createdAt) => {
     const raw = window.localStorage.getItem("pitgpt_state");
@@ -359,7 +398,7 @@ test("mocked tauri runtime cancels native ingestion", async ({ page }) => {
   await expect(page.getByLabel("Stop generation")).toBeVisible();
   await page.getByLabel("Stop generation").click();
 
-  await expect(page.getByLabel("Generate protocol")).toBeVisible();
+  await expect(page.getByText("Setup stopped. Send another message when you want to continue.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Generated Protocol" })).toHaveCount(0);
 
   const nativeState = await page.evaluate(() => {
@@ -386,12 +425,15 @@ test("mobile sidebar opens navigation", async ({ page }, testInfo) => {
 });
 
 async function mockIngest(page: Page, body: unknown): Promise<void> {
-  await page.unroute("**/api/ingest").catch(() => undefined);
-  await page.route("**/api/ingest", async (route) => {
+  await page.unroute("**/api/experiments/ingest-stream").catch(() => undefined);
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(body),
+      contentType: "application/x-ndjson",
+      body: streamEvents([
+        { type: "trace", message: "Checking safety boundaries and trial fit." },
+        { type: "result", message: "Experiment setup complete.", result: body },
+      ]),
     });
   });
 }
@@ -488,4 +530,8 @@ function dateOffset(offsetDays: number): string {
   date.setDate(date.getDate() + offsetDays);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 10);
+}
+
+function streamEvents(events: unknown[]): string {
+  return `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
 }

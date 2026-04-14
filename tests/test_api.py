@@ -1,5 +1,6 @@
 """Test the FastAPI endpoints."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -209,6 +210,50 @@ class TestIngestEndpoint:
         resp = api_client.post("/ingest", json={"query": "Test CeraVe vs Cetaphil"})
         assert resp.status_code == 200
         assert resp.json()["decision"] == "generate_protocol"
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest")
+    def test_ingest_stream_emits_trace_and_result(self, mock_ingest, api_client):
+        mock_ingest.return_value = IngestionResult(
+            decision=IngestionDecision.MANUAL_REVIEW_BEFORE_PROTOCOL,
+            safety_tier=SafetyTier.YELLOW,
+            evidence_quality=EvidenceQuality.NOVEL,
+            protocol=None,
+            block_reason="Needs a clearer comparator.",
+            user_message="Answer the follow-up questions.",
+            next_steps=["What exact two routines should be compared?"],
+        )
+
+        with api_client.stream(
+            "POST",
+            "/experiments/ingest-stream",
+            json={"query": "Test unclear routine", "documents": ["note"]},
+        ) as resp:
+            assert resp.status_code == 200
+            events = [json.loads(line) for line in resp.iter_lines() if line]
+
+        assert events[0]["type"] == "trace"
+        assert any("Reviewing 1 attached source" in event["message"] for event in events)
+        assert events[-1]["type"] == "result"
+        assert events[-1]["result"]["decision"] == "manual_review_before_protocol"
+        assert events[-1]["result"]["next_steps"] == ["What exact two routines should be compared?"]
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest", side_effect=LLMError("provider unavailable"))
+    def test_ingest_stream_emits_provider_error_event(self, mock_ingest, api_client):
+        with api_client.stream(
+            "POST",
+            "/experiments/ingest-stream",
+            json={"query": "Test"},
+        ) as resp:
+            assert resp.status_code == 200
+            events = [json.loads(line) for line in resp.iter_lines() if line]
+
+        assert events[-1] == {
+            "type": "error",
+            "message": "provider unavailable",
+            "result": None,
+        }
 
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
     @patch("pitgpt.api.main.ingest")

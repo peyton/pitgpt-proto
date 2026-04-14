@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ingest, setApiToken, validateTrial } from "./api";
+import { ingest, ingestExperimentStream, setApiToken, validateTrial } from "./api";
 import type { IngestionResult } from "./types";
 
 const invokeMock = vi.hoisted(() => vi.fn());
@@ -116,6 +116,65 @@ describe("api", () => {
         headers: expect.objectContaining({ Authorization: "Bearer secret" }),
         signal: controller.signal,
       }),
+    );
+  });
+
+  it("parses streamed experiment setup events", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      const body = [
+        JSON.stringify({ type: "trace", message: "Checking safety boundaries." }),
+        JSON.stringify({ type: "result", message: "Done.", result: ingestionResult }),
+      ].join("\n");
+      return new Response(`${body}\n`, {
+        status: 200,
+        headers: { "Content-Type": "application/x-ndjson" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const events: unknown[] = [];
+
+    const result = await ingestExperimentStream(
+      "Compare moisturizers",
+      ["source"],
+      "test-model",
+      "openrouter",
+      (event) => events.push(event),
+    );
+
+    expect(result).toEqual(ingestionResult);
+    expect(events).toEqual([
+      { type: "trace", message: "Checking safety boundaries.", result: null },
+      { type: "result", message: "Done.", result: ingestionResult },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/experiments/ingest-stream",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("emits native setup trace events before returning native ingestion", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    invokeMock.mockResolvedValue(ingestionResult);
+    const events: unknown[] = [];
+
+    const result = await ingestExperimentStream(
+      "Compare moisturizers",
+      [],
+      undefined,
+      "ollama",
+      (event) => events.push(event),
+    );
+
+    expect(result).toEqual(ingestionResult);
+    expect(events).toContainEqual({ type: "trace", message: "Reading your experiment question." });
+    expect(events.at(-1)).toEqual({
+      type: "result",
+      message: "Experiment setup complete.",
+      result: ingestionResult,
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "ingest_local",
+      expect.objectContaining({ provider: "ollama" }),
     );
   });
 

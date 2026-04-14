@@ -1,10 +1,20 @@
 import { generateSchedule } from "./randomize";
 import { isTauriRuntime, invokeNative } from "./runtime";
 import { stableHash } from "./trial";
-import type { AppState, Observation, Settings, Trial } from "./types";
+import { statusFromIngestionResult, titleFromQuery } from "./experiments";
+import type {
+  AppState,
+  ExperimentConversation,
+  ExperimentMessage,
+  ExperimentStatus,
+  IngestionResult,
+  Observation,
+  Settings,
+  Trial,
+} from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 4;
 const PROVIDER_KINDS = new Set<Settings["preferredProvider"]>([
   "openrouter",
   "ollama",
@@ -30,6 +40,8 @@ export function defaultState(): AppState {
   return {
     version: STORAGE_VERSION,
     trial: null,
+    experiments: [],
+    currentExperimentId: null,
     completedResults: [],
     settings: { ...defaultSettings },
   };
@@ -173,9 +185,21 @@ function csvCell(value: string | number): string {
 
 function normalizeState(value: unknown): AppState {
   if (!isRecord(value)) return defaultState();
+  const experiments = Array.isArray(value.experiments)
+    ? value.experiments
+        .map(normalizeExperiment)
+        .filter((item): item is ExperimentConversation => Boolean(item))
+    : [];
+  const currentExperimentId =
+    typeof value.currentExperimentId === "string" &&
+    experiments.some((experiment) => experiment.id === value.currentExperimentId)
+      ? value.currentExperimentId
+      : null;
   return {
     version: STORAGE_VERSION,
     trial: normalizeTrial(value.trial),
+    experiments,
+    currentExperimentId,
     completedResults: Array.isArray(value.completedResults)
       ? value.completedResults
           .map((item) =>
@@ -266,6 +290,75 @@ function normalizeTrial(value: unknown): Trial | null {
   return trial;
 }
 
+function normalizeExperiment(value: unknown): ExperimentConversation | null {
+  if (!isRecord(value)) return null;
+  const query = nonEmptyString(value.query, "");
+  const title = nonEmptyString(value.title, titleFromQuery(query));
+  const createdAt = nonEmptyString(value.createdAt, new Date().toISOString());
+  const updatedAt = nonEmptyString(value.updatedAt, createdAt);
+  const ingestionResult = isRecord(value.ingestionResult)
+    ? (value.ingestionResult as unknown as IngestionResult)
+    : null;
+  const status = normalizeExperimentStatus(value.status, ingestionResult);
+  const messages = Array.isArray(value.messages)
+    ? value.messages
+        .map(normalizeExperimentMessage)
+        .filter((item): item is ExperimentMessage => Boolean(item))
+    : [];
+
+  return {
+    id: nonEmptyString(value.id, `exp-${createdAt}`),
+    title,
+    createdAt,
+    updatedAt,
+    status,
+    unread: typeof value.unread === "boolean" ? value.unread : false,
+    query,
+    documents: stringList(value.documents),
+    sourceNames: stringList(value.sourceNames),
+    ingestionResult,
+    trialId: typeof value.trialId === "string" ? value.trialId : undefined,
+    messages,
+  };
+}
+
+function normalizeExperimentMessage(value: unknown): ExperimentMessage | null {
+  if (!isRecord(value)) return null;
+  const role = value.role;
+  if (role !== "user" && role !== "assistant" && role !== "trace") return null;
+  const status = value.status;
+  return {
+    id: nonEmptyString(value.id, `msg-${Date.now()}-${Math.random()}`),
+    role,
+    content: nonEmptyString(value.content, ""),
+    createdAt: nonEmptyString(value.createdAt, new Date().toISOString()),
+    status: status === "streaming" || status === "error" || status === "done" ? status : "done",
+    questions: stringList(value.questions),
+    ingestionResult: isRecord(value.ingestionResult)
+      ? (value.ingestionResult as unknown as IngestionResult)
+      : undefined,
+  };
+}
+
+function normalizeExperimentStatus(
+  value: unknown,
+  ingestionResult: IngestionResult | null,
+): ExperimentStatus {
+  if (
+    value === "draft" ||
+    value === "generating" ||
+    value === "needs_review" ||
+    value === "ready_to_lock" ||
+    value === "blocked" ||
+    value === "active" ||
+    value === "completed" ||
+    value === "error"
+  ) {
+    return value;
+  }
+  return statusFromIngestionResult(ingestionResult) ?? "draft";
+}
+
 function needsScheduleMigration(trial: Trial): boolean {
   return trial.schedule.some(
     (assignment) =>
@@ -296,4 +389,11 @@ function normalizeConsent(value: unknown): Settings["localAiConsentByProvider"] 
 
 function nonEmptyString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
