@@ -10,6 +10,8 @@ import {
   checkAdverseEventStreak,
   getConditionLabel,
   getCurrentAssignment,
+  getDaysLeft,
+  getNextCheckInCopy,
   getTrialProgress,
   hasCheckedInToday,
   isTrialComplete,
@@ -32,6 +34,10 @@ export function ActiveTrial() {
   const [backfillNote, setBackfillNote] = useState("");
   const [backfillError, setBackfillError] = useState<string | null>(null);
   const [backfillSaved, setBackfillSaved] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [backfillOpen, setBackfillOpen] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -52,6 +58,8 @@ export function ActiveTrial() {
   const todayDone = hasCheckedInToday(trial) || submitted;
   const trialComplete = isTrialComplete(trial);
   const aeStreak = checkAdverseEventStreak(trial);
+  const daysLeft = getDaysLeft(trial);
+  const nextCheckIn = getNextCheckInCopy(trial);
   const showReminder = shouldShowReminder(state.settings.reminderEnabled, state.settings.reminderTime, todayDone, trialComplete);
   const today = toLocalDateInput(new Date());
   const twoDaysAgo = toLocalDateInput(offsetDate(-2));
@@ -98,21 +106,21 @@ export function ActiveTrial() {
 
   const handleComplete = async () => {
     setAnalyzing(true);
+    setAnalysisError(null);
     try {
       const result = await analyze(protocolToDict(trial.protocol), trial.observations);
       const completedTrial = { ...trial, status: "completed" as const, completedAt: new Date().toISOString() };
       completeTrial({ trial: completedTrial, result });
       navigate("/results");
-    } catch {
-      alert("Failed to analyze results. Please try again.");
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : "Failed to analyze results. Please try again.");
     } finally {
       setAnalyzing(false);
     }
   };
 
   const handleStop = () => {
-    if (!confirm("Stop this experiment early? Your data will be preserved and analyzed.")) return;
-    handleComplete();
+    setShowStopConfirm(true);
   };
 
   return (
@@ -122,11 +130,14 @@ export function ActiveTrial() {
         <div className="trial-hero-top">
           <div>
             <span className="badge badge-safe badge-dot" style={{ marginBottom: 8 }}>Active</span>
-            <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-.5px" }}>
+            <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: 0 }}>
               {trial.conditionALabel} vs. {trial.conditionBLabel}
             </h2>
             <p style={{ color: "var(--gray-500)", fontSize: 14, marginTop: 4 }}>
               {trial.protocol.template ?? "Custom"} · {trial.protocol.duration_weeks}-week trial
+            </p>
+            <p style={{ color: "var(--gray-500)", fontSize: 13, marginTop: 4 }}>
+              {daysLeft} day{daysLeft === 1 ? "" : "s"} left · {nextCheckIn}
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -167,10 +178,15 @@ export function ActiveTrial() {
 
       {/* AE Streak Warning */}
       {aeStreak && (
-        <div style={{ background: "var(--danger-bg)", border: "1px solid #FECACA", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 13, color: "var(--danger)", marginBottom: 24 }} className="fade-up fade-up-1">
-          Irritation has been logged for 3+ consecutive days. Consider stopping this experiment for safety.
+        <div className="safety-stop-banner fade-up fade-up-1">
+          <span>Irritation has been logged for 3+ consecutive days. Stop for safety before collecting more data.</span>
+          <button className="btn btn-d btn-sm" onClick={handleStop} disabled={analyzing}>
+            Stop and Analyze
+          </button>
         </div>
       )}
+
+      {analysisError && <p className="form-error" role="alert">{analysisError}</p>}
 
       {showReminder && (
         <div className="reminder-banner fade-up fade-up-1">
@@ -264,18 +280,18 @@ export function ActiveTrial() {
                 </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 16 }}>
-                <div className="form-label" style={{ color: "var(--gray-400)", fontWeight: 400, fontSize: 13 }}>
+              <details className="inline-disclosure" open={noteOpen} onToggle={(event) => setNoteOpen(event.currentTarget.open)}>
+                <summary>
                   Optional note
-                  <InfoTooltip text="Log anything that might affect your skin: travel, stress, sleep, menstrual cycle, weather." />
-                </div>
+                  <InfoTooltip text="Log anything that might affect your result: travel, stress, sleep, weather, schedule changes." />
+                </summary>
                 <textarea
                   className="optional-note"
                   placeholder="Travel, stress, sleep, weather..."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />
-              </div>
+              </details>
 
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                 <button className="btn btn-p" onClick={handleCheckin} disabled={submitting}>
@@ -299,12 +315,13 @@ export function ActiveTrial() {
       )}
 
       {!trialComplete && (
-        <div className="backfill-card fade-up fade-up-4">
+        <details className="backfill-card fade-up fade-up-4" open={backfillOpen} onToggle={(event) => setBackfillOpen(event.currentTarget.open)}>
+          <summary className="backfill-summary">
+            Backfill recent day
+            <span>Use only for a missed check-in from the last 2 days.</span>
+          </summary>
           <div className="backfill-card-header">
-            <div>
-              <h3>Backfill Recent Day</h3>
-              <p>Use only for a missed check-in from the last 2 days.</p>
-            </div>
+            <div />
             <div className="backfill-header-actions">
               <input
                 type="date"
@@ -374,6 +391,25 @@ export function ActiveTrial() {
           />
           {backfillError && <p className="form-error" role="alert">{backfillError}</p>}
           {backfillSaved && <p className="form-success" role="status">Backfill saved.</p>}
+        </details>
+      )}
+
+      {showStopConfirm && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="stop-title">
+            <h3 id="stop-title">Stop this trial?</h3>
+            <p>
+              Your existing check-ins stay saved. PitGPT will analyze the data as an early stop and label the caveats clearly.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-s" onClick={() => setShowStopConfirm(false)} disabled={analyzing}>
+                Keep Going
+              </button>
+              <button className="btn btn-d" onClick={handleComplete} disabled={analyzing}>
+                {analyzing ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : "Stop and Analyze"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

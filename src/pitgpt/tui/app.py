@@ -39,7 +39,7 @@ class IngestPane(Vertical):
             placeholder="Is CeraVe or La Roche-Posay better for my dry skin?",
             id="ingest-query",
         )
-        yield Label("Document paths (one per line):", classes="field-label")
+        yield Label("Optional source text paths (one per line):", classes="field-label")
         yield TextArea(id="ingest-docs")
         yield Label("Model:", classes="field-label")
         yield Select(MODELS, value=MODELS[0][1], id="ingest-model")
@@ -57,7 +57,9 @@ class AnalyzePane(Vertical):
         yield Input(placeholder="/path/to/protocol.json", id="analyze-protocol")
         yield Label("Observations CSV file:", classes="field-label")
         yield Input(placeholder="/path/to/observations.csv", id="analyze-observations")
-        yield Button("Run Analysis", variant="primary", id="analyze-run")
+        with Horizontal(classes="bench-row"):
+            yield Button("Use Example Files", id="analyze-example")
+            yield Button("Run Analysis", variant="primary", id="analyze-run")
         yield Label("Result:", classes="field-label")
         yield VerticalScroll(
             Static("Waiting for input...", id="analyze-result", markup=True),
@@ -223,6 +225,14 @@ class PitGPTApp(App):
             result_widget.update(_format_result_card(r))
         except Exception as e:
             result_widget.update(f"[red]Error: {e}[/red]")
+
+    @on(Button.Pressed, "#analyze-example")
+    def use_example_analysis_files(self):
+        root = Path(__file__).resolve().parents[3]
+        self.query_one("#analyze-protocol", Input).value = str(root / "examples" / "protocol.json")
+        self.query_one("#analyze-observations", Input).value = str(
+            root / "examples" / "observations.csv"
+        )
 
     @on(Button.Pressed, "#bench-run")
     @work(exclusive=True, thread=True)

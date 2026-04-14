@@ -56,7 +56,7 @@ export function Layout() {
         </button>
         <div className="sidebar-logo">
           <LogoMark size={26} />
-          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-.5px" }}>
+          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 0 }}>
             Pit<em style={{ fontStyle: "normal", color: "var(--pink-500)" }}>GPT</em>
           </span>
         </div>

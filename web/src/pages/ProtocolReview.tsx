@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { createTrial } from "../lib/trial";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { getPeriodCount } from "../lib/randomize";
+import { trialTemplates } from "../lib/templates";
 
 const safetyBadgeClass: Record<string, string> = {
   GREEN: "badge badge-safe badge-dot",
@@ -103,7 +105,9 @@ export function ProtocolReview() {
     );
   }
 
-  const totalWeeks = protocol.duration_weeks;
+  const totalDays = protocol.duration_weeks * 7;
+  const totalPeriods = getPeriodCount(protocol.duration_weeks, protocol.block_length_days);
+  const templateHints = trialTemplates.find((template) => template.protocol.template === protocol.template);
   const requiresAcknowledgment =
     decision === "generate_protocol_with_restrictions" || safety_tier === "YELLOW";
 
@@ -125,7 +129,7 @@ export function ProtocolReview() {
         >
           ← Back to new experiment
         </div>
-        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-.5px", marginBottom: 8 }}>Generated Protocol</h1>
+        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 8 }}>Generated Protocol</h1>
         <p style={{ color: "var(--gray-500)", fontSize: 15 }}>
           Review the experiment design below. You can edit condition labels, but the scientific parameters are locked for validity.
         </p>
@@ -140,8 +144,8 @@ export function ProtocolReview() {
       {/* Conditions */}
       <div className="protocol-card fade-up fade-up-2">
         <div className="protocol-card-header">
-          <h3>Conditions</h3>
-          <InfoTooltip text="The two routines or products you're comparing. Each will be randomly assigned to different weeks." />
+          <h3>You can edit this</h3>
+          <InfoTooltip text="The two routines or products you're comparing. Each will be randomly assigned to different periods." />
         </div>
         <div className="protocol-card-body">
           <div className="protocol-detail">
@@ -153,7 +157,7 @@ export function ProtocolReview() {
                   type="text"
                   value={condA}
                   onChange={(e) => setCondA(e.target.value)}
-                  placeholder="e.g. CeraVe Moisturizing Cream"
+                  placeholder={templateHints?.conditionAPlaceholder ?? "e.g. CeraVe Moisturizing Cream"}
                   style={{ border: "1px solid var(--gray-200)", borderRadius: "var(--r-md)", padding: "8px 12px", fontSize: 15, fontWeight: 600, width: "100%", outline: "none", fontFamily: "var(--font)" }}
                 />
               </div>
@@ -166,7 +170,7 @@ export function ProtocolReview() {
                   type="text"
                   value={condB}
                   onChange={(e) => setCondB(e.target.value)}
-                  placeholder="e.g. La Roche-Posay Toleriane"
+                  placeholder={templateHints?.conditionBPlaceholder ?? "e.g. La Roche-Posay Toleriane"}
                   style={{ border: "1px solid var(--gray-200)", borderRadius: "var(--r-md)", padding: "8px 12px", fontSize: 15, fontWeight: 600, width: "100%", outline: "none", fontFamily: "var(--font)" }}
                 />
               </div>
@@ -178,7 +182,7 @@ export function ProtocolReview() {
       {/* Design Parameters */}
       <div className="protocol-card fade-up fade-up-3">
         <div className="protocol-card-header">
-          <h3>Design Parameters</h3>
+          <h3>Locked for validity</h3>
           <span style={{ fontSize: 11, color: "var(--gray-400)", fontFamily: "var(--mono)" }}>LOCKED</span>
         </div>
         <div className="protocol-card-body">
@@ -189,11 +193,11 @@ export function ProtocolReview() {
             </div>
             <div className="protocol-detail-item">
               <label>Duration</label>
-              <div className="value">{protocol.duration_weeks} weeks ({protocol.duration_weeks * 7} days)</div>
+              <div className="value">{protocol.duration_weeks} weeks ({totalDays} days)</div>
             </div>
             <div className="protocol-detail-item">
-              <label>Block Length <InfoTooltip text="Each 'block' is a pair of weeks — one assigned to A and one to B, in random order. This controls for time trends." /></label>
-              <div className="value">{protocol.block_length_days}-day blocks ({Math.floor(totalWeeks / 2)} pairs)</div>
+              <label>Block Length <InfoTooltip text="Each pair has one A period and one B period in random order. This controls for time trends." /></label>
+              <div className="value">{protocol.block_length_days}-day periods ({Math.ceil(totalPeriods / 2)} pair{Math.ceil(totalPeriods / 2) === 1 ? "" : "s"})</div>
             </div>
             <div className="protocol-detail-item">
               <label>Check-in Cadence</label>
@@ -205,22 +209,46 @@ export function ProtocolReview() {
             </div>
             <div className="protocol-detail-item">
               <label>Analysis Method</label>
-              <div className="value mono">Welch's t-test + 95% CI</div>
+              <div className="value mono">paired periods + Welch sensitivity</div>
+            </div>
+            <div className="protocol-detail-item">
+              <label>Random Seed</label>
+              <div className="value mono">generated when locked</div>
             </div>
           </div>
 
           <div style={{ marginTop: 20 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".04em", color: "var(--gray-400)", marginBottom: 10 }}>
-              Randomized Schedule <InfoTooltip text="You only see the current week's assignment. Future assignments are hidden to prevent bias." />
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 0, color: "var(--gray-400)", marginBottom: 10 }}>
+              Randomized Periods <InfoTooltip text="You only see the current assignment while the trial is active. Future assignments are hidden to prevent bias." />
             </label>
             <div className="schedule-vis">
-              {Array.from({ length: totalWeeks }, (_, i) => (
-                <div key={i} className="schedule-block schedule-hidden">Wk {i + 1}: ?</div>
+              {Array.from({ length: totalPeriods }, (_, i) => (
+                <div key={i} className="schedule-block schedule-hidden">
+                  P{i + 1}: days {i * protocol.block_length_days + 1}-{Math.min(totalDays, (i + 1) * protocol.block_length_days)}
+                </div>
               ))}
             </div>
           </div>
         </div>
       </div>
+
+      {(ingestionResult.source_summaries?.length || ingestionResult.claimed_outcomes?.length) ? (
+        <details className="advanced-disclosure fade-up fade-up-4">
+          <summary>Research notes used</summary>
+          {ingestionResult.source_summaries?.length ? (
+            <>
+              <h4>Source summaries</h4>
+              <ul>{ingestionResult.source_summaries.map((item) => <li key={item}>{item}</li>)}</ul>
+            </>
+          ) : null}
+          {ingestionResult.claimed_outcomes?.length ? (
+            <>
+              <h4>Claimed outcomes</h4>
+              <ul>{ingestionResult.claimed_outcomes.map((item) => <li key={item}>{item}</li>)}</ul>
+            </>
+          ) : null}
+        </details>
+      ) : null}
 
       {/* Caveats */}
       <div className="caveats-box fade-up fade-up-4">

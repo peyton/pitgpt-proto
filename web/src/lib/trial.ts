@@ -41,18 +41,25 @@ export function getTrialDayIndexForDate(trial: Trial, date: Date): number {
 }
 
 export function getCurrentWeek(trial: Trial): number {
+  return getCurrentPeriodIndex(trial);
+}
+
+export function getCurrentPeriodIndex(trial: Trial): number {
   const dayIndex = getTrialDayIndex(trial);
   return Math.floor((dayIndex - 1) / trial.protocol.block_length_days);
 }
 
 export function getCurrentAssignment(trial: Trial): Assignment | undefined {
-  const week = getCurrentWeek(trial);
-  return trial.schedule.find((a) => a.week === week);
+  const periodIndex = getCurrentPeriodIndex(trial);
+  return trial.schedule.find((a) => a.period_index === periodIndex || a.week === periodIndex);
 }
 
 export function getAssignmentForDay(trial: Trial, dayIndex: number): Assignment | undefined {
-  const week = Math.floor((dayIndex - 1) / trial.protocol.block_length_days);
-  return trial.schedule.find((a) => a.week === week);
+  return trial.schedule.find(
+    (a) =>
+      (dayIndex >= a.start_day && dayIndex <= a.end_day) ||
+      a.week === Math.floor((dayIndex - 1) / trial.protocol.block_length_days),
+  );
 }
 
 export function getConditionLabel(trial: Trial, condition: "A" | "B"): string {
@@ -81,7 +88,7 @@ export function getTrialProgress(trial: Trial) {
 }
 
 export function hasCheckedInToday(trial: Trial): boolean {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateInput(new Date());
   return trial.observations.some((o) => o.date === today);
 }
 
@@ -127,7 +134,7 @@ export function buildObservation(
   adherence: "yes" | "no" | "partial",
   note: string,
 ): Observation {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalDateInput(new Date());
   return buildObservationForDate(trial, today, score, irritation, adherence, note);
 }
 
@@ -157,6 +164,14 @@ export function buildObservationForDate(
   };
 }
 
+export function appendObservationIfNew(trial: Trial, observation: Observation): Trial {
+  const duplicate = trial.observations.some(
+    (item) => item.day_index === observation.day_index || item.date === observation.date,
+  );
+  if (duplicate) return trial;
+  return { ...trial, observations: [...trial.observations, observation] };
+}
+
 function parseDateInput(dateStr: string): Date {
   const [yearText, monthText, dayText] = dateStr.split("-");
   const year = Number(yearText);
@@ -171,9 +186,41 @@ export function protocolToDict(protocol: Protocol): Record<string, unknown> {
   return {
     planned_days: protocol.duration_weeks * 7,
     block_length_days: protocol.block_length_days,
+    minimum_meaningful_difference: 0.5,
     duration_weeks: protocol.duration_weeks,
     cadence: protocol.cadence,
     washout: protocol.washout,
     primary_outcome_question: protocol.primary_outcome_question,
   };
+}
+
+export function getDaysLeft(trial: Trial): number {
+  return Math.max(0, getTotalDays(trial.protocol) - getTrialDayIndex(trial) + 1);
+}
+
+export function getNextCheckInCopy(trial: Trial): string {
+  if (hasCheckedInToday(trial)) return "Next check-in: tomorrow";
+  return "Next check-in: today";
+}
+
+export function computeTrialAuditHash(trial: Trial): string {
+  const payload = JSON.stringify({
+    protocol: trial.protocol,
+    schedule: trial.schedule,
+    seed: trial.seed,
+    conditionALabel: trial.conditionALabel,
+    conditionBLabel: trial.conditionBLabel,
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < payload.length; index++) {
+    hash ^= payload.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function toLocalDateInput(date: Date): string {
+  const local = new Date(date);
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+  return local.toISOString().slice(0, 10);
 }

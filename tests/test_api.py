@@ -28,6 +28,32 @@ class TestHealth:
         assert resp.json() == {"status": "ok"}
 
 
+class TestReadEndpoints:
+    def test_templates(self, api_client):
+        resp = api_client.get("/templates")
+
+        assert resp.status_code == 200
+        assert len(resp.json()["templates"]) >= 1
+
+    def test_schedule(self, api_client):
+        resp = api_client.post(
+            "/schedule",
+            json={"duration_weeks": 6, "block_length_days": 14, "seed": 123},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 3
+        assert data[0]["start_day"] == 1
+        assert data[-1]["end_day"] == 42
+
+    def test_analyze_example(self, api_client):
+        resp = api_client.get("/analyze/example")
+
+        assert resp.status_code == 200
+        assert resp.json()["quality_grade"] in {"A", "B", "C", "D"}
+
+
 class TestAnalyzeEndpoint:
     def test_simple_analysis(self, api_client):
         protocol = {"planned_days": 14, "block_length_days": 7}
@@ -115,7 +141,9 @@ class TestIngestEndpoint:
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": ""})
     def test_ingest_no_api_key(self, api_client):
         resp = api_client.post("/ingest", json={"query": "Test"})
-        assert resp.status_code == 500
+        assert resp.status_code == 503
+        assert resp.json()["error"]["message"] == "OPENROUTER_API_KEY not set"
+        assert "X-Request-ID" in resp.headers
 
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
     @patch("pitgpt.api.main.ingest", side_effect=LLMError("malformed provider response"))
@@ -123,3 +151,10 @@ class TestIngestEndpoint:
         resp = api_client.post("/ingest", json={"query": "Test"})
         assert resp.status_code == 502
         assert "malformed provider response" in resp.json()["detail"]
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest", side_effect=ValueError("generated protocol required"))
+    def test_ingest_validation_error(self, mock_ingest, api_client):
+        resp = api_client.post("/ingest", json={"query": "Test"})
+        assert resp.status_code == 502
+        assert "Provider response failed validation" in resp.json()["detail"]

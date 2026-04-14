@@ -1,7 +1,8 @@
 export function InfoTooltip({ text }: { text: string }) {
   return (
-    <button className="info-i" aria-label="More info" tabIndex={0}>
-      i<span className="tt">{text}</span>
-    </button>
+    <details className="info-i">
+      <summary aria-label="More info">i</summary>
+      <span className="tt" role="tooltip">{text}</span>
+    </details>
   );
 }

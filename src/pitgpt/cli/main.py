@@ -1,7 +1,10 @@
 import asyncio
+import csv
 import json
 import sys
+from datetime import date
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from pydantic import ValidationError
@@ -9,19 +12,39 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from pitgpt.core.analysis import analyze
-from pitgpt.core.ingestion import ingest
+from pitgpt.core.analysis import analyze, validate_observations
+from pitgpt.core.ingestion import IngestionInputError, ingest
 from pitgpt.core.io import load_analysis_protocol, parse_observations_csv, read_text_file
 from pitgpt.core.llm import LLMClient
+from pitgpt.core.models import Adherence, Condition, Observation, YesNo
+from pitgpt.core.schedule import generate_schedule, generate_seed
 from pitgpt.core.settings import load_settings
+from pitgpt.core.templates import TRIAL_TEMPLATES
 
 app = typer.Typer(name="pitgpt", help="PitGPT — personal clinical trial machine")
 benchmark_app = typer.Typer(name="benchmark", help="Run and report on benchmarks")
+demo_app = typer.Typer(name="demo", help="Run bundled examples")
+trial_app = typer.Typer(name="trial", help="Create and randomize trial files")
+checkin_app = typer.Typer(name="checkin", help="Append observation check-ins safely")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(demo_app, name="demo")
+app.add_typer(trial_app, name="trial")
+app.add_typer(checkin_app, name="checkin")
 
 console = Console()
 
 FORMAT_OPTION = typer.Option("pretty", help="Output format: json, table, pretty")
+_OBSERVATION_HEADERS = [
+    "day_index",
+    "date",
+    "condition",
+    "primary_score",
+    "irritation",
+    "adherence",
+    "note",
+    "is_backfill",
+    "backfill_days",
+]
 
 
 def _detect_format(fmt: str) -> str:
@@ -32,7 +55,7 @@ def _detect_format(fmt: str) -> str:
     return "pretty"
 
 
-def _read_file_or_exit(path: str) -> str:
+def _read_file_or_exit(path: str | Path) -> str:
     try:
         return read_text_file(path)
     except FileNotFoundError as e:
@@ -62,6 +85,19 @@ def _get_client(model_id: str) -> LLMClient:
     )
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _protocol_duration_weeks(raw_protocol: dict) -> int:
+    if "duration_weeks" in raw_protocol:
+        return int(raw_protocol["duration_weeks"])
+    if "planned_days" in raw_protocol:
+        planned_days = int(raw_protocol["planned_days"])
+        return max(1, (planned_days + 6) // 7)
+    raise ValueError("protocol must include duration_weeks or planned_days")
+
+
 @app.command("ingest")
 def ingest_command(
     query: str = typer.Option(..., "--query", "-q", help="Natural language question"),
@@ -76,7 +112,11 @@ def ingest_command(
     model_id = _get_model(model)
     documents = [_read_file_or_exit(d) for d in doc]
     client = _get_client(model_id)
-    result = asyncio.run(ingest(query, documents, client))
+    try:
+        result = asyncio.run(ingest(query, documents, client, model_id))
+    except (IngestionInputError, KeyError, ValueError, ValidationError) as e:
+        console.print(f"[red]Invalid ingestion response: {e}[/red]")
+        raise typer.Exit(1) from e
 
     if fmt == "json":
         console.print_json(result.model_dump_json())
@@ -107,6 +147,206 @@ def analyze_command(
         console.print_json(result.model_dump_json())
     else:
         _print_result_card(result)
+
+
+@app.command("validate")
+def validate_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
+    observations: str | None = typer.Option(
+        None, "--observations", "-o", help="Observations CSV file"
+    ),
+    format: str = FORMAT_OPTION,
+):
+    """Validate protocol and observation files without running analysis."""
+    fmt = _detect_format(format)
+    try:
+        proto_data = load_analysis_protocol(protocol)
+        obs_data = parse_observations_csv(_read_file_or_exit(observations)) if observations else []
+    except FileNotFoundError as e:
+        console.print(f"[red]File not found: {e.filename}[/red]")
+        raise typer.Exit(1) from e
+    except (json.JSONDecodeError, ValidationError) as e:
+        console.print(f"[red]Invalid input: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    warnings = validate_observations(obs_data, proto_data) if observations else []
+    payload = {
+        "ok": True,
+        "planned_days": proto_data.planned_days,
+        "block_length_days": proto_data.block_length_days,
+        "observation_count": len(obs_data),
+        "warnings": warnings,
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+
+    if warnings:
+        console.print("[yellow]Validation completed with warnings:[/yellow]")
+        for warning in warnings:
+            console.print(f"  - {warning}")
+    else:
+        console.print("[green]Validation passed.[/green]")
+
+
+@demo_app.command("analyze")
+def demo_analyze_command(format: str = FORMAT_OPTION):
+    """Analyze the bundled example trial. Works without an API key."""
+    fmt = _detect_format(format)
+    root = _repo_root()
+    protocol = load_analysis_protocol(root / "examples" / "protocol.json")
+    observations = parse_observations_csv(
+        _read_file_or_exit(root / "examples" / "observations.csv")
+    )
+    result = analyze(protocol, observations)
+    if fmt == "json":
+        console.print_json(result.model_dump_json())
+    else:
+        _print_result_card(result)
+
+
+@trial_app.command("init")
+def trial_init_command(
+    output_dir: str = typer.Option("pitgpt-trial", "--output-dir", "-o", help="Directory to write"),
+    template_id: str = typer.Option("custom-ab", "--template", "-t", help="Template ID"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files"),
+):
+    """Create protocol and observation template files for a new local trial."""
+    template = next((item for item in TRIAL_TEMPLATES if item.id == template_id), None)
+    if template is None:
+        valid = ", ".join(item.id for item in TRIAL_TEMPLATES)
+        console.print(f"[red]Unknown template '{template_id}'. Valid templates: {valid}[/red]")
+        raise typer.Exit(1)
+
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    protocol_path = target / "protocol.json"
+    observations_path = target / "observations.csv"
+    schedule_path = target / "schedule.json"
+    for path in (protocol_path, observations_path, schedule_path):
+        if path.exists() and not force:
+            console.print(f"[red]{path} already exists. Pass --force to overwrite.[/red]")
+            raise typer.Exit(1)
+
+    protocol_payload = {
+        "planned_days": template.protocol.duration_weeks * 7,
+        "block_length_days": template.protocol.block_length_days,
+        "minimum_meaningful_difference": 0.5,
+    }
+    seed = generate_seed()
+    schedule = generate_schedule(
+        template.protocol.duration_weeks,
+        template.protocol.block_length_days,
+        seed,
+    )
+    protocol_path.write_text(json.dumps(protocol_payload, indent=2) + "\n")
+    observations_path.write_text(",".join(_OBSERVATION_HEADERS) + "\n")
+    schedule_path.write_text(
+        json.dumps(
+            {"seed": seed, "assignments": [item.model_dump(mode="json") for item in schedule]},
+            indent=2,
+        )
+        + "\n"
+    )
+    console.print(f"[green]Trial files written to {target}[/green]")
+    console.print(f"Condition A: {template.condition_a_placeholder}")
+    console.print(f"Condition B: {template.condition_b_placeholder}")
+
+
+@trial_app.command("randomize")
+def trial_randomize_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
+    seed: int | None = typer.Option(None, "--seed", "-s", help="Deterministic seed"),
+    format: str = FORMAT_OPTION,
+):
+    """Generate a deterministic period schedule from protocol fields."""
+    fmt = _detect_format(format)
+    try:
+        raw_protocol = json.loads(_read_file_or_exit(protocol))
+        duration_weeks = _protocol_duration_weeks(raw_protocol)
+        block_length_days = int(raw_protocol.get("block_length_days", 7))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        console.print(f"[red]Invalid protocol file: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    selected_seed = seed if seed is not None else generate_seed()
+    schedule = generate_schedule(duration_weeks, block_length_days, selected_seed)
+    payload = {
+        "seed": selected_seed,
+        "duration_weeks": duration_weeks,
+        "block_length_days": block_length_days,
+        "assignments": [item.model_dump(mode="json") for item in schedule],
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+
+    table = Table(title=f"Schedule — seed {selected_seed}")
+    table.add_column("Period", justify="right")
+    table.add_column("Pair", justify="right")
+    table.add_column("Days")
+    table.add_column("Condition")
+    for item in schedule:
+        table.add_row(
+            str(item.period_index + 1),
+            str(item.pair_index + 1),
+            f"{item.start_day}-{item.end_day}",
+            item.condition.value,
+        )
+    console.print(table)
+
+
+@checkin_app.command("add")
+def checkin_add_command(
+    observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
+    day_index: int = typer.Option(..., "--day", "-d", min=1, help="Trial day index"),
+    condition: Annotated[Condition | None, typer.Option("--condition", "-c", help="A or B")] = None,
+    score: float = typer.Option(..., "--score", "-s", min=0, max=10, help="0-10 outcome score"),
+    observation_date: str | None = typer.Option(None, "--date", help="YYYY-MM-DD date"),
+    irritation: Annotated[YesNo, typer.Option("--irritation", help="yes or no")] = YesNo.NO,
+    adherence: Annotated[
+        Adherence,
+        typer.Option("--adherence", help="yes, no, or partial"),
+    ] = Adherence.YES,
+    note: str = typer.Option("", "--note", "-n", help="Optional note"),
+    backfill_days: float | None = typer.Option(
+        None, "--backfill-days", help="Days since observation"
+    ),
+    force: bool = typer.Option(False, "--force", help="Append even when day/date already exists"),
+):
+    """Append one observation row while guarding duplicate day/date entries."""
+    if condition is None:
+        console.print("[red]--condition is required.[/red]")
+        raise typer.Exit(1)
+
+    path = Path(observations)
+    existing = parse_observations_csv(path.read_text()) if path.exists() else []
+    obs_date = observation_date or date.today().isoformat()
+    if not force and any(item.day_index == day_index or item.date == obs_date for item in existing):
+        console.print(
+            "[red]That day or date already has an observation. Pass --force to append anyway.[/red]"
+        )
+        raise typer.Exit(1)
+
+    observation = Observation(
+        day_index=day_index,
+        date=obs_date,
+        condition=condition,
+        primary_score=score,
+        irritation=irritation,
+        adherence=adherence,
+        note=note,
+        is_backfill=YesNo.YES if backfill_days and backfill_days > 0 else YesNo.NO,
+        backfill_days=backfill_days,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
+    with path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=_OBSERVATION_HEADERS)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(observation.model_dump(mode="json"))
+    console.print(f"[green]Observation appended to {path}[/green]")
 
 
 @benchmark_app.command("run")
@@ -154,6 +394,8 @@ def _print_ingestion_result(result):
         f"[bold]Safety Tier:[/bold] [{color}]{result.safety_tier.value}[/{color}]",
         f"[bold]Evidence Quality:[/bold] {result.evidence_quality.value}",
         f"[bold]Evidence Conflict:[/bold] {result.evidence_conflict}",
+        f"[bold]Policy Version:[/bold] {result.policy_version or 'unknown'}",
+        f"[bold]Model:[/bold] {result.model or 'unknown'}",
     ]
 
     if result.protocol:
@@ -174,6 +416,14 @@ def _print_ingestion_result(result):
             content_parts.append(f"  Screening: {p.screening}")
         if p.warnings:
             content_parts.append(f"  Warnings: {p.warnings}")
+
+    if result.source_summaries:
+        content_parts.extend(["", "[bold underline]Source Summaries[/bold underline]"])
+        content_parts.extend(f"  - {item}" for item in result.source_summaries)
+
+    if result.claimed_outcomes:
+        content_parts.extend(["", "[bold underline]Claimed Outcomes[/bold underline]"])
+        content_parts.extend(f"  - {item}" for item in result.claimed_outcomes)
 
     if result.block_reason:
         content_parts.append(f"\n[red]Block Reason:[/red] {result.block_reason}")
@@ -199,6 +449,7 @@ def _print_result_card(result):
     content_parts = [
         f"[bold]Quality Grade:[/bold] [{color}]{result.quality_grade.value}[/{color}]",
         f"[bold]Verdict:[/bold] {verdict_display.get(result.verdict, result.verdict)}",
+        f"[bold]Analysis Method:[/bold] {result.analysis_method.value}",
     ]
 
     if result.mean_a is not None:
@@ -212,6 +463,17 @@ def _print_result_card(result):
         )
         if result.cohens_d is not None:
             content_parts.append(f"[bold]Effect Size:[/bold] Cohen's d = {result.cohens_d:+.2f}")
+        content_parts.append(
+            f"[bold]Minimum Meaningful Difference:[/bold] "
+            f"{result.minimum_meaningful_difference:.2f} "
+            f"({'met' if result.meets_minimum_meaningful_effect else 'not met'})"
+        )
+
+    if result.paired_block and result.paired_block.difference is not None:
+        p = result.paired_block
+        content_parts.append(
+            f"[bold]Paired Blocks:[/bold] diff={p.difference:+.2f}, pairs={p.n_pairs}"
+        )
 
     content_parts.extend(
         [
@@ -234,6 +496,10 @@ def _print_result_card(result):
                 f"[bold]Sensitivity (no partial):[/bold] "
                 f"diff={s.difference:+.2f}, CI=[{s.ci_lower:.2f}, {s.ci_upper:.2f}]"
             )
+
+    if result.data_warnings:
+        content_parts.append("[bold]Data Warnings:[/bold]")
+        content_parts.extend(f"  - {warning}" for warning in result.data_warnings)
 
     content_parts.extend(
         [
