@@ -10,6 +10,5 @@ zizmor = "latest"
 act = "latest"
 
 [env]
-_.source = ["scripts/mise-env.sh"]
 UV_PYTHON = "3.12"
 PITGPT_DEFAULT_MODEL = "{{env.PITGPT_DEFAULT_MODEL | default(value='anthropic/claude-sonnet-4')}}"

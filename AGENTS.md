@@ -27,8 +27,7 @@ shared/          # Policy and template fixtures shared across Python/Rust/TypeSc
 tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
 examples/        # Runnable sample protocol, observations, and document
-scripts/         # Helper scripts (mise-env.sh)
-bin/             # mise bootstrap script
+  bin/             # mise bootstrap script
 .github/         # CI workflows
 docs/            # Documentation
 ```
@@ -175,7 +174,7 @@ clinical care.
 
 ## Environment Variables
 
-- `OPENROUTER_API_KEY` — Required for LLM calls (prompted interactively if missing)
+- `OPENROUTER_API_KEY` — Required for LLM calls; set it explicitly when needed
 - `PITGPT_DEFAULT_MODEL` — Defaults to `anthropic/claude-sonnet-4`
 - `PITGPT_LLM_BASE_URL` — Defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S` — Defaults to `120`
