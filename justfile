@@ -9,6 +9,7 @@ uv_sync := "./bin/mise exec -- uv sync --python 3.12"
 setup:
     ./bin/mise install
     {{uv_sync}}
+    {{mise}} npm --prefix web install
 
 # Install Python dependencies
 install:
@@ -77,6 +78,18 @@ analyze protocol observations:
 # Run CI checks locally via act
 ci:
     {{mise}} act -j ci
+
+# Install web frontend dependencies
+web-install:
+    {{mise}} npm --prefix web install
+
+# Start web frontend dev server
+web-dev:
+    {{mise}} npm --prefix web run dev
+
+# Build web frontend for production
+web-build:
+    {{mise}} npm --prefix web run build
 
 # Regenerate bin/mise bootstrap script
 bootstrap:

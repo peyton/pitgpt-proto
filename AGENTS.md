@@ -8,7 +8,7 @@
 
 PitGPT is a data-only personal clinical trial engine. It ingests research,
 runs analysis on protocol + observations, and surfaces results via a CLI,
-API, and TUI.
+API, TUI, and web frontend.
 
 ## Repository Layout
 
@@ -19,6 +19,9 @@ src/pitgpt/      # Main Python package
   cli/           # Typer CLI
   core/          # Ingestion, analysis, LLM integration, models, settings
   tui/           # Textual TUI
+web/             # React web frontend (Vite + TypeScript)
+  src/           # Components, pages, lib
+  public/        # Static assets (logos)
 tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
 examples/        # Runnable sample protocol, observations, and document
@@ -55,13 +58,16 @@ just fmt         # Format with ruff (mutates files)
 just typecheck   # Run mypy
 just serve       # Start API server
 just tui         # Launch TUI
+just web-dev     # Start web frontend dev server
+just web-build   # Build web frontend for production
+just web-install # Install web frontend dependencies
 just ci          # Run CI locally with act
 just bootstrap   # Regenerate bin/mise bootstrap script
 ```
 
 ## Development Workflow
 
-1. **Setup**: `just setup` (or `./bin/mise install && uv sync`)
+1. **Setup**: `just setup` (or `./bin/mise install && ./bin/mise exec -- uv sync --python 3.12`)
 2. **Code**: Make changes in `src/pitgpt/`
 3. **Test**: `just test`
 4. **Lint**: `just lint` (runs automatically on commit via hk)

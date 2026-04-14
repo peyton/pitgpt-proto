@@ -11,6 +11,7 @@ Implemented:
 - Protocol-shaped ingestion output validation
 - Deterministic A/B trial analysis
 - CLI, FastAPI, and Textual TUI interfaces
+- React web frontend for local trial setup and check-ins
 - Benchmark runner, scoring, and report commands
 - Example protocol, observations, and safe research note
 

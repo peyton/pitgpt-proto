@@ -1,4 +1,7 @@
+import os
+
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from pitgpt.core.analysis import analyze
@@ -8,6 +11,13 @@ from pitgpt.core.models import AnalysisProtocol, IngestionResult, Observation, R
 from pitgpt.core.settings import load_settings
 
 app = FastAPI(title="PitGPT", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.environ.get("PITGPT_CORS_ORIGINS", "http://localhost:5173").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class IngestRequest(BaseModel):

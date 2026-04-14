@@ -12,13 +12,15 @@ just setup
 ```
 
 This installs the mise-managed tools and syncs Python dependencies with
-Python 3.12 through `uv`.
+Python 3.12 through `uv`. It also installs web frontend dependencies with
+Node 22.
 
 If you prefer manual setup:
 
 ```sh
 ./bin/mise install
-uv sync --python 3.12
+./bin/mise exec -- uv sync --python 3.12
+./bin/mise exec -- npm --prefix web install
 ```
 
 ## Analyze A Completed Trial
@@ -108,6 +110,28 @@ just tui
 
 Use the tabs for ingestion, analysis, and benchmarks. The same API key and
 model environment variables apply.
+
+## Run The Web Frontend
+
+Start the API first:
+
+```sh
+just serve
+```
+
+Start the web frontend in a second terminal:
+
+```sh
+just web-dev
+```
+
+The Vite dev server proxies `/api` requests to the local FastAPI server.
+
+Build the frontend:
+
+```sh
+just web-build
+```
 
 ## Run Benchmarks
 

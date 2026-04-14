@@ -9,6 +9,7 @@ src/pitgpt/
   cli/          Typer command line interface
   tui/          Textual terminal UI
   benchmarks/   benchmark runner, scoring, and report code
+web/            React frontend built with Vite and TypeScript
 benchmarks/     benchmark fixture data and expected outputs
 examples/       small runnable local inputs
 tests/          pytest suite
@@ -17,7 +18,7 @@ docs/           operator, product, architecture, and scope docs
 
 ## Data Flow: Research Ingestion
 
-1. CLI, API, TUI, or benchmark code collects a user query and document strings.
+1. CLI, API, TUI, web, or benchmark code collects a user query and document strings.
 2. `pitgpt.core.settings.load_settings` resolves model and API configuration.
 3. `pitgpt.core.ingestion.ingest` builds the user message and sends it with
    `pitgpt.core.policy.SAFETY_POLICY_PROMPT`.
@@ -27,7 +28,7 @@ docs/           operator, product, architecture, and scope docs
 
 ## Data Flow: Trial Analysis
 
-1. CLI, API, TUI, tests, or benchmark code loads an `AnalysisProtocol` and a
+1. CLI, API, TUI, web, tests, or benchmark code loads an `AnalysisProtocol` and a
    list of `Observation` records.
 2. `pitgpt.core.io.parse_observations_csv` centralizes CSV parsing.
 3. `pitgpt.core.models` validates conditions, adherence, backfill flags, and
@@ -37,9 +38,13 @@ docs/           operator, product, architecture, and scope docs
 
 ## Boundaries
 
-`core` owns domain behavior and validation. `api`, `cli`, and `tui` should stay
-thin. `benchmarks` owns evaluation orchestration and scoring but reads fixture
-data from the repository root `benchmarks/` directory.
+`core` owns domain behavior and validation. `api`, `cli`, `tui`, and the React
+web frontend should stay thin. `benchmarks` owns evaluation orchestration and
+scoring but reads fixture data from the repository root `benchmarks/` directory.
+
+The web frontend uses Vite's dev-server proxy to send `/api/*` requests to the
+FastAPI server at `http://localhost:8000`. In local development, run `just serve`
+and `just web-dev` in separate terminals.
 
 The repository is monorepo-ready but not split into multiple packages. New apps
 or services should import `pitgpt.core` instead of duplicating parsing,

@@ -19,11 +19,14 @@ experiments and safety-gated research ingestion.
 - `pitgpt benchmark report`: compare saved benchmark runs.
 - `just serve`: start the FastAPI wrapper.
 - `just tui`: launch the terminal UI.
+- `just web-dev`: launch the React web frontend.
+- `just web-build`: build the React web frontend.
 
 ## Setup
 
-Use Python 3.12. The repository pins the toolchain with `mise.toml` and
-`.python-version`, and `uv` commands are run with `--python 3.12`.
+Use Python 3.12 and Node 22. The repository pins the toolchain with
+`mise.toml` and `.python-version`; the `just` recipes run tools through
+`./bin/mise exec --`.
 
 ```sh
 just setup
@@ -33,7 +36,8 @@ Manual setup is:
 
 ```sh
 ./bin/mise install
-uv sync --python 3.12
+./bin/mise exec -- uv sync --python 3.12
+./bin/mise exec -- npm --prefix web install
 ```
 
 ## Analyze The Example Trial
@@ -74,7 +78,7 @@ Optional configuration:
 - `PITGPT_LLM_TEMPERATURE`: defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
 
-## API And TUI
+## API, TUI, And Web
 
 Start the API:
 
@@ -98,6 +102,19 @@ Launch the terminal UI:
 
 ```sh
 just tui
+```
+
+Launch the web frontend in a second terminal after starting the API:
+
+```sh
+just web-dev
+```
+
+The Vite dev server proxies `/api` requests to `http://localhost:8000`.
+Build the frontend with:
+
+```sh
+just web-build
 ```
 
 ## Benchmarks
@@ -127,8 +144,9 @@ just fix         # mutating ruff fixes through hk
 just fmt         # mutating ruff format and fix
 ```
 
-Application code lives in `src/pitgpt/`. Benchmark fixture data lives in
-`benchmarks/`. Runnable example inputs live in `examples/`.
+Application code lives in `src/pitgpt/`. Web frontend code lives in `web/`.
+Benchmark fixture data lives in `benchmarks/`. Runnable example inputs live in
+`examples/`.
 
 ## More Docs
 
