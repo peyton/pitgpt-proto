@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyzeExample, ingest } from "../lib/api";
@@ -37,8 +37,17 @@ export function Home() {
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeIngestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const requestIdRef = useRef(0);
   const navigate = useNavigate();
   const { completeTrial, setIngestionResult, state } = useApp();
+
+  useEffect(() => {
+    return () => {
+      activeIngestRef.current?.controller.abort();
+      activeIngestRef.current = null;
+    };
+  }, []);
 
   const addSource = useCallback((name: string, content: string) => {
     const trimmed = content.trim();
@@ -61,6 +70,11 @@ export function Home() {
         setError("Add a question to frame the experiment.");
         return;
       }
+      if (activeIngestRef.current) return;
+      const controller = new AbortController();
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      activeIngestRef.current = { id: requestId, controller };
       setLoading(true);
       setError(null);
       try {
@@ -69,10 +83,15 @@ export function Home() {
           sources.map((source) => source.content),
           state.settings.preferredModel || undefined,
           getProviderForRuntime(state.settings.preferredProvider),
+          { signal: controller.signal },
         );
+        if (controller.signal.aborted || activeIngestRef.current?.id !== requestId) return;
         setIngestionResult(enrichIngestionResult(result, sources));
         navigate("/protocol");
       } catch (e) {
+        if (isAbortError(e) || controller.signal.aborted || activeIngestRef.current?.id !== requestId) {
+          return;
+        }
         const message = e instanceof Error ? e.message : "Could not generate a protocol.";
         setError(
           message.includes("OPENROUTER_API_KEY")
@@ -80,11 +99,24 @@ export function Home() {
             : message,
         );
       } finally {
-        setLoading(false);
+        if (activeIngestRef.current?.id === requestId) {
+          activeIngestRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [navigate, setIngestionResult, sources, state.settings.preferredModel, state.settings.preferredProvider],
   );
+
+  const handleStopGeneration = useCallback(() => {
+    const active = activeIngestRef.current;
+    if (!active) return;
+    active.controller.abort();
+    activeIngestRef.current = null;
+    setError(null);
+    setLoading(false);
+    textareaRef.current?.focus();
+  }, []);
 
   const handleFileUpload = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -227,16 +259,18 @@ export function Home() {
               </svg>
             </button>
             <button
-              className="chat-send"
-              aria-label="Generate protocol"
-              onClick={() => handleSubmit(query)}
-              disabled={loading}
+              className={`chat-send${loading ? " chat-stop" : ""}`}
+              aria-label={loading ? "Stop generation" : "Generate protocol"}
+              onClick={loading ? handleStopGeneration : () => handleSubmit(query)}
+              type="button"
             >
               {loading ? (
-                <div className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
+                </svg>
               ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M2 8h12M10 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               )}
             </button>
@@ -349,4 +383,8 @@ function enrichIngestionResult(result: IngestionResult, sources: SourceDocument[
       rationale: "Attached by the user before protocol generation.",
     })),
   };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }
