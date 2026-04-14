@@ -8,7 +8,7 @@
 
 PitGPT is a data-only personal clinical trial engine. It ingests research,
 runs analysis on protocol + observations, and surfaces results via a CLI,
-API, TUI, and web frontend.
+API, TUI, web frontend, and Tauri native app.
 
 ## Repository Layout
 
@@ -22,6 +22,8 @@ src/pitgpt/      # Main Python package
 web/             # React web frontend (Vite + TypeScript)
   src/           # Components, pages, lib
   public/        # Static assets (logos)
+src-tauri/       # Tauri v2 Rust native target for macOS and iOS
+shared/          # Policy and template fixtures shared across Python/Rust/TypeScript
 tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
 examples/        # Runnable sample protocol, observations, and document
@@ -45,6 +47,8 @@ docs/            # Documentation
 | **pytest**   | Testing                        | `pyproject.toml` |
 | **vitest**   | Web unit tests                 | `web/package.json` |
 | **playwright** | Web browser tests            | `web/playwright.config.ts` |
+| **cargo**    | Tauri Rust build/test/lint      | `src-tauri/Cargo.toml` |
+| **tauri**    | Native desktop/iOS builds       | `web/package.json` |
 | **actionlint** | GitHub Actions linter        | (builtin)        |
 | **zizmor**   | GitHub Actions security linter | (builtin)        |
 | **act**      | Local CI runner                | —                |
@@ -71,6 +75,10 @@ just web-build   # Build web frontend for production
 just web-unit    # Run Vitest unit tests
 just web-test    # Run Playwright browser tests
 just web-install # Install web frontend dependencies
+just tauri-dev   # Start the macOS Tauri app
+just tauri-build # Build the macOS Tauri app
+just tauri-test  # Run Rust native tests
+just tauri-ios-test # Build the iOS simulator target
 just ci          # Run CI locally with act
 just bootstrap   # Regenerate bin/mise bootstrap script
 ```
@@ -86,6 +94,7 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 ## Conventions
 
 - Python 3.12+, PEP 8, type hints everywhere
+- Rust 1.94 for Tauri; run through mise-managed `cargo`
 - Use `uv run` to execute Python tools (not global installs)
 - Use `hk` for linting, not raw ruff/mypy commands
 - Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
@@ -93,6 +102,9 @@ just bootstrap   # Regenerate bin/mise bootstrap script
   it through mise.
 - Ruff config: line length 100, select E/F/I/UP/B/SIM
 - Tests live in `tests/`, mirror `src/pitgpt/` structure
+- Tauri Rust tests live beside Rust modules in `src-tauri/src/`
+- Shared safety policy and template data live in `shared/`; keep Python, Rust,
+  and TypeScript loaders pointed at those files instead of duplicating fixtures.
 - Prefer early returns over nested conditionals
 - Keep functions short and focused
 
@@ -103,7 +115,14 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 - **check**: `hk run check --all` (includes actionlint + zizmor)
 - **test**: `uv run pytest`
 - **web**: npm install, build, Vitest, Playwright, npm audit
+- **rust**: cargo fmt, clippy, and cargo test for `src-tauri`
+- **tauri-macos-build**: signed/notarized macOS artifacts on `master` and manual runs
+- **ios-simulator**: Tauri iOS simulator build on PRs and `master`
 - **audit**: `uv pip check` and npm audit
+
+Release artifacts are built by `.github/workflows/release.yml` when a GitHub
+Release is published. That workflow rebuilds signed macOS artifacts and a
+signed iOS IPA, then attaches them to the release.
 
 Tools are installed via `jdx/mise-action@v4`. Actions are pinned to SHA
 hashes per zizmor best practices. CI starts from a clean runner, so any tool
@@ -129,6 +148,21 @@ clinical care.
 - `PITGPT_LLM_TIMEOUT_S` — Defaults to `120`
 - `PITGPT_LLM_TEMPERATURE` — Defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS` — Defaults to `4096`
+- `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`
+- `PITGPT_OLLAMA_MODEL` — Defaults to `llama3.1`
+
+Signing secrets used by native CI/release workflows must live in the
+`apple-signing` GitHub environment:
+
+- `APPLE_CERTIFICATE`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+- `APPLE_TEAM_ID`
+- `APPLE_API_KEY`
+- `APPLE_API_ISSUER`
+- `APPLE_API_KEY_P8_B64`
+- `APPLE_DEVELOPMENT_TEAM`
+- `IOS_PROVISIONING_PROFILE_B64`
 
 ## Key Documents
 

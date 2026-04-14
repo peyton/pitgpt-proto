@@ -5,6 +5,7 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -57,6 +58,79 @@ jobs:
       - run: npm --prefix web run test:e2e:install
       - run: npm --prefix web run test:e2e
       - run: npm --prefix web audit
+
+  rust:
+    name: Rust Tauri Checks
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+  tauri-macos-build:
+    name: macOS Tauri Build
+    runs-on: macos-14
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+    environment: apple-signing
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+      APPLE_API_KEY_PATH: private_keys/AuthKey.p8
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CI: "true"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: npm --prefix web ci
+      - name: Validate Apple signing secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8_B64 APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing Apple signing secret::$name is required for signed macOS artifacts"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Write App Store Connect API key
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$APPLE_API_KEY_PATH")"
+          printf '%s' "$APPLE_API_KEY_P8_B64" | base64 -d > "$APPLE_API_KEY_PATH"
+          chmod 600 "$APPLE_API_KEY_PATH"
+      - run: npm --prefix web run tauri:build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pitgpt-macos-${{ github.sha }}
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app
+          if-no-files-found: error
+
+  ios-simulator:
+    name: iOS Simulator Build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: brew install cocoapods
+      - run: npm --prefix web ci
+      - run: rustup target add aarch64-apple-ios-sim
+      - run: npm --prefix web run tauri -- ios init --ci
+      - run: npm --prefix web run tauri -- ios build --debug --target aarch64-sim --ci
 
   audit:
     name: Dependency Audit

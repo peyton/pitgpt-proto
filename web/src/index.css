@@ -1065,6 +1065,23 @@ a:hover { text-decoration: underline; }
 .setting-row:last-child { border: none; }
 .setting-label h3 { font-size: 15px; font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
 .setting-label p { font-size: 13px; color: var(--gray-400); }
+.provider-list {
+  border-top: 1px solid var(--gray-100);
+}
+.provider-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.settings-note {
+  color: var(--gray-500);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 12px;
+}
 
 .time-input {
   padding: 8px 14px;

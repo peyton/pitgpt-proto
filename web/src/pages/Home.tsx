@@ -2,13 +2,14 @@ import { useCallback, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyzeExample, ingest } from "../lib/api";
+import { isTauriRuntime } from "../lib/runtime";
 import {
   createExampleCompletedTrial,
   templateToIngestionResult,
   trialTemplates,
   type TrialTemplate,
 } from "../lib/templates";
-import type { IngestionResult } from "../lib/types";
+import type { AiProviderKind, IngestionResult } from "../lib/types";
 
 interface SourceDocument {
   id: string;
@@ -66,6 +67,8 @@ export function Home() {
         const result = await ingest(
           trimmed,
           sources.map((source) => source.content),
+          state.settings.preferredModel || undefined,
+          getProviderForRuntime(state.settings.preferredProvider),
         );
         setIngestionResult(enrichIngestionResult(result, sources));
         navigate("/protocol");
@@ -80,7 +83,7 @@ export function Home() {
         setLoading(false);
       }
     },
-    [navigate, setIngestionResult, sources],
+    [navigate, setIngestionResult, sources, state.settings.preferredModel, state.settings.preferredProvider],
   );
 
   const handleFileUpload = useCallback(
@@ -325,6 +328,11 @@ export function Home() {
       </div>
     </div>
   );
+}
+
+function getProviderForRuntime(provider: AiProviderKind): AiProviderKind {
+  if (isTauriRuntime() && provider === "openrouter") return "ollama";
+  return provider;
 }
 
 function enrichIngestionResult(result: IngestionResult, sources: SourceDocument[]): IngestionResult {

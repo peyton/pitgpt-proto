@@ -1,5 +1,6 @@
 import type { CompletedTrial, IngestionResult, Observation, Protocol, ResultCard } from "./types";
 import { stableHash } from "./trial";
+import sharedTemplates from "../../../shared/trial_templates.json";
 
 export interface TrialTemplate {
   id: string;
@@ -12,147 +13,27 @@ export interface TrialTemplate {
   protocol: Protocol;
 }
 
-export const trialTemplates: TrialTemplate[] = [
-  {
-    id: "skincare",
-    icon: "AB",
-    name: "Skincare A/B",
-    description: "Compare two cosmetic products over 6 weeks.",
-    query: "Compare two skincare products",
-    conditionAPlaceholder: "CeraVe Moisturizing Cream",
-    conditionBPlaceholder: "La Roche-Posay Toleriane",
-    protocol: {
-      template: "Skincare Product",
-      duration_weeks: 6,
-      block_length_days: 7,
-      cadence: "daily",
-      washout: "None",
-      primary_outcome_question: "Skin satisfaction (0-10)",
-      screening: "",
-      warnings: "",
-      outcome_anchor_low: "0 = lowest skin satisfaction you would normally log",
-      outcome_anchor_mid: "5 = typical skin satisfaction",
-      outcome_anchor_high: "10 = highest skin satisfaction you would normally log",
-      suggested_confounders: ["sleep", "stress", "weather", "cycle", "new products"],
-    },
-  },
-  {
-    id: "morning-routine",
-    icon: "AM",
-    name: "Morning Routine",
-    description: "Compare two morning routines with daily ratings.",
-    query: "Compare two morning routines",
-    conditionAPlaceholder: "Current morning routine",
-    conditionBPlaceholder: "New morning routine",
-    protocol: {
-      template: "Morning Routine",
-      duration_weeks: 6,
-      block_length_days: 7,
-      cadence: "daily",
-      washout: "None",
-      primary_outcome_question: "Midday appearance (0-10)",
-      screening: "",
-      warnings: "",
-      outcome_anchor_low: "0 = lowest midday appearance rating you would normally log",
-      outcome_anchor_mid: "5 = typical midday appearance",
-      outcome_anchor_high: "10 = best midday appearance",
-      suggested_confounders: ["sleep", "stress", "weather", "schedule changes"],
-    },
-  },
-  {
-    id: "sleep-routine",
-    icon: "SL",
-    name: "Sleep Routine",
-    description: "Compare two low-risk sleep habit routines.",
-    query: "Compare two sleep routines",
-    conditionAPlaceholder: "Current sleep routine",
-    conditionBPlaceholder: "New sleep routine",
-    protocol: {
-      template: "Sleep Routine",
-      duration_weeks: 4,
-      block_length_days: 7,
-      cadence: "daily AM",
-      washout: "1-2 days",
-      primary_outcome_question: "Sleep quality (0-10)",
-      screening: "",
-      warnings: "Keep timing and environment as consistent as practical.",
-      outcome_anchor_low: "0 = worst sleep quality you would normally log",
-      outcome_anchor_mid: "5 = typical sleep quality",
-      outcome_anchor_high: "10 = best sleep quality you would normally log",
-      suggested_confounders: ["caffeine", "stress", "travel", "exercise timing", "room temperature"],
-    },
-  },
-  {
-    id: "haircare",
-    icon: "HR",
-    name: "Haircare",
-    description: "Compare two haircare products over 6 weeks.",
-    query: "Compare two haircare products",
-    conditionAPlaceholder: "Current hair product",
-    conditionBPlaceholder: "New hair product",
-    protocol: {
-      template: "Haircare Product",
-      duration_weeks: 6,
-      block_length_days: 7,
-      cadence: "daily",
-      washout: "None",
-      primary_outcome_question: "Hair quality (0-10)",
-      screening: "",
-      warnings: "",
-      outcome_anchor_low: "0 = lowest hair quality rating you would normally log",
-      outcome_anchor_mid: "5 = typical hair quality",
-      outcome_anchor_high: "10 = best hair quality you would normally log",
-      suggested_confounders: ["wash timing", "weather", "heat styling", "new products"],
-    },
-  },
-  {
-    id: "evening-routine",
-    icon: "PM",
-    name: "Evening Routine",
-    description: "Compare two evening routines with morning ratings.",
-    query: "Compare two evening routines",
-    conditionAPlaceholder: "Current evening routine",
-    conditionBPlaceholder: "New evening routine",
-    protocol: {
-      template: "Evening Routine",
-      duration_weeks: 6,
-      block_length_days: 7,
-      cadence: "daily",
-      washout: "None",
-      primary_outcome_question: "Morning skin feel (0-10)",
-      screening: "",
-      warnings: "",
-      outcome_anchor_low: "0 = lowest morning skin feel you would normally log",
-      outcome_anchor_mid: "5 = typical morning skin feel",
-      outcome_anchor_high: "10 = best morning skin feel you would normally log",
-      suggested_confounders: ["sleep", "stress", "room humidity", "new products"],
-    },
-  },
-  {
-    id: "custom-ab",
-    icon: "C",
-    name: "Custom A/B",
-    description: "Compare everyday routines or products.",
-    query: "Custom A/B experiment",
-    conditionAPlaceholder: "Condition A",
-    conditionBPlaceholder: "Condition B",
-    protocol: {
-      template: "Custom A/B",
-      duration_weeks: 6,
-      block_length_days: 7,
-      cadence: "daily",
-      washout: "None",
-      primary_outcome_question: "Personal outcome rating (0-10)",
-      screening: "Use this for routines you can keep consistent and stop on your own.",
-      warnings:
-        "Medication or supplement changes, urgent symptoms, invasive interventions, and diagnosis questions need a different path.",
-      outcome_anchor_low: "0 = lowest rating you would normally log",
-      outcome_anchor_mid: "5 = typical day for this outcome",
-      outcome_anchor_high: "10 = best rating you would normally log",
-      suggested_confounders: ["sleep", "stress", "travel", "schedule changes"],
-    },
-  },
-];
+interface SharedTemplate {
+  id: string;
+  icon: string;
+  name: string;
+  description: string;
+  query: string;
+  condition_a_placeholder: string;
+  condition_b_placeholder: string;
+  protocol: Protocol;
+}
+
+export const trialTemplates: TrialTemplate[] = (sharedTemplates as SharedTemplate[]).map((template) => ({
+  id: template.id,
+  icon: template.icon,
+  name: template.name,
+  description: template.description,
+  query: template.query,
+  conditionAPlaceholder: template.condition_a_placeholder,
+  conditionBPlaceholder: template.condition_b_placeholder,
+  protocol: template.protocol,
+}));
 
 export function templateToIngestionResult(template: TrialTemplate): IngestionResult {
   return {

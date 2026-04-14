@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useApp } from "../lib/AppContext";
-import { healthCheck } from "../lib/api";
+import { healthCheck, listProviders } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { clearAllData, downloadFile, exportCSV, exportJSON, loadState, restoreStateFromJSON } from "../lib/storage";
+import { getRuntimeMode } from "../lib/runtime";
+import type { AiProviderInfo, AiProviderKind } from "../lib/types";
 
 type ApiStatus = "checking" | "online" | "offline";
 
@@ -10,14 +12,19 @@ export function Settings() {
   const { state, updateSettings, restoreAll, clearAll } = useApp();
   const { settings } = state;
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const [providers, setProviders] = useState<AiProviderInfo[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const runtimeMode = getRuntimeMode();
 
   useEffect(() => {
     let active = true;
     void healthCheck().then((ok) => {
       if (active) setApiStatus(ok ? "online" : "offline");
+    });
+    void listProviders().then((items) => {
+      if (active) setProviders(items);
     });
     return () => {
       active = false;
@@ -129,6 +136,73 @@ export function Settings() {
       </div>
 
       <div className="settings-section fade-up fade-up-3">
+        <h2>AI Provider</h2>
+        <div className="setting-row">
+          <div className="setting-label">
+            <h3>Selected Provider</h3>
+            <p>{providerSummary(settings.preferredProvider, settings.preferredModel, runtimeMode)}</p>
+          </div>
+          <span className="badge badge-neutral">{runtimeMode.replace("tauri-", "")}</span>
+        </div>
+        <div className="provider-list" aria-label="AI providers">
+          {providers.map((provider) => (
+            <div className="provider-row" key={provider.kind}>
+              <div className="setting-label">
+                <h3>{provider.label}</h3>
+                <p>{provider.detail || getProviderStatusCopy(provider)}</p>
+                {provider.models.length > 0 && (
+                  <select
+                    className="time-input select-input"
+                    value={
+                      settings.preferredProvider === provider.kind
+                        ? settings.preferredModel || provider.models[0]
+                        : provider.models[0]
+                    }
+                    onChange={(event) => {
+                      updateSettings({
+                        preferredProvider: provider.kind,
+                        preferredModel: event.target.value,
+                        localAiConsentByProvider: {
+                          ...settings.localAiConsentByProvider,
+                          [provider.kind]: true,
+                        },
+                      });
+                    }}
+                    aria-label={`${provider.label} model`}
+                  >
+                    {provider.models.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <button
+                className="btn btn-s btn-sm"
+                disabled={provider.status !== "available"}
+                onClick={() => {
+                  updateSettings({
+                    preferredProvider: provider.kind,
+                    preferredModel: provider.models[0] ?? "",
+                    localAiConsentByProvider: {
+                      ...settings.localAiConsentByProvider,
+                      [provider.kind]: true,
+                    },
+                  });
+                }}
+              >
+                {provider.status === "reserved" ? "Planned" : provider.status === "available" ? "Use" : "Unavailable"}
+              </button>
+            </div>
+          ))}
+        </div>
+        {runtimeMode === "tauri-ios" && (
+          <p className="settings-note">
+            On-device models are planned for iOS. Templates, check-ins, local storage, exports, and analysis work offline now.
+          </p>
+        )}
+      </div>
+
+      <div className="settings-section fade-up fade-up-3">
         <h2>About</h2>
         <div className="setting-row">
           <div className="setting-label">
@@ -189,4 +263,20 @@ function getApiStatusClass(status: ApiStatus): string {
   if (status === "online") return "badge badge-safe";
   if (status === "offline") return "badge badge-caution";
   return "badge badge-neutral";
+}
+
+function providerSummary(provider: AiProviderKind, model: string, runtimeMode: string): string {
+  if (runtimeMode === "tauri-ios") return "Offline app core is active; on-device AI is planned.";
+  if (provider === "ollama") return model ? `Ollama: ${model}` : "Ollama local models";
+  if (provider === "openrouter") return "OpenRouter through the API target";
+  if (provider === "ios_on_device") return "Reserved for future iOS on-device models";
+  return "Local CLI tool selected explicitly";
+}
+
+function getProviderStatusCopy(provider: AiProviderInfo): string {
+  if (provider.status === "available") return "Available";
+  if (provider.status === "reserved") return "Reserved for future work";
+  if (provider.status === "unsupported_platform") return "Not available on this platform";
+  if (provider.status === "installed_unavailable") return "Installed but not ready";
+  return "Not found";
 }

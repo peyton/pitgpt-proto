@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PitGPT",
+  "version": "0.1.0",
+  "identifier": "dev.pitgpt.client",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../web run dev -- --host 127.0.0.1",
+    "beforeBuildCommand": "npm --prefix ../web run build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PitGPT",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 390,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "category": "Lifestyle",
+    "copyright": "Copyright 2026 PitGPT",
+    "macOS": {
+      "signingIdentity": null,
+      "hardenedRuntime": true,
+      "entitlements": null
+    },
+    "iOS": {
+      "developmentTeam": null
+    }
+  }
+}

@@ -27,6 +27,7 @@ lint:
 # Run all checks (lint + GHA linting)
 check:
     env -u GH_TOKEN -u GITHUB_TOKEN {{mise}} hk run check --all --check
+    just tauri-lint
 
 # Auto-fix code with ruff
 fix:
@@ -110,7 +111,19 @@ doctor:
     ./bin/mise exec -- python --version
     ./bin/mise exec -- uv --version
     ./bin/mise exec -- npm --prefix web --version
+    ./bin/mise exec -- cargo --version
+    ./bin/mise exec -- npm --prefix web exec tauri -- --version
     test -d web/node_modules || (echo "web/node_modules missing; run just web-install" >&2; exit 1)
+    if command -v xcodebuild >/dev/null 2>&1; then
+      xcodebuild -version | head -n 1
+    else
+      echo "xcodebuild is not available; iOS builds require Xcode"
+    fi
+    if command -v pod >/dev/null 2>&1; then
+      pod --version
+    else
+      echo "CocoaPods is not available; iOS Tauri init/build will fail until it is installed"
+    fi
     if [ -z "${OPENROUTER_API_KEY:-}" ]; then
       echo "OPENROUTER_API_KEY is not set; ingest and ingestion benchmarks will be unavailable"
     else
@@ -124,6 +137,12 @@ web-install:
 _web-deps:
     #!/usr/bin/env bash
     test -d web/node_modules || (echo "web/node_modules missing; run just setup or just web-install" >&2; exit 1)
+
+_ios-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v xcodebuild >/dev/null 2>&1 || (echo "xcodebuild missing; install Xcode before running iOS builds" >&2; exit 1)
+    command -v pod >/dev/null 2>&1 || (echo "CocoaPods missing; install CocoaPods before running iOS Tauri init/build" >&2; exit 1)
 
 # Start web frontend dev server
 web-dev: _web-deps
@@ -140,6 +159,40 @@ web-unit: _web-deps
 # Run web browser integration tests
 web-test: _web-deps
     {{mise}} npm --prefix web run test:e2e
+
+# Run Rust formatting and clippy checks for the Tauri target
+tauri-lint:
+    {{mise}} cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+    {{mise}} cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+# Run Rust unit/integration tests for the Tauri target
+tauri-test:
+    {{mise}} cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+
+# Start the macOS Tauri app
+tauri-dev: _web-deps
+    {{mise}} npm --prefix web run tauri:dev
+
+# Build the macOS Tauri app
+tauri-build: _web-deps
+    {{mise}} npm --prefix web run tauri:build
+
+# Start the iOS Tauri app on a simulator
+tauri-ios-dev: _web-deps _ios-deps
+    {{mise}} npm --prefix web run tauri:ios:dev
+
+# Build the iOS Tauri app
+tauri-ios-build: _web-deps _ios-deps
+    {{mise}} npm --prefix web run tauri:ios:build
+
+# Run the iOS simulator build path used by CI.
+tauri-ios-test: _web-deps _ios-deps
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -d src-tauri/gen/ios ]; then
+      ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci
+    fi
+    ./bin/mise exec -- npm --prefix web run tauri -- ios build --debug --target aarch64-sim --ci
 
 # Regenerate bin/mise bootstrap script
 bootstrap:

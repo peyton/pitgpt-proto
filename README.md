@@ -30,11 +30,15 @@ clinician.
 - `just web-dev`: launch the React web frontend.
 - `just web-build`: build the React web frontend.
 - `just web-unit` and `just web-test`: run frontend unit and browser tests.
+- `just tauri-dev`: launch the macOS Tauri app using the React UI.
+- `just tauri-build`: build the macOS Tauri app bundle.
+- `just tauri-test`: run Rust tests for native commands, storage, providers, and analysis.
+- `just tauri-ios-test`: build the iOS simulator target used by CI.
 - `just audit` and `just doctor`: check dependency health and local prerequisites.
 
 ## Setup
 
-Use Python 3.12 and Node 22. The repository pins the toolchain with
+Use Python 3.12, Node 22, and Rust 1.94. The repository pins the toolchain with
 `mise.toml` and `.python-version`; the `just` recipes run tools through
 `./bin/mise exec --`.
 The mise config is the source of truth for local and CI tools, including `hk`,
@@ -56,6 +60,9 @@ Manual setup is:
 
 - Web novice path: `just serve` plus `just web-dev`, then choose **Run example**
   or **Start template**.
+- Native macOS path: `just tauri-dev`, then use templates, check-ins, exports,
+  analysis, or Ollama-backed local ingestion.
+- iOS simulator path: install Xcode and CocoaPods, then run `just tauri-ios-test`.
 - CLI no-key path: `pitgpt demo analyze` or `pitgpt trial init`.
 - API demo path: `GET /templates`, `POST /schedule`, and `GET /analyze/example`.
 - Research ingestion path: set `OPENROUTER_API_KEY`, then use `pitgpt ingest` or
@@ -106,6 +113,8 @@ Optional configuration:
 - `PITGPT_LLM_TIMEOUT_S`: defaults to `120`
 - `PITGPT_LLM_TEMPERATURE`: defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
+- `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
+- `PITGPT_OLLAMA_MODEL`: defaults to `llama3.1`
 
 ## API, TUI, And Web
 
@@ -146,6 +155,54 @@ Build the frontend with:
 just web-build
 ```
 
+## Native Desktop And iOS
+
+The Tauri v2 app lives in `src-tauri/` and reuses the Vite React UI. Web mode
+continues to call FastAPI through `/api`; native mode routes templates,
+schedules, analysis, storage, export, local ingestion, and AI discovery through
+Rust commands. Tauri storage is app-local JSON, so the native app can function
+offline without a Python sidecar.
+
+Run the macOS app:
+
+```sh
+just tauri-dev
+```
+
+Build the macOS app:
+
+```sh
+just tauri-build
+```
+
+Run native Rust tests:
+
+```sh
+just tauri-test
+```
+
+Ollama is the offline provider in this phase. The app discovers Ollama models
+from `http://localhost:11434/api/tags`; it also detects `claude`, `codex`, and
+`chatgpt` CLIs and labels them as local tools that may need an account or
+network access. The `ios_on_device` provider is reserved for future on-device
+model runtime work and is not selectable yet.
+
+iOS currently supports the offline app core: templates, local JSON storage,
+trial tracking, schedule generation, exports, and deterministic analysis. It
+does not discover Mac-installed CLIs. iOS Tauri generation/builds require Xcode
+and CocoaPods:
+
+```sh
+just tauri-ios-test
+```
+
+CI expects Apple signing secrets in the `apple-signing` GitHub environment for
+signed/notarized macOS builds and signed iOS release IPAs:
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_TEAM_ID`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
+`APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
+`IOS_PROVISIONING_PROFILE_B64`.
+
 ## Benchmarks
 
 Run deterministic analysis cases:
@@ -171,6 +228,8 @@ just typecheck   # mypy on src/pitgpt
 just check       # lint + GitHub Actions checks
 just web-unit    # Vitest unit tests
 just web-test    # Playwright browser tests
+just tauri-test  # Rust native tests
+just tauri-build # macOS Tauri bundle
 just audit       # uv pip check + npm audit
 just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
