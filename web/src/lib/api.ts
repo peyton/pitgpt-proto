@@ -33,23 +33,25 @@ function readTokenFromState(): string {
   }
 }
 
+interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 export async function ingest(
   query: string,
   documents: string[] = [],
   model?: string,
   provider?: AiProviderKind,
+  options: ApiRequestOptions = {},
 ): Promise<IngestionResult> {
+  throwIfAborted(options.signal);
   if (isTauriRuntime()) {
-    return invokeNative<IngestionResult>("ingest_local", {
-      query,
-      documents,
-      provider: provider ?? "ollama",
-      model: model || null,
-    });
+    return ingestNative(query, documents, model, provider, options);
   }
   const res = await fetch(`${BASE}/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
+    signal: options.signal,
     body: JSON.stringify({
       query,
       documents,
@@ -62,6 +64,58 @@ export async function ingest(
     throw new Error(err.detail ?? "Ingestion failed");
   }
   return res.json();
+}
+
+async function ingestNative(
+  query: string,
+  documents: string[],
+  model: string | undefined,
+  provider: AiProviderKind | undefined,
+  options: ApiRequestOptions,
+): Promise<IngestionResult> {
+  const requestId = options.signal ? requestIdForNativeIngest() : null;
+  const cancelNative = () => {
+    if (!requestId) return;
+    void invokeNative<boolean>("cancel_ingest_local", { requestId }).catch(() => undefined);
+  };
+  options.signal?.addEventListener("abort", cancelNative, { once: true });
+  try {
+    const result = await invokeNative<IngestionResult>("ingest_local", {
+      query,
+      documents,
+      provider: provider ?? "ollama",
+      model: model || null,
+      requestId,
+    });
+    throwIfAborted(options.signal);
+    return result;
+  } catch (error) {
+    if (options.signal?.aborted || isNativeCancellationError(error)) {
+      throwAbortError();
+    }
+    throw error;
+  } finally {
+    options.signal?.removeEventListener("abort", cancelNative);
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throwAbortError();
+}
+
+function throwAbortError(): never {
+  const error = new Error("Request aborted.");
+  error.name = "AbortError";
+  throw error;
+}
+
+function requestIdForNativeIngest(): string {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
+function isNativeCancellationError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Ingestion cancelled.");
 }
 
 export async function analyze(

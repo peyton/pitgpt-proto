@@ -20,7 +20,7 @@ statrs = "0.18"
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "process", "rt", "time"] }
+tokio = { version = "1", features = ["macros", "process", "rt", "sync", "time"] }
 which = "8"
 
 [dev-dependencies]

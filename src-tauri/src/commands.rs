@@ -1,7 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::future::Future;
+use std::sync::Mutex;
 
 use serde_json::Value;
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
+use tokio::sync::oneshot;
 
 use crate::analysis::analyze_result;
 use crate::ingestion::ingest_local_result;
@@ -16,6 +19,45 @@ use crate::storage::{
     app_data_dir, clear_state_in_dir, export_to_dir, load_state_from_dir, save_state_to_dir,
 };
 use crate::templates::load_templates as load_templates_shared;
+
+const INGEST_CANCELLED_MESSAGE: &str = "Ingestion cancelled.";
+
+#[derive(Default)]
+pub struct IngestCancellationState {
+    pending: Mutex<HashMap<String, oneshot::Sender<()>>>,
+}
+
+impl IngestCancellationState {
+    fn register(&self, request_id: &str) -> Result<oneshot::Receiver<()>, String> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| "ingestion cancellation state is unavailable".to_string())?;
+        if pending.contains_key(request_id) {
+            return Err("Ingestion request is already running.".to_string());
+        }
+        let (sender, receiver) = oneshot::channel();
+        pending.insert(request_id.to_string(), sender);
+        Ok(receiver)
+    }
+
+    fn cancel(&self, request_id: &str) -> Result<bool, String> {
+        let sender = self
+            .pending
+            .lock()
+            .map_err(|_| "ingestion cancellation state is unavailable".to_string())?
+            .remove(request_id);
+        Ok(sender.is_some_and(|sender| sender.send(()).is_ok()))
+    }
+
+    fn clear(&self, request_id: &str) -> Result<(), String> {
+        self.pending
+            .lock()
+            .map_err(|_| "ingestion cancellation state is unavailable".to_string())?
+            .remove(request_id);
+        Ok(())
+    }
+}
 
 #[tauri::command]
 pub fn get_templates() -> Result<Vec<TrialTemplate>, String> {
@@ -93,8 +135,41 @@ pub async fn ingest_local(
     documents: Vec<String>,
     provider: ProviderKind,
     model: Option<String>,
+    request_id: Option<String>,
+    cancellation: State<'_, IngestCancellationState>,
 ) -> Result<Value, String> {
-    ingest_local_result(query, documents, provider, model).await
+    run_ingest_with_optional_cancellation(request_id, &cancellation, async move {
+        ingest_local_result(query, documents, provider, model).await
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn cancel_ingest_local(
+    request_id: String,
+    cancellation: State<'_, IngestCancellationState>,
+) -> Result<bool, String> {
+    cancellation.cancel(&request_id)
+}
+
+async fn run_ingest_with_optional_cancellation<F>(
+    request_id: Option<String>,
+    cancellation: &IngestCancellationState,
+    ingest: F,
+) -> Result<Value, String>
+where
+    F: Future<Output = Result<Value, String>>,
+{
+    let Some(request_id) = request_id else {
+        return ingest.await;
+    };
+    let cancel = cancellation.register(&request_id)?;
+    let result = tokio::select! {
+        result = ingest => result,
+        _ = cancel => Err(INGEST_CANCELLED_MESSAGE.to_string()),
+    };
+    cancellation.clear(&request_id)?;
+    result
 }
 
 fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String> {
@@ -152,4 +227,58 @@ fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String>
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn cancels_registered_ingestion_request() {
+        let cancellation = Arc::new(IngestCancellationState::default());
+        let task_cancellation = Arc::clone(&cancellation);
+        let request_id = "req-cancel-native".to_string();
+        let task_request_id = request_id.clone();
+        let handle = tokio::spawn(async move {
+            run_ingest_with_optional_cancellation(
+                Some(task_request_id),
+                &task_cancellation,
+                async {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    Ok(json!({"decision": "block"}))
+                },
+            )
+            .await
+        });
+
+        let mut cancelled = false;
+        for _ in 0..10 {
+            if cancellation.cancel(&request_id).unwrap() {
+                cancelled = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        assert!(cancelled);
+        let err = handle.await.unwrap().unwrap_err();
+        assert_eq!(err, INGEST_CANCELLED_MESSAGE);
+        assert!(!cancellation
+            .pending
+            .lock()
+            .unwrap()
+            .contains_key(&request_id));
+    }
+
+    #[test]
+    fn cancelling_unknown_ingestion_request_reports_false() {
+        let cancellation = IngestCancellationState::default();
+
+        assert!(!cancellation.cancel("missing").unwrap());
+    }
 }

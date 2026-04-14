@@ -458,6 +458,8 @@ a:hover { text-decoration: underline; }
   transition: background .15s;
 }
 .chat-send:hover { background: var(--pink-600); }
+.chat-send.chat-stop { background: var(--black); }
+.chat-send.chat-stop:hover { background: var(--gray-600); }
 
 .source-panel {
   width: 100%;

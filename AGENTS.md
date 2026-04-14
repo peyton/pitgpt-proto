@@ -100,6 +100,20 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 6. **GitHub CI**: after pushing, watch the relevant GitHub Actions run to a
    terminal `success` conclusion before handing work back.
 
+## Product Surface Parity
+
+- Treat web frontend feature requests as Tauri native app feature requests too
+  unless the user explicitly scopes the work away from native. The macOS/iOS
+  Tauri app should not lag the web app when parity is practical.
+- Keep the Tauri app offline-capable at all times. Online or cloud-backed modes
+  may exist, but they must be optional/toggleable and must not break the local
+  offline path.
+- When a web feature depends on the API server or hosted services, add the
+  matching native/offline behavior or clearly document the blocker and the
+  smallest follow-up needed before handing work back.
+- Verify Tauri-impacting frontend changes with the relevant Rust/Tauri checks in
+  addition to web tests.
+
 ## Conventions
 
 - Python 3.12+, PEP 8, type hints everywhere
