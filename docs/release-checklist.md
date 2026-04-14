@@ -15,8 +15,8 @@ Before creating a release tag, keep these versions in sync:
 
 - `pyproject.toml`: `[project].version`
 - `web/package.json`: `version`
-- `src-tauri/tauri.conf.json`: top-level `version`
-- `src-tauri/Cargo.toml`: package `version`
+- `app/tauri.conf.json`: top-level `version`
+- `app/Cargo.toml`: package `version`
 
 The iOS release workflow passes `--build-number "$GITHUB_RUN_NUMBER"` to Tauri so repeated
 GitHub release builds get distinct Apple build numbers without changing the user-visible app
@@ -68,7 +68,8 @@ just release-preflight-macos
 just release-preflight-ios
 ```
 
-For iOS simulator parity, also run this on a macOS machine with Xcode and CocoaPods:
+For iOS simulator parity, also run this on a macOS machine with Xcode after
+`just setup` installs the mise-pinned CocoaPods tool:
 
 ```sh
 just tauri-ios-test
@@ -92,6 +93,6 @@ The macOS workflow produces a signed DMG for distribution outside the Mac App St
 Store package is intentionally not claimed yet because it still needs Apple-team-specific sandbox
 entitlements, provisioning profile validation, and packaging decisions.
 
-The bundle includes `src-tauri/PrivacyInfo.xcprivacy` as a minimal Apple privacy manifest. If a
+The bundle includes `app/PrivacyInfo.xcprivacy` as a minimal Apple privacy manifest. If a
 future dependency uses Apple required-reason APIs or starts collecting data, update that manifest
 before release.

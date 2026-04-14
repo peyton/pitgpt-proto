@@ -77,9 +77,9 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
       - run: rustup component add rustfmt clippy
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: cargo fmt --manifest-path app/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path app/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path app/Cargo.toml --all-targets
 
   tauri-macos-build:
     name: macOS Tauri Build
@@ -117,8 +117,8 @@ jobs:
         with:
           name: pitgpt-macos-${{ github.sha }}
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
+            app/target/release/bundle/dmg/*.dmg
+            app/target/release/bundle/macos/*.app
           if-no-files-found: error
 
   ios-simulator:
@@ -130,7 +130,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-      - run: brew install cocoapods
       - run: npm --prefix web ci
       - run: rustup target add aarch64-apple-ios-sim
       - run: npm --prefix web run tauri -- ios init --ci

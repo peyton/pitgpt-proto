@@ -171,6 +171,7 @@ test("sidebar marks unread experiment updates until opened", async ({ page }, te
   await expect(page.getByRole("heading", { name: "Compare morning routines" })).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   releaseIngest?.();
 
   await expect(page.locator(".conversation-unread-dot")).toBeVisible();

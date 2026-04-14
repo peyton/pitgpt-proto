@@ -80,7 +80,7 @@ analysis lives in `src/pitgpt/core/analysis.py`; research ingestion lives in
 `src/pitgpt/core/ingestion.py`; CSV and JSON loading live in `src/pitgpt/core/io.py`; shared
 validation lives in `src/pitgpt/core/validation.py`; the CLI is in `src/pitgpt/cli/main.py`; the
 FastAPI app is in `src/pitgpt/api/main.py`; React types and trial helpers live under `web/src/lib`;
-and native Rust mirrors live under `src-tauri/src`.
+and native Rust mirrors live under `app/src`.
 
 An estimand is the precise question the analysis answers: which outcome is compared, which
 conditions are contrasted, what summary measure is used, how missed adherence or early stopping is

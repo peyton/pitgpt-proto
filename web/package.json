@@ -11,11 +11,11 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:install": "playwright install chromium",
-    "tauri": "cd .. && npm --prefix web exec tauri --",
-    "tauri:dev": "cd .. && npm --prefix web exec tauri -- dev",
-    "tauri:build": "cd .. && npm --prefix web exec tauri -- build",
-    "tauri:ios:dev": "cd .. && npm --prefix web exec tauri -- ios dev",
-    "tauri:ios:build": "cd .. && npm --prefix web exec tauri -- ios build"
+    "tauri": "cd ../app && ../web/node_modules/.bin/tauri",
+    "tauri:dev": "cd ../app && ../web/node_modules/.bin/tauri dev",
+    "tauri:build": "cd ../app && ../web/node_modules/.bin/tauri build",
+    "tauri:ios:dev": "cd ../app && ../web/node_modules/.bin/tauri ios dev",
+    "tauri:ios:build": "cd ../app && ../web/node_modules/.bin/tauri ios build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",

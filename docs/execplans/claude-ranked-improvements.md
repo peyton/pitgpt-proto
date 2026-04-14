@@ -91,8 +91,8 @@ Verification completed:
 - `uv run mypy src/pitgpt`
 - `npm --prefix web run test:unit`
 - `npm --prefix web run build`
-- `cargo test --manifest-path src-tauri/Cargo.toml`
-- `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
+- `cargo test --manifest-path app/Cargo.toml`
+- `cargo clippy --manifest-path app/Cargo.toml --all-targets -- -D warnings`
 - `just bench-analysis`
 - `just ci`
 
@@ -101,7 +101,7 @@ Verification completed:
 PitGPT is a Python package in `src/pitgpt/` with FastAPI in `src/pitgpt/api/`,
 Typer CLI in `src/pitgpt/cli/`, Textual TUI in `src/pitgpt/tui/`, deterministic
 analysis and ingestion under `src/pitgpt/core/`, React/Vite web code under
-`web/src/`, and Tauri Rust commands under `src-tauri/src/`.
+`web/src/`, and Tauri Rust commands under `app/src/`.
 
 The current web `Observation` type already includes `adherence_reason`,
 `adverse_event_severity`, and `adverse_event_description`, but the Python model and
@@ -176,7 +176,7 @@ add missing tests.
 
 Add Python models in `src/pitgpt/core/models.py` and mirror them in
 `web/src/lib/types.ts`. Use existing dependencies where possible. If a Tauri
-notification plugin dependency is needed, add it deliberately to `src-tauri/Cargo.toml`
+notification plugin dependency is needed, add it deliberately to `app/Cargo.toml`
 and Tauri config, with tests that exercise scheduling logic independently of OS
 delivery.
 

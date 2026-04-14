@@ -10,7 +10,7 @@ src/pitgpt/
   tui/          Textual terminal UI
   benchmarks/   benchmark runner, scoring, and report code
 web/            React frontend built with Vite and TypeScript
-src-tauri/      Tauri v2 native shell, Rust commands, desktop/iOS config
+app/      Tauri v2 native shell, Rust commands, desktop/iOS config
 shared/         policy text and template fixtures consumed by Python, Rust, and TypeScript
 benchmarks/     benchmark fixture data and expected outputs
 examples/       small runnable local inputs
@@ -77,7 +77,7 @@ used by CLI `pitgpt validate` and API `POST /validate`.
 ## Data Flow: Schedules And Templates
 
 1. `shared/trial_templates.json` defines local no-key trial templates.
-2. `pitgpt.core.templates`, `src-tauri/src/templates.rs`, and
+2. `pitgpt.core.templates`, `app/src/templates.rs`, and
    `web/src/lib/templates.ts` load that shared fixture.
 3. `pitgpt.core.schedule.generate_schedule` turns `duration_weeks`,
    `block_length_days`, and a seed into period assignments.

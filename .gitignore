@@ -22,10 +22,10 @@ web/node_modules/
 web/dist/
 web/test-results/
 web/playwright-report/
-src-tauri/target/
-src-tauri/gen/apple/
-src-tauri/gen/ios/
-src-tauri/gen/schemas/
+app/target/
+app/gen/apple/
+app/gen/ios/
+app/gen/schemas/
 private_keys/
 
 # Override global ignore for mise bootstrap

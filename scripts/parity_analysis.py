@@ -71,7 +71,7 @@ def rust_analysis(protocol_path: Path, observations_path: Path) -> dict[str, Any
             "run",
             "--quiet",
             "--manifest-path",
-            "src-tauri/Cargo.toml",
+            "app/Cargo.toml",
             "--bin",
             "analysis_parity",
             "--",

@@ -30,7 +30,7 @@ updates:
       - "javascript"
 
   - package-ecosystem: "cargo"
-    directory: "/src-tauri"
+    directory: "/app"
     schedule:
       interval: "weekly"
       day: "monday"

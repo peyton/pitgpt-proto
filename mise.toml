@@ -9,6 +9,7 @@ just = "1.49.0"
 actionlint = "1.7.12"
 zizmor = "1.24.1"
 act = "0.2.87"
+cocoapods = "1.16.2"
 
 [env]
 UV_PYTHON = "3.12"

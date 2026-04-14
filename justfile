@@ -126,7 +126,7 @@ clean:
     rm -rf .mypy_cache .pytest_cache .ruff_cache
     find . -type d -name __pycache__ -prune -exec rm -rf {} +
     rm -rf benchmarks/runs web/dist web/test-results web/playwright-report
-    rm -rf src-tauri/target src-tauri/gen/apple src-tauri/gen/ios src-tauri/gen/schemas
+    rm -rf app/target app/gen/apple app/gen/ios app/gen/schemas
 
 # Audit Python environment and web dependencies
 audit:
@@ -145,16 +145,16 @@ doctor:
     test -d web/node_modules || (echo "web/node_modules missing; run just setup or just web-install" >&2; exit 1)
     ./bin/mise exec -- cargo --version
     ./bin/mise exec -- rustup component list --installed | grep -E '^(rustfmt|clippy)-'
-    ./bin/mise exec -- npm --prefix web exec tauri -- --version
+    ./bin/mise exec -- npm --prefix web run tauri -- --version
     if command -v xcodebuild >/dev/null 2>&1; then
-      xcodebuild -version | head -n 1
+      xcodebuild -version | sed -n '1p'
     else
       echo "xcodebuild is not available; iOS builds require Xcode"
     fi
-    if command -v pod >/dev/null 2>&1; then
-      pod --version
+    if ./bin/mise exec -- pod --version >/dev/null 2>&1; then
+      ./bin/mise exec -- pod --version
     else
-      echo "CocoaPods is not available; iOS Tauri init/build will fail until it is installed"
+      echo "CocoaPods is not available; run just setup before running iOS Tauri init/build"
     fi
     if [ -z "${OPENROUTER_API_KEY:-}" ]; then
       echo "OPENROUTER_API_KEY is not set; ingest and ingestion benchmarks will be unavailable"
@@ -174,7 +174,7 @@ _ios-deps:
     #!/usr/bin/env bash
     set -euo pipefail
     command -v xcodebuild >/dev/null 2>&1 || (echo "xcodebuild missing; install Xcode before running iOS builds" >&2; exit 1)
-    command -v pod >/dev/null 2>&1 || (echo "CocoaPods missing; install CocoaPods before running iOS Tauri init/build" >&2; exit 1)
+    ./bin/mise exec -- pod --version >/dev/null 2>&1 || (echo "CocoaPods missing; run just setup before running iOS Tauri init/build" >&2; exit 1)
 
 # Start web frontend dev server
 web-dev: _web-deps
@@ -194,12 +194,12 @@ web-test: _web-deps
 
 # Run Rust formatting and clippy checks for the Tauri target
 tauri-lint:
-    {{mise}} cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-    {{mise}} cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    {{mise}} cargo fmt --manifest-path app/Cargo.toml -- --check
+    {{mise}} cargo clippy --manifest-path app/Cargo.toml --all-targets -- -D warnings
 
 # Run Rust unit/integration tests for the Tauri target
 tauri-test:
-    {{mise}} cargo test --manifest-path src-tauri/Cargo.toml --all-targets
+    {{mise}} cargo test --manifest-path app/Cargo.toml --all-targets
 
 # Start the macOS Tauri app
 tauri-dev: _web-deps
@@ -211,13 +211,13 @@ tauri-build: _web-deps
 
 # Start the iOS Tauri app on a simulator
 tauri-ios-dev: _web-deps _ios-deps
-    if [ ! -d src-tauri/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
+    if [ ! -d app/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
     scripts/tauri-ios-npm-shim.sh
     {{mise}} npm --prefix web run tauri:ios:dev
 
 # Build the iOS Tauri app
 tauri-ios-build: _web-deps _ios-deps
-    if [ ! -d src-tauri/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
+    if [ ! -d app/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
     scripts/tauri-ios-npm-shim.sh
     {{mise}} npm --prefix web run tauri:ios:build
 
@@ -225,7 +225,7 @@ tauri-ios-build: _web-deps _ios-deps
 tauri-ios-test: _web-deps _ios-deps
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d src-tauri/gen/apple ]; then
+    if [ ! -d app/gen/apple ]; then
       ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci
     fi
     scripts/tauri-ios-npm-shim.sh

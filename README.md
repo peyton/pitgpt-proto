@@ -70,7 +70,7 @@ Manual setup is:
   or **Start template**.
 - Native macOS path: `just tauri-dev`, then use templates, check-ins, exports,
   analysis, or Ollama-backed local ingestion.
-- iOS simulator path: install Xcode and CocoaPods, then run `just tauri-ios-test`.
+- iOS simulator path: install Xcode, run `just setup`, then run `just tauri-ios-test`.
 - CLI no-key path: `pitgpt demo analyze` or `pitgpt trial init`.
 - API demo path: `GET /templates`, `POST /schedule`, and `GET /analyze/example`.
 - Research ingestion path: set `OPENROUTER_API_KEY`, then use `pitgpt ingest` or
@@ -177,7 +177,7 @@ just web-build
 
 ## Native Desktop And iOS
 
-The Tauri v2 app lives in `src-tauri/` and reuses the Vite React UI. Web mode
+The Tauri v2 app lives in `app/` and reuses the Vite React UI. Web mode
 continues to call FastAPI through `/api`; native mode routes templates,
 schedules, analysis, storage, export, local ingestion, and AI discovery through
 Rust commands. Tauri storage is app-local JSON, so the native app can function
@@ -212,9 +212,9 @@ model runtime work and is not selectable yet.
 iOS currently supports the offline app core: templates, local JSON storage,
 trial tracking, schedule generation, exports, and deterministic analysis. It
 does not discover Mac-installed CLIs. iOS Tauri generation/builds require Xcode
-and CocoaPods. The `just` recipes run `scripts/tauri-ios-npm-shim.sh` after
+and the mise-pinned CocoaPods tool installed by `just setup`. The `just` recipes run `scripts/tauri-ios-npm-shim.sh` after
 Tauri project generation so Xcode can find the repo's web package from the
-generated `src-tauri/gen/apple` project:
+generated `app/gen/apple` project:
 
 ```sh
 just tauri-ios-test
@@ -231,7 +231,7 @@ iOS App Store Connect IPAs:
 See `docs/release-checklist.md` for the release preflight commands, secret
 definitions, build-number behavior, and current Mac App Store gaps.
 
-On `master`, changes to the native app inputs (`src-tauri/`, `web/`, `shared/`,
+On `master`, changes to the native app inputs (`app/`, `web/`, `shared/`,
 or native build config) also update the rolling GitHub prerelease tagged
 `macos-preview` with the latest signed macOS DMG.
 

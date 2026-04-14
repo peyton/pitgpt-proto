@@ -22,7 +22,7 @@ src/pitgpt/      # Main Python package
 web/             # React web frontend (Vite + TypeScript)
   src/           # Components, pages, lib
   public/        # Static assets (logos)
-src-tauri/       # Tauri v2 Rust native target for macOS and iOS
+app/       # Tauri v2 Rust native target for macOS and iOS
 shared/          # Policy and template fixtures shared across Python/Rust/TypeScript
 tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
@@ -46,8 +46,9 @@ docs/            # Documentation
 | **pytest**   | Testing                        | `pyproject.toml` |
 | **vitest**   | Web unit tests                 | `web/package.json` |
 | **playwright** | Web browser tests            | `web/playwright.config.ts` |
-| **cargo**    | Tauri Rust build/test/lint      | `src-tauri/Cargo.toml` |
+| **cargo**    | Tauri Rust build/test/lint      | `app/Cargo.toml` |
 | **tauri**    | Native desktop/iOS builds       | `web/package.json` |
+| **CocoaPods** | Tauri iOS dependency manager   | `mise.toml`      |
 | **actionlint** | GitHub Actions linter        | (builtin)        |
 | **zizmor**   | GitHub Actions security linter | (builtin)        |
 | **act**      | Local CI runner                | —                |
@@ -126,17 +127,20 @@ just bootstrap   # Regenerate bin/mise bootstrap script
   them, and `just rust-components` refreshes them if a clean runner lacks them.
 - Tauri iOS builds must run `scripts/tauri-ios-npm-shim.sh` after `tauri ios
   init`. The generated Xcode project runs its Rust build phase from
-  `src-tauri/gen/apple`, and the shim lets that phase resolve the repo's web
+  `app/gen/apple`, and the shim lets that phase resolve the repo's web
   package on clean runners.
+- CocoaPods is pinned in `mise.toml`; run it through `./bin/mise exec -- pod`
+  rather than assuming a global Homebrew or gem install.
 - Use `uv run` to execute Python tools (not global installs)
 - Use `hk` for linting, not raw ruff/mypy commands
 - Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
   requires the `pkl` CLI even before hooks start, so clean runners must install
   it through mise. `just`, `actionlint`, `zizmor`, and `act` are pinned there
-  too so local automation does not depend on ad-hoc global versions.
+  too so local automation does not depend on ad-hoc global versions. CocoaPods
+  is also pinned there for iOS Tauri generation and simulator/release builds.
 - Ruff config: line length 100, select E/F/I/UP/B/SIM
 - Tests live in `tests/`, mirror `src/pitgpt/` structure
-- Tauri Rust tests live beside Rust modules in `src-tauri/src/`
+- Tauri Rust tests live beside Rust modules in `app/src/`
 - Shared safety policy and template data live in `shared/`; keep Python, Rust,
   and TypeScript loaders pointed at those files instead of duplicating fixtures.
 - Python analysis is the methodology source of truth. Keep Rust analysis parity
@@ -152,7 +156,7 @@ images, per-job timeouts, and concurrency cancellation for stale PR runs. It run
 - **check**: `hk run check --all` (includes actionlint + zizmor)
 - **test**: `uv run pytest`
 - **web**: npm install, build, Vitest, Playwright, npm audit
-- **rust**: cargo fmt, clippy, and cargo test for `src-tauri`
+- **rust**: cargo fmt, clippy, and cargo test for `app`
 - **tauri-macos-build**: signed/notarized macOS artifacts on `master` and manual
   runs when the `apple-signing` environment secrets are configured; otherwise it
   emits a notice and skips artifact creation without failing CI
@@ -162,7 +166,7 @@ images, per-job timeouts, and concurrency cancellation for stale PR runs. It run
 - **audit**: `uv pip check` and npm audit
 
 `.github/workflows/macos-preview-release.yml` runs on `master` when macOS app
-inputs change (`src-tauri/`, `web/`, `shared/`, and native build config). It
+inputs change (`app/`, `web/`, `shared/`, and native build config). It
 builds signed macOS DMGs and updates the rolling GitHub prerelease tagged
 `macos-preview`. The official release workflow excludes that preview tag.
 

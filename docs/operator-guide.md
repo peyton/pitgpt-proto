@@ -291,14 +291,15 @@ iOS uses the same offline Rust core and React UI, but it does not discover
 Mac-installed CLI tools. Settings marks on-device AI as planned. Future work
 can attach an implementation to the reserved `ios_on_device` provider.
 
-iOS generation and simulator builds require Xcode and CocoaPods:
+iOS generation and simulator builds require Xcode and the mise-pinned CocoaPods
+tool installed by `just setup`:
 
 ```sh
 just tauri-ios-test
 ```
 
 If CocoaPods is missing, Tauri iOS initialization fails before the simulator
-build. CI installs CocoaPods before running the iOS path.
+build. Run `just setup` to install the pinned `pod` executable through mise.
 
 ## Run Benchmarks
 
