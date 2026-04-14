@@ -1,48 +1,52 @@
 default:
     @just --list
 
+mise := "./bin/mise exec --"
+uv_run := "./bin/mise exec -- uv run --python 3.12"
+uv_sync := "./bin/mise exec -- uv sync --python 3.12"
+
 # Bootstrap mise and install all tools + dependencies
 setup:
     ./bin/mise install
-    uv sync
-    cd web && npm install
+    {{uv_sync}}
+    {{mise}} npm --prefix web install
 
 # Install Python dependencies
 install:
-    uv sync
+    {{uv_sync}}
 
 # Run the test suite
 test *args:
-    uv run pytest {{args}}
+    {{uv_run}} pytest {{args}}
 
-# Run linters via hk (pre-commit checks)
+# Run non-mutating linters via hk
 lint:
-    hk run pre-commit --all
+    {{mise}} hk run pre-commit --all --check --stash none
 
 # Run all checks (lint + GHA linting)
 check:
-    hk run check --all
+    env -u GH_TOKEN -u GITHUB_TOKEN {{mise}} hk run check --all --check
 
 # Auto-fix code with ruff
 fix:
-    hk run fix --all
+    {{mise}} hk run fix --all --fix
 
 # Format code with ruff
 fmt:
-    uv run ruff format .
-    uv run ruff check --fix .
+    {{uv_run}} ruff format .
+    {{uv_run}} ruff check --fix .
 
 # Type-check
 typecheck:
-    uv run mypy pitgpt/
+    {{uv_run}} mypy src/pitgpt/
 
 # Start the API server
 serve port="8000":
-    uv run uvicorn pitgpt.api.main:app --host 0.0.0.0 --port {{port}} --reload
+    {{uv_run}} uvicorn pitgpt.api.main:app --host 0.0.0.0 --port {{port}} --reload
 
 # Launch the TUI
 tui:
-    uv run python -m pitgpt.tui.app
+    {{uv_run}} python -m pitgpt.tui.app
 
 # Run benchmarks
 bench model="" track="all" cases="":
@@ -51,41 +55,41 @@ bench model="" track="all" cases="":
     if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
     if [ "{{track}}" != "all" ]; then args="$args --track {{track}}"; fi
     if [ -n "{{cases}}" ]; then args="$args --cases {{cases}}"; fi
-    uv run pitgpt benchmark run $args
+    ./bin/mise exec -- uv run --python 3.12 pitgpt benchmark run $args
 
 # Generate benchmark comparison report
 bench-report output="":
     #!/usr/bin/env bash
     args=""
     if [ -n "{{output}}" ]; then args="$args --output {{output}}"; fi
-    uv run pitgpt benchmark report $args
+    ./bin/mise exec -- uv run --python 3.12 pitgpt benchmark report $args
 
 # Run a single ingestion query
 ingest query model="":
     #!/usr/bin/env bash
     args="--query '{{query}}'"
     if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
-    uv run pitgpt ingest $args
+    ./bin/mise exec -- uv run --python 3.12 pitgpt ingest $args
 
 # Run analysis on protocol + observations
 analyze protocol observations:
-    uv run pitgpt analyze --protocol {{protocol}} --observations {{observations}}
+    {{uv_run}} pitgpt analyze --protocol {{protocol}} --observations {{observations}}
 
 # Run CI checks locally via act
 ci:
-    act -j ci
+    {{mise}} act -j ci
 
 # Install web frontend dependencies
 web-install:
-    cd web && npm install
+    {{mise}} npm --prefix web install
 
 # Start web frontend dev server
 web-dev:
-    cd web && npm run dev
+    {{mise}} npm --prefix web run dev
 
 # Build web frontend for production
 web-build:
-    cd web && npm run build
+    {{mise}} npm --prefix web run build
 
 # Regenerate bin/mise bootstrap script
 bootstrap:

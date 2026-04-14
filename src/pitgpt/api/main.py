@@ -2,12 +2,13 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import ingest
 from pitgpt.core.llm import LLMClient, LLMError
-from pitgpt.core.models import IngestionResult, Observation, ResultCard
+from pitgpt.core.models import AnalysisProtocol, IngestionResult, Observation, ResultCard
+from pitgpt.core.settings import load_settings
 
 app = FastAPI(title="PitGPT", version="0.1.0")
 
@@ -21,12 +22,12 @@ app.add_middleware(
 
 class IngestRequest(BaseModel):
     query: str
-    documents: list[str] = []
-    model: str = "anthropic/claude-sonnet-4"
+    documents: list[str] = Field(default_factory=list)
+    model: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
-    protocol: dict
+    protocol: AnalysisProtocol
     observations: list[Observation]
 
 
@@ -37,10 +38,18 @@ async def health():
 
 @app.post("/ingest", response_model=IngestionResult)
 async def ingest_endpoint(req: IngestRequest):
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    settings = load_settings()
+    api_key = settings.openrouter_api_key
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not set")
-    client = LLMClient(model=req.model, api_key=api_key)
+    client = LLMClient(
+        model=req.model or settings.default_model,
+        api_key=api_key,
+        base_url=settings.llm_base_url,
+        temperature=settings.llm_temperature,
+        max_tokens=settings.llm_max_tokens,
+        timeout_s=settings.llm_timeout_s,
+    )
     try:
         return await ingest(req.query, req.documents, client)
     except LLMError as e:

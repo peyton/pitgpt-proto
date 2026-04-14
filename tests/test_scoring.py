@@ -1,6 +1,6 @@
 """Test scoring functions."""
 
-from benchmarks.scoring import score_analysis, score_ingestion
+from pitgpt.benchmarks.scoring import score_analysis, score_ingestion
 from pitgpt.core.models import (
     EvidenceQuality,
     IngestionDecision,

@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-RUNS_DIR = Path(__file__).parent / "runs"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RUNS_DIR = REPO_ROOT / "benchmarks" / "runs"
 
 
 def generate_report() -> dict:

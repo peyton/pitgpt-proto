@@ -1,8 +1,8 @@
 [project]
 name = "pitgpt"
 version = "0.1.0"
-description = "Personal clinical trial machine — prototype"
-requires-python = ">=3.12"
+description = "Data-only personal clinical trial engine prototype"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "pydantic>=2.0",
     "httpx>=0.27",
@@ -20,6 +20,9 @@ pitgpt = "pitgpt.cli.main:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pitgpt"]
 
 [dependency-groups]
 dev = [
@@ -42,9 +45,9 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
-"pitgpt/core/ingestion.py" = ["E501"]
-"pitgpt/tui/app.py" = ["E501"]
-"pitgpt/cli/main.py" = ["E501"]
+"src/pitgpt/core/policy.py" = ["E501"]
+"src/pitgpt/tui/app.py" = ["E501"]
+"src/pitgpt/cli/main.py" = ["E501"]
 "tests/test_ingestion.py" = ["E501"]
 
 [tool.mypy]
@@ -52,3 +55,7 @@ python_version = "3.12"
 strict = false
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "scipy"
+ignore_missing_imports = true

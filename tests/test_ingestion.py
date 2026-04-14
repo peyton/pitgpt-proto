@@ -9,6 +9,7 @@ import respx
 from pitgpt.core.ingestion import ingest
 from pitgpt.core.llm import LLMClient, LLMError
 from pitgpt.core.models import EvidenceQuality, IngestionDecision, SafetyTier
+from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
 
 
 def _mock_llm_response(response_data: dict):
@@ -168,3 +169,30 @@ class TestLLMErrors:
         ]
         with pytest.raises(LLMError):
             await ingest("test", [], client)
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_malformed_provider_response_retries(self, client):
+        route = respx.post("https://test.api/chat/completions")
+        route.side_effect = [
+            httpx.Response(200, json={"not_choices": []}),
+            httpx.Response(200, json={"choices": []}),
+            httpx.Response(200, json={"choices": [{"message": {}}]}),
+        ]
+        with pytest.raises(LLMError):
+            await ingest("test", [], client)
+
+
+class TestSafetyPolicy:
+    def test_policy_versioned(self):
+        assert SAFETY_POLICY_VERSION
+
+    def test_policy_covers_prd_boundaries(self):
+        prompt = SAFETY_POLICY_PROMPT
+        assert "GREEN" in prompt
+        assert "YELLOW" in prompt
+        assert "RED" in prompt
+        assert "ANY prescription medication" in prompt
+        assert "ANY supplement or ingestible" in prompt
+        assert "ANY disease management claim" in prompt
+        assert "skincare product comparisons" in prompt

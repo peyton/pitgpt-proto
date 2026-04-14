@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SafetyTier(StrEnum):
@@ -31,15 +31,36 @@ class QualityGrade(StrEnum):
     D = "D"
 
 
+class Condition(StrEnum):
+    A = "A"
+    B = "B"
+
+
+class YesNo(StrEnum):
+    YES = "yes"
+    NO = "no"
+
+
+class Adherence(StrEnum):
+    YES = "yes"
+    PARTIAL = "partial"
+    NO = "no"
+
+
 class Protocol(BaseModel):
     template: str | None = None
-    duration_weeks: int
-    block_length_days: int
+    duration_weeks: int = Field(gt=0)
+    block_length_days: int = Field(gt=0)
     cadence: str
     washout: str
     primary_outcome_question: str
     screening: str = ""
     warnings: str = ""
+
+
+class AnalysisProtocol(BaseModel):
+    planned_days: int = Field(default=42, gt=0)
+    block_length_days: int = Field(default=7, gt=0)
 
 
 class IngestionResult(BaseModel):
@@ -53,15 +74,15 @@ class IngestionResult(BaseModel):
 
 
 class Observation(BaseModel):
-    day_index: int
+    day_index: int = Field(ge=1)
     date: str
-    condition: str
-    primary_score: float | None = None
-    irritation: str = "no"
-    adherence: str = "yes"
+    condition: Condition
+    primary_score: float | None = Field(default=None, ge=0, le=10)
+    irritation: YesNo = YesNo.NO
+    adherence: Adherence = Adherence.YES
     note: str = ""
-    is_backfill: str = "no"
-    backfill_days: float | None = None
+    is_backfill: YesNo = YesNo.NO
+    backfill_days: float | None = Field(default=None, ge=0)
 
 
 class BlockBreakdown(BaseModel):
@@ -97,7 +118,7 @@ class ResultCard(BaseModel):
     days_logged_pct: float = 0.0
     early_stop: bool = False
     late_backfill_excluded: int = 0
-    block_breakdown: list[BlockBreakdown] = []
+    block_breakdown: list[BlockBreakdown] = Field(default_factory=list)
     sensitivity_excluding_partial: SensitivityResult | None = None
     planned_days_defaulted: bool = False
     summary: str = ""
