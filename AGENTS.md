@@ -71,6 +71,10 @@ just bench-ingestion # Run LLM-backed ingestion benchmarks
 just bench-all    # Run all benchmark tracks
 just serve       # Start API server
 just tui         # Launch TUI
+pitgpt brief     # Print compact local trial result brief
+pitgpt power     # Estimate two-arm sample size for planning
+pitgpt doctor    # Check PitGPT CLI/API runtime settings
+pitgpt trial status/export/import/amend # Inspect, bundle, restore, or amend trial files
 just web-dev     # Start web frontend dev server
 just web-build   # Build web frontend for production
 just web-unit    # Run Vitest unit tests
@@ -191,11 +195,18 @@ clinical care.
 ## Environment Variables
 
 - `OPENROUTER_API_KEY` — Required for LLM calls; set it explicitly when needed
+- `PITGPT_API_TOKEN` — Optional bearer token for API endpoints except health/docs
 - `PITGPT_DEFAULT_MODEL` — Defaults to `anthropic/claude-sonnet-4`
 - `PITGPT_LLM_BASE_URL` — Defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S` — Defaults to `120`
 - `PITGPT_LLM_TEMPERATURE` — Defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS` — Defaults to `4096`
+- `PITGPT_LLM_REFERER` — Optional `HTTP-Referer` header for LLM calls
+- `PITGPT_LLM_TITLE` — Optional `X-Title` header for LLM calls
+- `PITGPT_MAX_DOCUMENT_CHARS` — Defaults to `12000`
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` — Defaults to `40000`
+- `PITGPT_LLM_CACHE` — Opt-in deterministic local LLM response cache
+- `PITGPT_LLM_CACHE_DIR` — Optional cache directory; default `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL` — Defaults to `llama3.1`
 

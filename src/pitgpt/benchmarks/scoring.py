@@ -109,12 +109,50 @@ def score_analysis(result: ResultCard, expected: dict) -> dict:
 
     scores["summary_quality"] = _score_summary_quality(result, expected)
 
+    optional_weights: dict[str, float] = {}
+    if "relative_change_pct" in expected:
+        expected_relative = expected["relative_change_pct"]
+        if expected_relative is not None and result.relative_change_pct is not None:
+            scores["relative_change_accuracy"] = round(
+                1.0
+                - min(
+                    1.0,
+                    abs(result.relative_change_pct - expected_relative)
+                    / max(abs(expected_relative), 0.01),
+                ),
+                4,
+            )
+        else:
+            scores["relative_change_accuracy"] = float(
+                expected_relative is None and result.relative_change_pct is None
+            )
+        optional_weights["relative_change_accuracy"] = 1.0
+
+    if "adverse_event_count" in expected:
+        scores["adverse_event_count_match"] = float(
+            result.adverse_event_count == expected["adverse_event_count"]
+        )
+        optional_weights["adverse_event_count_match"] = 1.0
+
+    if "secondary_outcome_count" in expected:
+        scores["secondary_outcome_count_match"] = float(
+            len(result.secondary_outcomes) == expected["secondary_outcome_count"]
+        )
+        optional_weights["secondary_outcome_count_match"] = 1.0
+
+    if "protocol_amendment_count" in expected:
+        scores["protocol_amendment_count_match"] = float(
+            result.protocol_amendment_count == expected["protocol_amendment_count"]
+        )
+        optional_weights["protocol_amendment_count_match"] = 1.0
+
     weights = {
         "grade_match": 2.0,
         "difference_accuracy": 2.0,
         "ci_accuracy": 1.5,
         "early_stop_match": 1.0,
         "summary_quality": 1.0,
+        **optional_weights,
     }
     weighted_sum = sum(scores[k] * weights[k] for k in scores)
     total_weight = sum(weights.values())

@@ -55,6 +55,12 @@ class Adherence(StrEnum):
     NO = "no"
 
 
+class AdverseEventSeverity(StrEnum):
+    MILD = "mild"
+    MODERATE = "moderate"
+    SEVERE = "severe"
+
+
 class AnalysisMethod(StrEnum):
     WELCH = "welch"
     PAIRED_BLOCKS = "paired_blocks"
@@ -89,6 +95,23 @@ class SuitabilityScore(BaseModel):
     rationale: str = ""
 
 
+class OutcomeDefinition(BaseModel):
+    id: str = Field(pattern=r"^[A-Za-z0-9_\-]+$", max_length=48)
+    label: str
+    scale_min: float = 0
+    scale_max: float = 10
+    higher_is_better: bool = True
+    description: str = ""
+
+
+class ProtocolAmendment(BaseModel):
+    date: str
+    field: str
+    old_value: str = ""
+    new_value: str = ""
+    reason: str
+
+
 class Protocol(BaseModel):
     template: str | None = None
     duration_weeks: int = Field(gt=0)
@@ -101,8 +124,12 @@ class Protocol(BaseModel):
     outcome_anchor_low: str = ""
     outcome_anchor_mid: str = ""
     outcome_anchor_high: str = ""
+    condition_a_label: str = "Condition A"
+    condition_b_label: str = "Condition B"
     condition_a_instructions: str = ""
     condition_b_instructions: str = ""
+    secondary_outcomes: list[OutcomeDefinition] = Field(default_factory=list)
+    amendments: list[ProtocolAmendment] = Field(default_factory=list)
     suggested_confounders: list[str] = Field(default_factory=list)
     clinician_note: str = ""
     readiness_checklist: list[str] = Field(default_factory=list)
@@ -112,6 +139,10 @@ class AnalysisProtocol(BaseModel):
     planned_days: int = Field(default=42, gt=0)
     block_length_days: int = Field(default=7, gt=0)
     minimum_meaningful_difference: float = Field(default=0.5, ge=0)
+    condition_a_label: str = "Condition A"
+    condition_b_label: str = "Condition B"
+    secondary_outcomes: list[OutcomeDefinition] = Field(default_factory=list)
+    amendments: list[ProtocolAmendment] = Field(default_factory=list)
 
 
 class IngestionResult(BaseModel):
@@ -167,9 +198,13 @@ class Observation(BaseModel):
     primary_score: float | None = Field(default=None, ge=0, le=10)
     irritation: YesNo = YesNo.NO
     adherence: Adherence = Adherence.YES
+    adherence_reason: str = ""
     note: str = ""
     is_backfill: YesNo = YesNo.NO
     backfill_days: float | None = Field(default=None, ge=0)
+    adverse_event_severity: AdverseEventSeverity | None = None
+    adverse_event_description: str = ""
+    secondary_scores: dict[str, float] = Field(default_factory=dict)
 
 
 class BlockBreakdown(BaseModel):
@@ -194,6 +229,17 @@ class SensitivityResult(BaseModel):
     n_used_b: int = 0
 
 
+class SecondaryOutcomeResult(BaseModel):
+    outcome_id: str
+    label: str
+    mean_a: float | None = None
+    mean_b: float | None = None
+    difference: float | None = None
+    n_used_a: int = 0
+    n_used_b: int = 0
+    summary: str = ""
+
+
 class ScheduleAssignment(BaseModel):
     period_index: int = Field(ge=0)
     pair_index: int = Field(ge=0)
@@ -215,6 +261,7 @@ class ResultCard(BaseModel):
     ci_lower: float | None = None
     ci_upper: float | None = None
     cohens_d: float | None = None
+    relative_change_pct: float | None = None
     paired_block: PairedBlockEstimate | None = None
     n_used_a: int = 0
     n_used_b: int = 0
@@ -222,11 +269,39 @@ class ResultCard(BaseModel):
     days_logged_pct: float = 0.0
     early_stop: bool = False
     late_backfill_excluded: int = 0
+    adverse_event_count: int = 0
+    adverse_event_by_severity: dict[str, int] = Field(default_factory=dict)
     block_breakdown: list[BlockBreakdown] = Field(default_factory=list)
     sensitivity_excluding_partial: SensitivityResult | None = None
+    secondary_outcomes: list[SecondaryOutcomeResult] = Field(default_factory=list)
+    protocol_amendment_count: int = 0
     planned_days_defaulted: bool = False
     minimum_meaningful_difference: float = 0.5
     meets_minimum_meaningful_effect: bool | None = None
     data_warnings: list[str] = Field(default_factory=list)
     summary: str = ""
     caveats: str = ""
+
+
+class ValidationReport(BaseModel):
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    observation_count: int = 0
+    planned_days: int | None = None
+    block_length_days: int | None = None
+
+
+class TrialBundleManifest(BaseModel):
+    schema_version: str = "pitgpt.bundle.v1"
+    exported_at: str
+    protocol_file: str = "protocol.json"
+    observations_file: str = "observations.csv"
+    result_file: str | None = "result.json"
+
+
+class TrialBundle(BaseModel):
+    manifest: TrialBundleManifest
+    protocol: AnalysisProtocol
+    observations: list[Observation]
+    result: ResultCard | None = None

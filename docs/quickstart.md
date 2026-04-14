@@ -64,6 +64,17 @@ Validate before analysis:
 pitgpt validate --protocol my-trial/protocol.json --observations my-trial/observations.csv
 ```
 
+Useful local trial utilities:
+
+```sh
+pitgpt trial status --protocol my-trial/protocol.json --observations my-trial/observations.csv
+pitgpt brief --protocol my-trial/protocol.json --observations my-trial/observations.csv
+pitgpt power --effect 0.5 --sigma 1.5
+pitgpt trial export --protocol my-trial/protocol.json --observations my-trial/observations.csv --output my-trial.zip
+pitgpt trial import --bundle my-trial.zip --output-dir restored-trial
+pitgpt trial amend --protocol my-trial/protocol.json --field warnings --value "Stop if discomfort persists." --reason "Clarified stop criteria before starting."
+```
+
 ## API
 
 Start the API:
@@ -77,9 +88,14 @@ Useful read/demo endpoints:
 - `GET /templates`
 - `POST /schedule`
 - `GET /analyze/example`
+- `POST /validate`
 
 `POST /ingest` requires `OPENROUTER_API_KEY`. Missing configuration returns a
 structured `503`.
+
+If `PITGPT_API_TOKEN` is set, all endpoints except `/health`, `/docs`, `/redoc`,
+and `/openapi.json` require `Authorization: Bearer <token>`. The web Settings
+page has a local API token field for that mode.
 
 `GET /providers` reports OpenRouter, Ollama, local CLI tool discovery, and the
 reserved iOS on-device provider. `POST /ingest` accepts optional
@@ -95,7 +111,8 @@ just tauri-dev
 Use this path for the offline-capable native app. Templates, schedule
 generation, check-ins, app-local JSON storage, exports, and analysis work
 without a server. Ollama-backed ingestion works offline when Ollama is running
-with local models.
+with local models. Native reminders are opt-in: the app requests notification
+permission only when reminder settings are enabled in the Tauri runtime.
 
 Build the app:
 

@@ -2,6 +2,7 @@ mod analysis;
 mod commands;
 mod ingestion;
 mod models;
+mod notifications;
 mod providers;
 mod schedule;
 mod storage;
@@ -17,9 +18,11 @@ pub use templates::load_templates;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_templates,
             commands::generate_schedule,
+            commands::plan_trial_reminders,
             commands::analyze,
             commands::analyze_example,
             commands::load_app_state,

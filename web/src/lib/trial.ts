@@ -7,6 +7,8 @@ export function createTrial(
   conditionBLabel: string,
 ): Trial {
   const protocol = ingestion.protocol!;
+  protocol.condition_a_label = conditionALabel;
+  protocol.condition_b_label = conditionBLabel;
   const seed = generateSeed();
   const schedule = generateSchedule(
     protocol.duration_weeks,
@@ -151,6 +153,7 @@ export function buildObservation(
     adherenceReason?: string;
     adverseEventSeverity?: "mild" | "moderate" | "severe";
     adverseEventDescription?: string;
+    secondaryScores?: Record<string, number>;
   } = {},
 ): Observation {
   const today = toLocalDateInput(new Date());
@@ -168,6 +171,7 @@ export function buildObservationForDate(
     adherenceReason?: string;
     adverseEventSeverity?: "mild" | "moderate" | "severe";
     adverseEventDescription?: string;
+    secondaryScores?: Record<string, number>;
   } = {},
 ): Observation {
   const date = parseDateInput(dateStr);
@@ -189,6 +193,7 @@ export function buildObservationForDate(
     adverse_event_severity: irritation === "yes" ? (options.adverseEventSeverity ?? "mild") : undefined,
     adverse_event_description:
       irritation === "yes" ? (options.adverseEventDescription?.trim() || note || "Logged during check-in.") : undefined,
+    secondary_scores: options.secondaryScores ?? {},
   };
 }
 
@@ -244,6 +249,10 @@ export function protocolToDict(protocol: Protocol): Record<string, unknown> {
     cadence: protocol.cadence,
     washout: protocol.washout,
     primary_outcome_question: protocol.primary_outcome_question,
+    condition_a_label: protocol.condition_a_label ?? "Condition A",
+    condition_b_label: protocol.condition_b_label ?? "Condition B",
+    secondary_outcomes: protocol.secondary_outcomes ?? [],
+    amendments: protocol.amendments ?? [],
   };
 }
 

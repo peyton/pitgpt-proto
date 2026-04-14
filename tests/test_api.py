@@ -17,7 +17,8 @@ from pitgpt.core.models import (
 
 
 @pytest.fixture
-def api_client():
+def api_client(monkeypatch):
+    monkeypatch.delenv("PITGPT_API_TOKEN", raising=False)
     return TestClient(app)
 
 
@@ -129,6 +130,55 @@ class TestAnalyzeEndpoint:
             },
         )
         assert resp.status_code == 422
+
+
+class TestValidateEndpoint:
+    def test_validate_reports_warnings(self, api_client):
+        resp = api_client.post(
+            "/validate",
+            json={
+                "protocol": {"planned_days": 7, "block_length_days": 7},
+                "observations": [
+                    {
+                        "day_index": 1,
+                        "date": "2026-01-01",
+                        "condition": "A",
+                        "primary_score": 7,
+                    },
+                    {
+                        "day_index": 3,
+                        "date": "2026-01-03",
+                        "condition": "B",
+                        "primary_score": 6,
+                    },
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+        assert "Missing day_index" in " ".join(data["warnings"])
+
+
+class TestOptionalAuth:
+    @patch.dict("os.environ", {"PITGPT_API_TOKEN": "secret"})
+    def test_private_endpoint_requires_bearer_token(self):
+        client = TestClient(app)
+
+        unauthorized = client.get("/templates")
+        authorized = client.get("/templates", headers={"Authorization": "Bearer secret"})
+
+        assert unauthorized.status_code == 401
+        assert unauthorized.json()["error"]["message"] == "Unauthorized"
+        assert authorized.status_code == 200
+
+    @patch.dict("os.environ", {"PITGPT_API_TOKEN": "secret"})
+    def test_public_paths_remain_public(self):
+        client = TestClient(app)
+
+        assert client.get("/health").status_code == 200
+        assert client.get("/openapi.json").status_code == 200
 
 
 class TestIngestEndpoint:

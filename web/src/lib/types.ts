@@ -13,6 +13,7 @@ export type Condition = "A" | "B";
 export type YesNo = "yes" | "no";
 export type Adherence = "yes" | "no" | "partial";
 export type AnalysisMethod = "welch" | "paired_blocks" | "insufficient_data";
+export type AdverseEventSeverity = "mild" | "moderate" | "severe";
 export type IngestionDecision =
   | "generate_protocol"
   | "generate_protocol_with_restrictions"
@@ -45,11 +46,32 @@ export interface Protocol {
   outcome_anchor_low?: string;
   outcome_anchor_mid?: string;
   outcome_anchor_high?: string;
+  condition_a_label?: string;
+  condition_b_label?: string;
   condition_a_instructions?: string;
   condition_b_instructions?: string;
+  secondary_outcomes?: OutcomeDefinition[];
+  amendments?: ProtocolAmendment[];
   suggested_confounders?: string[];
   clinician_note?: string;
   readiness_checklist?: string[];
+}
+
+export interface OutcomeDefinition {
+  id: string;
+  label: string;
+  scale_min: number;
+  scale_max: number;
+  higher_is_better: boolean;
+  description?: string;
+}
+
+export interface ProtocolAmendment {
+  date: string;
+  field: string;
+  old_value?: string;
+  new_value?: string;
+  reason: string;
 }
 
 export interface ResearchSource {
@@ -113,8 +135,9 @@ export interface Observation {
   note: string;
   is_backfill: YesNo;
   backfill_days: number | null;
-  adverse_event_severity?: "mild" | "moderate" | "severe";
+  adverse_event_severity?: AdverseEventSeverity;
   adverse_event_description?: string;
+  secondary_scores?: Record<string, number>;
 }
 
 export interface BlockBreakdown {
@@ -139,6 +162,17 @@ export interface PairedBlockEstimate {
   n_pairs: number;
 }
 
+export interface SecondaryOutcomeResult {
+  outcome_id: string;
+  label: string;
+  mean_a: number | null;
+  mean_b: number | null;
+  difference: number | null;
+  n_used_a: number;
+  n_used_b: number;
+  summary: string;
+}
+
 export interface ResultCard {
   quality_grade: QualityGrade;
   verdict: Verdict;
@@ -149,6 +183,7 @@ export interface ResultCard {
   ci_lower: number | null;
   ci_upper: number | null;
   cohens_d: number | null;
+  relative_change_pct?: number | null;
   paired_block?: PairedBlockEstimate | null;
   n_used_a: number;
   n_used_b: number;
@@ -156,14 +191,27 @@ export interface ResultCard {
   days_logged_pct: number;
   early_stop: boolean;
   late_backfill_excluded: number;
+  adverse_event_count?: number;
+  adverse_event_by_severity?: Record<string, number>;
   block_breakdown: BlockBreakdown[];
   sensitivity_excluding_partial: SensitivityResult | null;
+  secondary_outcomes?: SecondaryOutcomeResult[];
+  protocol_amendment_count?: number;
   planned_days_defaulted: boolean;
   minimum_meaningful_difference?: number;
   meets_minimum_meaningful_effect?: boolean | null;
   data_warnings?: string[];
   summary: string;
   caveats: string;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  observation_count: number;
+  planned_days: number | null;
+  block_length_days: number | null;
 }
 
 // Client-only types
@@ -222,6 +270,7 @@ export interface Settings {
   reminderEnabled: boolean;
   reminderTime: string;
   emailReminderEnabled: boolean;
+  apiToken: string;
   preferredProvider: AiProviderKind;
   preferredModel: string;
   localAiConsentByProvider: Partial<Record<AiProviderKind, boolean>>;

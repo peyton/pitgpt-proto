@@ -20,6 +20,11 @@ clinician.
 - `pitgpt trial randomize`: generate a deterministic period schedule.
 - `pitgpt checkin add`: append one observation row with duplicate guards.
 - `pitgpt validate`: validate protocol and observation files before analysis.
+- `pitgpt brief`: print a compact result brief for a local trial.
+- `pitgpt power`: estimate two-arm sample size for planning.
+- `pitgpt doctor`: inspect local PitGPT runtime configuration.
+- `pitgpt trial status/export/import/amend`: inspect, bundle, restore, and
+  record amendments for local trial files.
 - `pitgpt ingest`: send a question and optional documents to the research
   ingestion engine. This requires `OPENROUTER_API_KEY`.
 - `pitgpt benchmark run`: run the benchmark suite against deterministic analysis
@@ -110,10 +115,17 @@ If `OPENROUTER_API_KEY` is missing, ingestion exits with
 Optional configuration:
 
 - `PITGPT_DEFAULT_MODEL`: defaults to `anthropic/claude-sonnet-4`
+- `PITGPT_API_TOKEN`: optional bearer token for API endpoints except health/docs
 - `PITGPT_LLM_BASE_URL`: defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S`: defaults to `120`
 - `PITGPT_LLM_TEMPERATURE`: defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
+- `PITGPT_LLM_REFERER`: optional `HTTP-Referer` header for LLM calls
+- `PITGPT_LLM_TITLE`: optional `X-Title` header for LLM calls
+- `PITGPT_MAX_DOCUMENT_CHARS`: defaults to `12000`
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS`: defaults to `40000`
+- `PITGPT_LLM_CACHE`: set to `1`/`true` for deterministic local LLM caching
+- `PITGPT_LLM_CACHE_DIR`: optional cache directory, defaulting to `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL`: defaults to `llama3.1`
 
@@ -136,6 +148,11 @@ The expected body is:
 ```json
 {"status":"ok"}
 ```
+
+When `PITGPT_API_TOKEN` is set, send `Authorization: Bearer <token>` to API
+endpoints other than `/health`, `/docs`, `/redoc`, and `/openapi.json`.
+`POST /validate` shares the CLI validation contract and returns a structured
+validation report without running analysis.
 
 Launch the terminal UI:
 
@@ -162,7 +179,9 @@ The Tauri v2 app lives in `src-tauri/` and reuses the Vite React UI. Web mode
 continues to call FastAPI through `/api`; native mode routes templates,
 schedules, analysis, storage, export, local ingestion, and AI discovery through
 Rust commands. Tauri storage is app-local JSON, so the native app can function
-offline without a Python sidecar.
+offline without a Python sidecar. Daily reminders can opt into native
+notification permission; reminder planning is deterministic and does not require
+real OS notification delivery in tests.
 
 Run the macOS app:
 

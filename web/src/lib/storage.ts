@@ -4,12 +4,13 @@ import { stableHash } from "./trial";
 import type { AppState, Observation, Settings, Trial } from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 export const defaultSettings: Settings = {
   reminderEnabled: true,
   reminderTime: "21:00",
   emailReminderEnabled: false,
+  apiToken: "",
   preferredProvider: "openrouter",
   preferredModel: "",
   localAiConsentByProvider: {},
@@ -80,6 +81,7 @@ export function exportCSV(observations: Observation[]): string {
     "backfill_days",
     "adverse_event_severity",
     "adverse_event_description",
+    "secondary_scores",
   ];
   const rows = observations.map((o) =>
     [
@@ -95,6 +97,7 @@ export function exportCSV(observations: Observation[]): string {
       o.backfill_days ?? "",
       o.adverse_event_severity ?? "",
       o.adverse_event_description ?? "",
+      JSON.stringify(o.secondary_scores ?? {}),
     ]
       .map(csvCell)
       .join(","),
@@ -146,6 +149,7 @@ function normalizeSettings(value: unknown): Settings {
     reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : "21:00",
     emailReminderEnabled:
       typeof value.emailReminderEnabled === "boolean" ? value.emailReminderEnabled : false,
+    apiToken: typeof value.apiToken === "string" ? value.apiToken : "",
     preferredProvider:
       typeof value.preferredProvider === "string"
         ? (value.preferredProvider as Settings["preferredProvider"])
@@ -161,7 +165,19 @@ function normalizeSettings(value: unknown): Settings {
 function normalizeTrial(value: unknown): Trial | null {
   if (!isRecord(value) || !isRecord(value.protocol)) return null;
   const trial = value as unknown as Trial;
+  trial.protocol.condition_a_label = trial.protocol.condition_a_label ?? trial.conditionALabel ?? "Condition A";
+  trial.protocol.condition_b_label = trial.protocol.condition_b_label ?? trial.conditionBLabel ?? "Condition B";
+  trial.protocol.secondary_outcomes = Array.isArray(trial.protocol.secondary_outcomes)
+    ? trial.protocol.secondary_outcomes
+    : [];
+  trial.protocol.amendments = Array.isArray(trial.protocol.amendments)
+    ? trial.protocol.amendments
+    : [];
   if (!Array.isArray(trial.observations)) trial.observations = [];
+  trial.observations = trial.observations.map((observation) => ({
+    ...observation,
+    secondary_scores: observation.secondary_scores ?? {},
+  }));
   if (!Array.isArray(trial.events)) trial.events = [];
   if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];
   if (!Array.isArray(trial.schedule) || needsScheduleMigration(trial)) {

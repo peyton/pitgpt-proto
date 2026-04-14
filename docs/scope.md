@@ -19,6 +19,11 @@ Implemented:
   suitability scores
 - Local appointment brief Markdown export for completed web trials
 - Append-only client trial event and adverse-event records for web exports
+- Optional API bearer-token protection and shared CLI/API validation reports
+- Condition labels, protocol amendments, adverse-event severity/details, and
+  descriptive secondary outcome summaries
+- Native Tauri reminder permission and deterministic reminder planning while the
+  app is running
 - Local templates and bundled example analysis without an API key
 - Read/demo API endpoints for templates, schedules, and example analysis
 - Benchmark runner, scoring, and report commands
@@ -30,7 +35,7 @@ Implemented:
 - User accounts
 - Server-side data persistence
 - Calendar scheduling
-- Email, push, SMS, or calendar reminder delivery
+- Email, SMS, calendar, or background reminder delivery
 - Background reminder jobs
 - Server-enforced protocol lock enforcement over time
 - Photo capture

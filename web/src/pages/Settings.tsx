@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useApp } from "../lib/AppContext";
-import { healthCheck, listProviders } from "../lib/api";
+import { healthCheck, listProviders, setApiToken } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { clearAllData, downloadFile, exportCSV, exportJSON, loadState, restoreStateFromJSON } from "../lib/storage";
 import { getRuntimeMode } from "../lib/runtime";
+import { syncNativeReminderSchedule, type NativeReminderSync } from "../lib/nativeNotifications";
 import type { AiProviderInfo, AiProviderKind } from "../lib/types";
 
 type ApiStatus = "checking" | "online" | "offline";
@@ -14,6 +15,7 @@ export function Settings() {
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [providers, setProviders] = useState<AiProviderInfo[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
+  const [nativeReminderSync, setNativeReminderSync] = useState<NativeReminderSync | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const runtimeMode = getRuntimeMode();
@@ -30,6 +32,21 @@ export function Settings() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (runtimeMode === "web") {
+      setNativeReminderSync(null);
+      return;
+    }
+    let active = true;
+    void syncNativeReminderSchedule(state.trial, settings.reminderEnabled, settings.reminderTime)
+      .then((status) => {
+        if (active) setNativeReminderSync(status);
+      });
+    return () => {
+      active = false;
+    };
+  }, [runtimeMode, settings.reminderEnabled, settings.reminderTime, state.trial]);
 
   const handleExportCSV = () => {
     const all = state.completedResults.flatMap((r) => r.trial.observations);
@@ -65,6 +82,11 @@ export function Settings() {
     setShowDeleteConfirm(false);
   };
 
+  const handleApiTokenChange = (token: string) => {
+    updateSettings({ apiToken: token });
+    setApiToken(token);
+  };
+
   const storageSize = new Blob([JSON.stringify(loadState())]).size;
   const sizeLabel = storageSize < 1024 ? `${storageSize} B` : `~${Math.round(storageSize / 1024)} KB`;
 
@@ -97,6 +119,11 @@ export function Settings() {
             onChange={(e) => updateSettings({ reminderTime: e.target.value })}
           />
         </div>
+        {nativeReminderSync && (
+          <p className="settings-note">
+            {nativeReminderSync.message}
+          </p>
+        )}
         <div className="setting-row">
           <div className="setting-label">
             <h3>Email Reminders <InfoTooltip text="Email delivery is not implemented in this local-first prototype." /></h3>
@@ -137,6 +164,20 @@ export function Settings() {
 
       <div className="settings-section fade-up fade-up-3">
         <h2>AI Provider</h2>
+        <div className="setting-row">
+          <div className="setting-label">
+            <h3>API Token <InfoTooltip text="Only needed when the local API was started with PITGPT_API_TOKEN." /></h3>
+            <p>Stored locally and sent as a bearer token for protected local API calls</p>
+          </div>
+          <input
+            className="time-input"
+            type="password"
+            value={settings.apiToken}
+            onChange={(event) => handleApiTokenChange(event.target.value)}
+            placeholder="Optional"
+            aria-label="API token"
+          />
+        </div>
         <div className="setting-row">
           <div className="setting-label">
             <h3>Selected Provider</h3>

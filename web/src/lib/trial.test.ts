@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendObservationIfNew } from "./trial";
+import { appendObservationIfNew, buildObservationForDate } from "./trial";
 import type { Observation, Trial } from "./types";
 
 const baseObservation: Observation = {
@@ -80,5 +80,27 @@ describe("appendObservationIfNew", () => {
     expect(updated.adverseEvents).toHaveLength(1);
     expect(updated.adverseEvents?.[0]?.description).toBe("Redness after use.");
     expect(updated.events?.some((event) => event.type === "adverse_event_logged")).toBe(true);
+  });
+
+  it("builds observations with adherence reasons and secondary scores", () => {
+    const observation = buildObservationForDate(
+      baseTrial,
+      "2026-01-02",
+      6,
+      "yes",
+      "partial",
+      "Travel day.",
+      {
+        adherenceReason: "Skipped the evening step.",
+        adverseEventSeverity: "mild",
+        adverseEventDescription: "Redness.",
+        secondaryScores: { sleep: 4 },
+      },
+    );
+
+    expect(observation.adherence_reason).toBe("Skipped the evening step.");
+    expect(observation.adverse_event_severity).toBe("mild");
+    expect(observation.adverse_event_description).toBe("Redness.");
+    expect(observation.secondary_scores).toEqual({ sleep: 4 });
   });
 });

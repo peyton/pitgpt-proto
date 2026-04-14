@@ -1,11 +1,15 @@
+use std::collections::BTreeMap;
+
 use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::analysis::analyze_result;
 use crate::ingestion::ingest_local_result;
 use crate::models::{
-    Assignment, Observation, ProviderInfo, ProviderKind, ResultCard, TrialTemplate,
+    AdverseEventSeverity, Assignment, Observation, ProviderInfo, ProviderKind, ResultCard,
+    TrialTemplate,
 };
+use crate::notifications::{plan_trial_reminders_result, ReminderPlan};
 use crate::providers::discover_provider_infos;
 use crate::schedule::generate_schedule_result;
 use crate::storage::{
@@ -25,6 +29,23 @@ pub fn generate_schedule(
     seed: u32,
 ) -> Result<Vec<Assignment>, String> {
     generate_schedule_result(duration_weeks, block_length_days, seed)
+}
+
+#[tauri::command]
+pub fn plan_trial_reminders(
+    duration_weeks: u32,
+    block_length_days: u32,
+    seed: u32,
+    reminder_time: String,
+    enabled: bool,
+) -> Result<Vec<ReminderPlan>, String> {
+    plan_trial_reminders_result(
+        duration_weeks,
+        block_length_days,
+        seed,
+        &reminder_time,
+        enabled,
+    )
 }
 
 #[tauri::command]
@@ -95,6 +116,19 @@ fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String>
                     .and_then(|idx| values.get(idx).copied())
                     .unwrap_or("")
             };
+            let severity = match get("adverse_event_severity") {
+                "" => None,
+                "mild" => Some(AdverseEventSeverity::Mild),
+                "moderate" => Some(AdverseEventSeverity::Moderate),
+                "severe" => Some(AdverseEventSeverity::Severe),
+                other => return Err(format!("invalid adverse_event_severity: {other}")),
+            };
+            let secondary_scores = if get("secondary_scores").trim().is_empty() {
+                BTreeMap::new()
+            } else {
+                serde_json::from_str(get("secondary_scores"))
+                    .map_err(|err| format!("invalid secondary_scores: {err}"))?
+            };
             Ok(Observation {
                 day_index: get("day_index")
                     .parse()
@@ -107,10 +141,14 @@ fn parse_example_observations(content: &str) -> Result<Vec<Observation>, String>
                     .unwrap_or(crate::models::YesNo::No),
                 adherence: serde_json::from_str(&format!("\"{}\"", get("adherence")))
                     .unwrap_or(crate::models::Adherence::Yes),
+                adherence_reason: get("adherence_reason").to_string(),
                 note: get("note").to_string(),
                 is_backfill: serde_json::from_str(&format!("\"{}\"", get("is_backfill")))
                     .unwrap_or(crate::models::YesNo::No),
                 backfill_days: get("backfill_days").parse().ok(),
+                adverse_event_severity: severity,
+                adverse_event_description: get("adverse_event_description").to_string(),
+                secondary_scores,
             })
         })
         .collect()
