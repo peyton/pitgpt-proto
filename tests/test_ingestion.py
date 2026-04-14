@@ -308,6 +308,37 @@ class TestLLMErrors:
 
         assert result.decision == IngestionDecision.BLOCK
 
+    @pytest.mark.asyncio
+    async def test_non_positive_document_limit_override_is_rejected(self, client):
+        with pytest.raises(IngestionInputError, match="Per-document character limit"):
+            await ingest("test", ["x"], client, max_document_chars=0)
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_query_is_trimmed_before_provider_prompt(self, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "source_summaries": [" useful ", ""],
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("  test  ", [], client)
+
+        request = json.loads(route.calls[0].request.content)
+        assert request["messages"][1]["content"] == "User query: test"
+        assert result.source_summaries == ["useful"]
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_invalid_json_retries(self, client):

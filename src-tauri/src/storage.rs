@@ -23,10 +23,17 @@ pub fn save_state_to_dir(dir: &Path, state: &Value) -> Result<(), String> {
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create app data dir {}: {err}", dir.display()))?;
     let path = dir.join(STATE_FILE);
+    let tmp_path = dir.join(format!("{STATE_FILE}.tmp"));
     let raw =
         serde_json::to_string(state).map_err(|err| format!("failed to encode state: {err}"))?;
-    fs::write(&path, raw)
-        .map_err(|err| format!("failed to write state file {}: {err}", path.display()))
+    fs::write(&tmp_path, raw).map_err(|err| {
+        format!(
+            "failed to write temporary state file {}: {err}",
+            tmp_path.display()
+        )
+    })?;
+    fs::rename(&tmp_path, &path)
+        .map_err(|err| format!("failed to replace state file {}: {err}", path.display()))
 }
 
 pub fn clear_state_in_dir(dir: &Path) -> Result<(), String> {
@@ -61,7 +68,13 @@ pub fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn sanitize_filename(filename: &str) -> Result<String, String> {
     let trimmed = filename.trim();
-    if trimmed.is_empty() || trimmed.contains('/') || trimmed.contains('\\') || trimmed == "." {
+    if trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.chars().any(char::is_control)
+    {
         return Err("filename must be a simple relative name".to_string());
     }
     Ok(trimmed.to_string())
@@ -87,7 +100,21 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
 
         assert!(export_to_dir(temp.path(), "../bad.json", "{}").is_err());
+        assert!(export_to_dir(temp.path(), "..", "{}").is_err());
+        assert!(export_to_dir(temp.path(), "bad\nname.json", "{}").is_err());
         let path = export_to_dir(temp.path(), "pitgpt.json", "{}").unwrap();
         assert!(path.exists());
+    }
+
+    #[test]
+    fn state_save_replaces_partial_temp_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = serde_json::json!({"version": 3});
+        fs::write(temp.path().join(format!("{STATE_FILE}.tmp")), "partial").unwrap();
+
+        save_state_to_dir(temp.path(), &state).unwrap();
+
+        assert_eq!(load_state_from_dir(temp.path()).unwrap(), Some(state));
+        assert!(!temp.path().join(format!("{STATE_FILE}.tmp")).exists());
     }
 }

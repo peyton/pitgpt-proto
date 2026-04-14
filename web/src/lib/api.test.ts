@@ -76,6 +76,23 @@ describe("api", () => {
     expect(init?.headers).toMatchObject({ Authorization: "Bearer from-state" });
   });
 
+  it("trims and clears the stored API token", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      validationResponse(),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    setApiToken(" secret ");
+    await validateTrial({ planned_days: 7, block_length_days: 7 }, []);
+    setApiToken("");
+    await validateTrial({ planned_days: 7, block_length_days: 7 }, []);
+
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer secret",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({ "Content-Type": "application/json" });
+  });
+
   it("passes abort signals and auth headers to ingestion fetch requests", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
@@ -99,6 +116,22 @@ describe("api", () => {
         headers: expect.objectContaining({ Authorization: "Bearer secret" }),
         signal: controller.signal,
       }),
+    );
+  });
+
+  it("uses structured API error messages when detail is not a string", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ detail: [{ msg: "bad" }], error: { message: "Request validation failed" } }),
+          { status: 422, statusText: "Unprocessable Entity" },
+        ),
+      ),
+    );
+
+    await expect(validateTrial({ planned_days: 0 }, [])).rejects.toThrow(
+      "Request validation failed",
     );
   });
 

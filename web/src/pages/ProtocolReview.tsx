@@ -63,7 +63,9 @@ export function ProtocolReview() {
             ← Back to new experiment
           </div>
           <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 8 }}>Experiment Blocked</h1>
-          <span className={safetyBadgeClass[safety_tier]}>{safetyLabel[safety_tier]}</span>
+          <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
+            {safetyLabel[safety_tier] ?? safety_tier}
+          </span>
         </div>
         <div className="caveats-card fade-up fade-up-1">
           <h3>Why this was blocked</h3>
@@ -89,7 +91,9 @@ export function ProtocolReview() {
             ← Back to new experiment
           </div>
           <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 8 }}>Manual Review Needed</h1>
-          <span className={safetyBadgeClass[safety_tier]}>{safetyLabel[safety_tier]}</span>
+          <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
+            {safetyLabel[safety_tier] ?? safety_tier}
+          </span>
         </div>
         <div className="caveats-card fade-up fade-up-1">
           <h3>Protocol not ready to lock</h3>
@@ -123,8 +127,8 @@ export function ProtocolReview() {
 
   const handleLock = () => {
     if (requiresAcknowledgment && !restrictedAcknowledged) return;
-    const labelA = condA.trim() || "Condition A";
-    const labelB = condB.trim() || "Condition B";
+    const labelA = condA.trim() || protocol.condition_a_label?.trim() || "Condition A";
+    const labelB = condB.trim() || protocol.condition_b_label?.trim() || "Condition B";
     const trial = createTrial(ingestionResult, labelA, labelB);
     setTrial(trial);
     navigate("/trial");
@@ -146,8 +150,12 @@ export function ProtocolReview() {
       </div>
 
       <div className="fade-up fade-up-1" style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <span className={safetyBadgeClass[safety_tier]}>{safetyLabel[safety_tier]}</span>
-        <span className={evidenceClass[evidence_quality]}>{evidence_quality} Evidence</span>
+        <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
+          {safetyLabel[safety_tier] ?? safety_tier}
+        </span>
+        <span className={evidenceClass[evidence_quality] ?? "badge badge-neutral"}>
+          {evidence_quality} Evidence
+        </span>
         {risk_level && <span className="badge badge-info">{risk_level.replaceAll("_", " ")}</span>}
         {protocol.template && <span className="badge badge-neutral">{protocol.template}</span>}
       </div>
@@ -320,7 +328,7 @@ export function ProtocolReview() {
       <p style={{ fontSize: 14, color: "var(--gray-500)", marginTop: 16 }}>{user_message}</p>
 
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--gray-200)" }} className="fade-up fade-up-5">
-        <button className="btn btn-s" onClick={() => navigate("/")}>Edit Conditions</button>
+        <button className="btn btn-s" onClick={() => navigate("/")}>Start Over</button>
         <button className="btn btn-p" onClick={handleLock} disabled={requiresAcknowledgment && !restrictedAcknowledged}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from pitgpt.core.models import AnalysisProtocol, Observation
 
 
 def read_text_file(path: str | Path) -> str:
-    return Path(path).read_text()
+    return Path(path).read_text(encoding="utf-8")
 
 
 def load_json_file(path: str | Path) -> Any:
@@ -73,8 +74,9 @@ def _parse_secondary_scores(value: str | None) -> dict[str, float]:
         raise ValueError("secondary_scores must be a JSON object")
     scores: dict[str, float] = {}
     for key, score in parsed.items():
-        if isinstance(key, str) and isinstance(score, int | float):
-            scores[key] = float(score)
+        if not isinstance(score, int | float):
+            raise ValueError(f"secondary_scores.{key} must be numeric")
+        scores[str(key)] = float(score)
     return scores
 
 
@@ -84,7 +86,11 @@ def _parse_string_dict(value: str | None) -> dict[str, str]:
     parsed = json.loads(value)
     if not isinstance(parsed, dict):
         raise ValueError("confounders must be a JSON object")
-    return {str(key): str(item) for key, item in parsed.items()}
+    return {
+        str(key).strip(): str(item).strip()
+        for key, item in parsed.items()
+        if str(key).strip() and str(item).strip()
+    }
 
 
 def _parse_string_list(value: str | None) -> list[str]:
@@ -93,7 +99,7 @@ def _parse_string_list(value: str | None) -> list[str]:
     parsed = json.loads(value)
     if not isinstance(parsed, list):
         raise ValueError("deviation_codes must be a JSON array")
-    return [str(item) for item in parsed if str(item).strip()]
+    return [str(item).strip() for item in parsed if str(item).strip()]
 
 
 _EMPTY_AS_NONE_FIELDS = {
@@ -159,8 +165,8 @@ def _validate_headers(fieldnames: Sequence[str]) -> None:
 def _validate_strict_rows(observations: list[Observation]) -> None:
     days = [observation.day_index for observation in observations]
     dates = [observation.date for observation in observations if observation.date]
-    duplicate_days = sorted({day for day in days if days.count(day) > 1})
-    duplicate_dates = sorted({date for date in dates if dates.count(date) > 1})
+    duplicate_days = sorted(day for day, count in Counter(days).items() if count > 1)
+    duplicate_dates = sorted(date for date, count in Counter(dates).items() if count > 1)
     errors = []
     if duplicate_days:
         errors.append(f"duplicate day_index value(s): {', '.join(map(str, duplicate_days))}")

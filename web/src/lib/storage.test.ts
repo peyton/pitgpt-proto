@@ -85,6 +85,22 @@ describe("storage", () => {
     expect(state.settings.onDeviceModelRuntimeEnabled).toBe(false);
   });
 
+  it("drops invalid provider settings and malformed reminder times", () => {
+    const state = restoreStateFromJSON(JSON.stringify({
+      trial: null,
+      completedResults: [],
+      settings: {
+        preferredProvider: "unknown",
+        reminderTime: "99:99",
+        localAiConsentByProvider: { unknown: true, ollama: true, openrouter: "yes" },
+      },
+    }));
+
+    expect(state.settings.preferredProvider).toBe("openrouter");
+    expect(state.settings.reminderTime).toBe("21:00");
+    expect(state.settings.localAiConsentByProvider).toEqual({ ollama: true });
+  });
+
   it("migrates API token and trial extension fields", () => {
     const state = restoreStateFromJSON(JSON.stringify({
       trial: {
@@ -128,5 +144,47 @@ describe("storage", () => {
     expect(state.trial?.observations[0]?.actual_condition).toBe("A");
     expect(state.trial?.observations[0]?.deviation_codes).toEqual([]);
     expect(state.trial?.observations[0]?.confounders).toEqual({});
+  });
+
+  it("normalizes without mutating imported objects", () => {
+    const raw = {
+      trial: {
+        id: "trial",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        conditionALabel: "  A label  ",
+        conditionBLabel: "B label",
+        protocol: {
+          template: "Custom A/B",
+          duration_weeks: 2,
+          block_length_days: 7,
+          cadence: "daily",
+          washout: "None",
+          primary_outcome_question: "Score",
+          screening: "",
+          warnings: "",
+        },
+        ingestion: {
+          decision: "generate_protocol",
+          safety_tier: "GREEN",
+          evidence_quality: "novel",
+          evidence_conflict: false,
+          protocol: null,
+          block_reason: null,
+          user_message: "Ready",
+        },
+        seed: 123,
+        schedule: [],
+        observations: [{ day_index: 1, date: "2026-01-01", condition: "A" }],
+        status: "active",
+      },
+      completedResults: [],
+      settings: {},
+    };
+
+    const state = restoreStateFromJSON(JSON.stringify(raw));
+
+    expect(raw.trial.protocol).not.toHaveProperty("condition_a_label");
+    expect(state.trial?.conditionALabel).toBe("A label");
+    expect(state.trial?.protocol.condition_a_label).toBe("A label");
   });
 });

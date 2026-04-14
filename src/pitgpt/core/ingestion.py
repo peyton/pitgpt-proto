@@ -40,6 +40,7 @@ async def ingest(
     max_total_document_chars: int | None = None,
 ) -> IngestionResult:
     _validate_inputs(query, documents, max_document_chars, max_total_document_chars)
+    query = query.strip()
     prefiltered = prefilter_query(query, documents)
     if prefiltered is not None:
         return prefiltered
@@ -108,8 +109,18 @@ def _validate_inputs(
     if not query.strip():
         raise IngestionInputError("Query is required.")
     settings = load_settings()
-    per_doc_limit = max_document_chars or settings.max_document_chars
-    total_limit = max_total_document_chars or settings.max_total_document_chars
+    per_doc_limit = (
+        settings.max_document_chars if max_document_chars is None else max_document_chars
+    )
+    total_limit = (
+        settings.max_total_document_chars
+        if max_total_document_chars is None
+        else max_total_document_chars
+    )
+    if per_doc_limit <= 0:
+        raise IngestionInputError("Per-document character limit must be greater than 0.")
+    if total_limit <= 0:
+        raise IngestionInputError("Total source character limit must be greater than 0.")
     total_chars = 0
     for i, doc in enumerate(documents, 1):
         doc_len = len(doc)
@@ -129,13 +140,14 @@ def _validate_inputs(
 def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item) for item in value if str(item).strip()]
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _optional_string(value: object) -> str | None:
     if value is None:
         return None
-    return str(value)
+    text = str(value).strip()
+    return text or None
 
 
 def _model_list[ModelT: BaseModel](value: object, model_type: type[ModelT]) -> list[ModelT]:

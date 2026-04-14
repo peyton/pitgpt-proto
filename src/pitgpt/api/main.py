@@ -2,7 +2,9 @@ import os
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
@@ -24,18 +26,37 @@ from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import templates_as_dicts
 from pitgpt.core.validation import validate_trial
 
+
+def _parse_cors_origins(value: str | None) -> list[str]:
+    raw = value if value is not None else "http://localhost:5173"
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return origins or ["http://localhost:5173"]
+
+
+def _request_id_from_header(value: str | None) -> str:
+    if value is None:
+        return str(uuid4())
+    cleaned = value.strip()
+    if not cleaned or len(cleaned) > 128 or any(char in cleaned for char in "\r\n"):
+        return str(uuid4())
+    return cleaned
+
+
 app = FastAPI(title="PitGPT", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("PITGPT_CORS_ORIGINS", "http://localhost:5173").split(","),
+    allow_origins=_parse_cors_origins(os.environ.get("PITGPT_CORS_ORIGINS")),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 class IngestRequest(BaseModel):
-    query: str = Field(examples=["Compare CeraVe and La Roche-Posay for evening skin comfort"])
+    query: str = Field(
+        min_length=1,
+        examples=["Compare CeraVe and La Roche-Posay for evening skin comfort"],
+    )
     documents: list[str] = Field(default_factory=list)
     model: str | None = None
     provider: ProviderKind | None = None
@@ -54,7 +75,7 @@ class ScheduleRequest(BaseModel):
 
 @app.middleware("http")
 async def add_request_id(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    request_id = _request_id_from_header(request.headers.get("X-Request-ID"))
     request.state.request_id = request_id
     settings = load_settings()
     if settings.api_token and request.url.path not in _PUBLIC_PATHS:
@@ -91,6 +112,24 @@ async def structured_http_exception(request: Request, exc: HTTPException):
             "request_id": request_id,
             "error": {
                 "code": response.status_code,
+                "message": message,
+            },
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def structured_request_validation_exception(request: Request, exc: RequestValidationError):
+    request_id = getattr(request.state, "request_id", "")
+    message = "Request validation failed"
+    return JSONResponse(
+        status_code=422,
+        headers={"X-Request-ID": request_id},
+        content={
+            "detail": jsonable_encoder(exc.errors()),
+            "request_id": request_id,
+            "error": {
+                "code": 422,
                 "message": message,
             },
         },

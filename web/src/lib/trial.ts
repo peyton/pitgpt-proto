@@ -6,16 +6,23 @@ export function createTrial(
   conditionALabel: string,
   conditionBLabel: string,
 ): Trial {
-  const protocol = ingestion.protocol!;
-  protocol.condition_a_label = conditionALabel;
-  protocol.condition_b_label = conditionBLabel;
+  const conditionA = conditionALabel.trim() || ingestion.protocol?.condition_a_label || "Condition A";
+  const conditionB = conditionBLabel.trim() || ingestion.protocol?.condition_b_label || "Condition B";
+  const protocol = {
+    ...ingestion.protocol!,
+    condition_a_label: conditionA,
+    condition_b_label: conditionB,
+    secondary_outcomes: ingestion.protocol?.secondary_outcomes ?? [],
+    amendments: ingestion.protocol?.amendments ?? [],
+  };
+  const lockedIngestion = { ...ingestion, protocol };
   const seed = generateSeed();
   const schedule = generateSchedule(
     protocol.duration_weeks,
     protocol.block_length_days,
     seed,
   );
-  const protocolHash = stableHash({ protocol, conditionALabel, conditionBLabel });
+  const protocolHash = stableHash({ protocol, conditionALabel: conditionA, conditionBLabel: conditionB });
   const analysisPlanHash = stableHash({
     planned_days: protocol.duration_weeks * 7,
     block_length_days: protocol.block_length_days,
@@ -26,17 +33,17 @@ export function createTrial(
   return {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
-    conditionALabel,
-    conditionBLabel,
+    conditionALabel: conditionA,
+    conditionBLabel: conditionB,
     protocol,
-    ingestion,
+    ingestion: lockedIngestion,
     schedule,
     seed,
     protocolHash,
     analysisPlanHash,
     events: [
       event("protocol_locked", `Locked ${protocol.template ?? "custom"} protocol.`),
-      ...sourceEvents(ingestion),
+      ...sourceEvents(lockedIngestion),
     ],
     adverseEvents: [],
     observations: [],
@@ -61,7 +68,7 @@ export function getCurrentWeek(trial: Trial): number {
 }
 
 export function getCurrentPeriodIndex(trial: Trial): number {
-  const dayIndex = getTrialDayIndex(trial);
+  const dayIndex = Math.max(1, getTrialDayIndex(trial));
   return Math.floor((dayIndex - 1) / trial.protocol.block_length_days);
 }
 
@@ -88,7 +95,7 @@ export function getTotalDays(protocol: Protocol): number {
 
 export function getTrialProgress(trial: Trial) {
   const totalDays = getTotalDays(trial.protocol);
-  const dayIndex = Math.min(getTrialDayIndex(trial), totalDays);
+  const dayIndex = Math.max(1, Math.min(getTrialDayIndex(trial), totalDays));
   const daysLogged = trial.observations.filter((o) => o.primary_score !== null).length;
   const adherent = trial.observations.filter((o) => o.adherence === "yes").length;
   const adverseEvents = trial.observations.filter((o) => o.irritation === "yes").length;
@@ -115,10 +122,15 @@ export function isTrialComplete(trial: Trial): boolean {
 export function checkAdverseEventStreak(trial: Trial): boolean {
   const sorted = [...trial.observations].sort((a, b) => b.day_index - a.day_index);
   let streak = 0;
+  let expectedDay: number | null = null;
   for (const obs of sorted) {
+    if (expectedDay !== null && obs.day_index !== expectedDay) {
+      break;
+    }
     if (obs.irritation === "yes") {
       streak++;
       if (streak >= 3) return true;
+      expectedDay = obs.day_index - 1;
     } else {
       break;
     }
@@ -126,13 +138,15 @@ export function checkAdverseEventStreak(trial: Trial): boolean {
   return false;
 }
 
-export function canBackfill(_trial: Trial, dateStr: string): boolean {
+export function canBackfill(trial: Trial, dateStr: string): boolean {
   const today = new Date();
   const date = parseDateInput(dateStr);
   today.setHours(0, 0, 0, 0);
   date.setHours(0, 0, 0, 0);
+  if (Number.isNaN(date.getTime())) return false;
   const diffDays = (today.getTime() - date.getTime()) / 86400000;
-  return diffDays <= 2 && diffDays >= 0;
+  const dayIndex = getTrialDayIndexForDate(trial, date);
+  return diffDays <= 2 && diffDays >= 0 && dayIndex >= 1 && dayIndex <= getTotalDays(trial.protocol);
 }
 
 export function getBackfillDays(dateStr: string): number {
@@ -273,7 +287,7 @@ export function protocolToDict(protocol: Protocol): Record<string, unknown> {
 }
 
 export function getDaysLeft(trial: Trial): number {
-  return Math.max(0, getTotalDays(trial.protocol) - getTrialDayIndex(trial) + 1);
+  return Math.max(0, getTotalDays(trial.protocol) - Math.max(1, getTrialDayIndex(trial)) + 1);
 }
 
 export function getNextCheckInCopy(trial: Trial): string {

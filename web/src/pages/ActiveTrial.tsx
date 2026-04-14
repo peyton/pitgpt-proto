@@ -90,9 +90,13 @@ export function ActiveTrial() {
     setSubmitted(true);
     setSubmitting(false);
     setNote("");
+    setIrritation("no");
+    setAdherence("yes");
     setAdherenceReason("");
+    setAdverseSeverity("mild");
     setAdverseDescription("");
     setSecondaryScores({});
+    setNoteOpen(false);
   };
 
   const handleBackfill = () => {
@@ -122,6 +126,9 @@ export function ActiveTrial() {
     );
     setBackfillDate("");
     setBackfillNote("");
+    setBackfillIrritation("no");
+    setBackfillAdherence("yes");
+    setBackfillScore(5);
     setBackfillSaved(true);
   };
 

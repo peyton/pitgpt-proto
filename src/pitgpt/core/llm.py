@@ -251,7 +251,7 @@ def _read_cache(configured_dir: str, key: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        parsed = json.loads(path.read_text())
+        parsed = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     return parsed if isinstance(parsed, dict) else None
@@ -260,4 +260,6 @@ def _read_cache(configured_dir: str, key: str) -> dict[str, Any] | None:
 def _write_cache(configured_dir: str, key: str, value: dict[str, Any]) -> None:
     path = _cache_dir(configured_dir) / f"{key}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, sort_keys=True) + "\n")
+    tmp_path = path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
+    tmp_path.replace(path)

@@ -169,10 +169,10 @@ builds signed macOS DMGs and updates the rolling GitHub prerelease tagged
 Release artifacts are built by `.github/workflows/release.yml` when a GitHub
 Release is published. That workflow rebuilds signed macOS artifacts and a
 signed iOS App Store Connect IPA with a GitHub-run build number, then attaches
-them to the release. Shared release preflight and artifact collection scripts
-live in `scripts/apple-release-preflight.sh` and
-`scripts/collect-tauri-artifacts.sh`; the operator checklist is
-`docs/release-checklist.md`.
+them to the release. Shared release preflight, artifact collection, and rolling
+preview publishing scripts live in `scripts/apple-release-preflight.sh`,
+`scripts/collect-tauri-artifacts.sh`, and `scripts/publish-macos-preview.sh`;
+the operator checklist is `docs/release-checklist.md`.
 
 Dependency version updates are handled by Renovate using `renovate.json`.
 Renovate automerges minor, patch, digest, and lockfile-maintenance PRs only
