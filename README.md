@@ -27,6 +27,8 @@ experiments and safety-gated research ingestion.
 Use Python 3.12 and Node 22. The repository pins the toolchain with
 `mise.toml` and `.python-version`; the `just` recipes run tools through
 `./bin/mise exec --`.
+The mise config is the source of truth for local and CI tools, including `hk`,
+`pkl`, `actionlint`, and `zizmor`.
 
 ```sh
 just setup
@@ -147,6 +149,11 @@ just fmt         # mutating ruff format and fix
 Application code lives in `src/pitgpt/`. Web frontend code lives in `web/`.
 Benchmark fixture data lives in `benchmarks/`. Runnable example inputs live in
 `examples/`.
+
+When adding or changing hook and CI tools, declare them in `mise.toml`. GitHub
+Actions installs only the mise-managed toolchain on a clean runner, and `hk.pkl`
+requires the `pkl` CLI before any hook step can run. CI's raw `hk run check`
+command also needs `GITHUB_TOKEN` for the `zizmor` step.
 
 ## More Docs
 
