@@ -10,23 +10,32 @@ import type {
 
 const BASE = "/api";
 
+interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 export async function ingest(
   query: string,
   documents: string[] = [],
   model?: string,
   provider?: AiProviderKind,
+  options: ApiRequestOptions = {},
 ): Promise<IngestionResult> {
+  throwIfAborted(options.signal);
   if (isTauriRuntime()) {
-    return invokeNative<IngestionResult>("ingest_local", {
+    const result = await invokeNative<IngestionResult>("ingest_local", {
       query,
       documents,
       provider: provider ?? "ollama",
       model: model || null,
     });
+    throwIfAborted(options.signal);
+    return result;
   }
   const res = await fetch(`${BASE}/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: options.signal,
     body: JSON.stringify({
       query,
       documents,
@@ -39,6 +48,13 @@ export async function ingest(
     throw new Error(err.detail ?? "Ingestion failed");
   }
   return res.json();
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("Request aborted.");
+  error.name = "AbortError";
+  throw error;
 }
 
 export async function analyze(

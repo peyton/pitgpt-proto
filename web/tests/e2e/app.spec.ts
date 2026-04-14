@@ -107,6 +107,40 @@ test("query and source upload flow reaches results", async ({ page }) => {
   expect(observations).toHaveLength(1);
 });
 
+test("generation can be stopped before ingest completes", async ({ page }) => {
+  let releaseIngest: (() => void) | null = null;
+  let ingestRequests = 0;
+
+  await page.route("**/api/ingest", async (route) => {
+    ingestRequests += 1;
+    await new Promise<void>((resolve) => {
+      releaseIngest = resolve;
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(generatedIngestion),
+    }).catch(() => undefined);
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Experiment question").fill("Compare CeraVe and La Roche-Posay");
+  await page.getByLabel("Generate protocol").click();
+
+  await expect(page.getByLabel("Stop generation")).toBeVisible();
+  await expect(page.getByLabel("Experiment question")).toBeDisabled();
+
+  await page.getByLabel("Stop generation").click();
+
+  await expect(page.getByLabel("Generate protocol")).toBeVisible();
+  await expect(page.getByLabel("Experiment question")).toBeEnabled();
+  expect(ingestRequests).toBe(1);
+
+  releaseIngest?.();
+  await expect(page.getByRole("heading", { name: "What do you want to test?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Generated Protocol" })).toHaveCount(0);
+});
+
 test("local template starts without calling ingest", async ({ page }) => {
   let ingestCalled = false;
   await page.route("**/api/ingest", async (route) => {
