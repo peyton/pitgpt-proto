@@ -57,5 +57,5 @@ warn_return_any = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = "scipy"
+module = ["scipy", "scipy.*"]
 ignore_missing_imports = true

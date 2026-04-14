@@ -4,6 +4,25 @@ import { InfoTooltip } from "../components/InfoTooltip";
 import { downloadFile, exportCSV } from "../lib/storage";
 import type { CompletedTrial, Observation } from "../lib/types";
 
+const safetyBadgeClass: Record<string, string> = {
+  GREEN: "badge badge-safe badge-dot",
+  YELLOW: "badge badge-caution badge-dot",
+  RED: "badge badge-danger badge-dot",
+};
+
+const safetyLabel: Record<string, string> = {
+  GREEN: "Green",
+  YELLOW: "Yellow",
+  RED: "Red",
+};
+
+const evidenceClass: Record<string, string> = {
+  strong: "badge badge-safe",
+  moderate: "badge badge-info",
+  weak: "badge badge-neutral",
+  novel: "badge badge-pink",
+};
+
 function TimeSeriesChart({ observations, condALabel, condBLabel }: {
   observations: Observation[];
   condALabel: string;
@@ -95,8 +114,39 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
         <p>{result.summary}</p>
       </div>
 
+      <div className="integrity-grid fade-up fade-up-2">
+        <div className="integrity-item">
+          <span>Evidence Basis</span>
+          <strong className={evidenceClass[trial.ingestion.evidence_quality]}>
+            {trial.ingestion.evidence_quality}
+          </strong>
+        </div>
+        <div className="integrity-item">
+          <span>Safety Tier</span>
+          <strong className={safetyBadgeClass[trial.ingestion.safety_tier]}>
+            {safetyLabel[trial.ingestion.safety_tier]}
+          </strong>
+        </div>
+        <div className="integrity-item">
+          <span>Adherence</span>
+          <strong>{formatPct(result.adherence_rate)}</strong>
+        </div>
+        <div className="integrity-item">
+          <span>Days Logged</span>
+          <strong>{formatPct(result.days_logged_pct)}</strong>
+        </div>
+        <div className="integrity-item">
+          <span>Early Stop</span>
+          <strong>{result.early_stop ? "Yes" : "No"}</strong>
+        </div>
+        <div className="integrity-item">
+          <span>Late Backfills Excluded</span>
+          <strong>{result.late_backfill_excluded}</strong>
+        </div>
+      </div>
+
       {/* Stats Grid */}
-      <div className="stats-grid fade-up fade-up-2">
+      <div className="stats-grid fade-up fade-up-3">
         <div className="stat-card">
           <div className="stat-label">Mean A <InfoTooltip text={`Average daily score on days using ${trial.conditionALabel}.`} /></div>
           <div className="stat-value stat-positive">{result.mean_a?.toFixed(1) ?? "—"}</div>
@@ -171,6 +221,10 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
 
 function getTotalDaysLabel(trial: CompletedTrial["trial"]): string {
   return `${trial.observations.length} days logged`;
+}
+
+function formatPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTrial["trial"]): string {

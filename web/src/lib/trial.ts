@@ -29,11 +29,15 @@ export function createTrial(
 }
 
 export function getTrialDayIndex(trial: Trial): number {
+  return getTrialDayIndexForDate(trial, new Date());
+}
+
+export function getTrialDayIndexForDate(trial: Trial, date: Date): number {
   const start = new Date(trial.createdAt);
-  const now = new Date();
   start.setHours(0, 0, 0, 0);
-  now.setHours(0, 0, 0, 0);
-  return Math.floor((now.getTime() - start.getTime()) / 86400000) + 1;
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  return Math.floor((target.getTime() - start.getTime()) / 86400000) + 1;
 }
 
 export function getCurrentWeek(trial: Trial): number {
@@ -43,6 +47,11 @@ export function getCurrentWeek(trial: Trial): number {
 
 export function getCurrentAssignment(trial: Trial): Assignment | undefined {
   const week = getCurrentWeek(trial);
+  return trial.schedule.find((a) => a.week === week);
+}
+
+export function getAssignmentForDay(trial: Trial, dayIndex: number): Assignment | undefined {
+  const week = Math.floor((dayIndex - 1) / trial.protocol.block_length_days);
   return trial.schedule.find((a) => a.week === week);
 }
 
@@ -96,11 +105,19 @@ export function checkAdverseEventStreak(trial: Trial): boolean {
 
 export function canBackfill(_trial: Trial, dateStr: string): boolean {
   const today = new Date();
-  const date = new Date(dateStr);
+  const date = parseDateInput(dateStr);
   today.setHours(0, 0, 0, 0);
   date.setHours(0, 0, 0, 0);
   const diffDays = (today.getTime() - date.getTime()) / 86400000;
   return diffDays <= 2 && diffDays >= 0;
+}
+
+export function getBackfillDays(dateStr: string): number {
+  const today = new Date();
+  const date = parseDateInput(dateStr);
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return Math.round((today.getTime() - date.getTime()) / 86400000);
 }
 
 export function buildObservation(
@@ -110,21 +127,43 @@ export function buildObservation(
   adherence: "yes" | "no" | "partial",
   note: string,
 ): Observation {
-  const dayIndex = getTrialDayIndex(trial);
   const today = new Date().toISOString().slice(0, 10);
-  const assignment = getCurrentAssignment(trial);
+  return buildObservationForDate(trial, today, score, irritation, adherence, note);
+}
+
+export function buildObservationForDate(
+  trial: Trial,
+  dateStr: string,
+  score: number,
+  irritation: "yes" | "no",
+  adherence: "yes" | "no" | "partial",
+  note: string,
+): Observation {
+  const date = parseDateInput(dateStr);
+  const dayIndex = getTrialDayIndexForDate(trial, date);
+  const assignment = getAssignmentForDay(trial, dayIndex);
+  const backfillDays = getBackfillDays(dateStr);
 
   return {
     day_index: dayIndex,
-    date: today,
+    date: dateStr,
     condition: assignment?.condition ?? "A",
     primary_score: score,
     irritation,
     adherence,
     note,
-    is_backfill: "no",
-    backfill_days: null,
+    is_backfill: backfillDays > 0 ? "yes" : "no",
+    backfill_days: backfillDays > 0 ? backfillDays : null,
   };
+}
+
+function parseDateInput(dateStr: string): Date {
+  const [yearText, monthText, dayText] = dateStr.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) return new Date(dateStr);
+  return new Date(year, month - 1, day);
 }
 
 /** Convert trial protocol to the dict format expected by /analyze */

@@ -9,7 +9,8 @@ uv_sync := "./bin/mise exec -- uv sync --python 3.12"
 setup:
     ./bin/mise install
     {{uv_sync}}
-    {{mise}} npm --prefix web install
+    {{mise}} npm --prefix web ci
+    {{mise}} npm --prefix web run test:e2e:install
 
 # Install Python dependencies
 install:
@@ -81,7 +82,7 @@ ci:
 
 # Install web frontend dependencies
 web-install:
-    {{mise}} npm --prefix web install
+    {{mise}} npm --prefix web ci
 
 # Start web frontend dev server
 web-dev:
@@ -90,6 +91,10 @@ web-dev:
 # Build web frontend for production
 web-build:
     {{mise}} npm --prefix web run build
+
+# Run web browser integration tests
+web-test:
+    {{mise}} npm --prefix web run test:e2e
 
 # Regenerate bin/mise bootstrap script
 bootstrap:

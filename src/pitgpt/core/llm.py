@@ -65,7 +65,7 @@ class LLMClient:
                     resp.raise_for_status()
                     data = resp.json()
                     content = _extract_message_content(data)
-                    parsed = json.loads(content)
+                    parsed: object = json.loads(content)
                     if not isinstance(parsed, dict):
                         raise LLMError("LLM response JSON must be an object")
                     return parsed
