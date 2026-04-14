@@ -3,13 +3,13 @@ import "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Builtin
 
 hooks {
   ["pre-commit"] {
-    fix = true
-    stash = "git"
+    fix = false
+    stash = "none"
     steps {
       ["ruff-format"] = Builtins.ruff_format
       ["ruff"] = Builtins.ruff
       ["mypy"] = (Builtins.mypy) {
-        check = "uv run mypy pitgpt/"
+        check = "uv run --python 3.12 mypy src/pitgpt/"
       }
       ["trailing-whitespace"] = Builtins.trailing_whitespace
       ["check-merge-conflict"] = Builtins.check_merge_conflict
@@ -21,7 +21,7 @@ hooks {
       ["ruff-format"] = Builtins.ruff_format
       ["ruff"] = Builtins.ruff
       ["mypy"] = (Builtins.mypy) {
-        check = "uv run mypy pitgpt/"
+        check = "uv run --python 3.12 mypy src/pitgpt/"
       }
     }
   }
@@ -37,7 +37,7 @@ hooks {
       ["ruff-format"] = Builtins.ruff_format
       ["ruff"] = Builtins.ruff
       ["mypy"] = (Builtins.mypy) {
-        check = "uv run mypy pitgpt/"
+        check = "uv run --python 3.12 mypy src/pitgpt/"
       }
       ["actionlint"] = Builtins.actionlint
       ["zizmor"] = Builtins.zizmor

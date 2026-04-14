@@ -1,6 +1,12 @@
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from pitgpt.core.models import (
+    Adherence,
+    AnalysisProtocol,
+    Condition,
     EvidenceQuality,
     IngestionDecision,
     IngestionResult,
@@ -9,6 +15,7 @@ from pitgpt.core.models import (
     QualityGrade,
     ResultCard,
     SafetyTier,
+    YesNo,
 )
 
 
@@ -61,6 +68,17 @@ class TestProtocol:
         )
         assert p.template == "Skincare Product"
         assert p.screening == "No broken skin"
+
+
+class TestAnalysisProtocol:
+    def test_defaults(self):
+        p = AnalysisProtocol()
+        assert p.planned_days == 42
+        assert p.block_length_days == 7
+
+    def test_rejects_non_positive_days(self):
+        with pytest.raises(ValidationError):
+            AnalysisProtocol(planned_days=0)
 
 
 class TestIngestionResult:
@@ -119,8 +137,9 @@ class TestObservation:
     def test_defaults(self):
         o = Observation(day_index=1, date="2026-01-01", condition="A")
         assert o.primary_score is None
-        assert o.adherence == "yes"
-        assert o.is_backfill == "no"
+        assert o.condition == Condition.A
+        assert o.adherence == Adherence.YES
+        assert o.is_backfill == YesNo.NO
 
     def test_full(self):
         o = Observation(
@@ -136,6 +155,18 @@ class TestObservation:
         )
         assert o.primary_score == 7.5
         assert o.backfill_days == 3
+
+    def test_invalid_condition_rejected(self):
+        with pytest.raises(ValidationError):
+            Observation(day_index=1, date="2026-01-01", condition="C")
+
+    def test_invalid_adherence_rejected(self):
+        with pytest.raises(ValidationError):
+            Observation(day_index=1, date="2026-01-01", condition="A", adherence="sometimes")
+
+    def test_score_out_of_range_rejected(self):
+        with pytest.raises(ValidationError):
+            Observation(day_index=1, date="2026-01-01", condition="A", primary_score=12)
 
 
 class TestResultCard:

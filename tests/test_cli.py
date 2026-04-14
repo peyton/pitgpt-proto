@@ -11,6 +11,15 @@ runner = CliRunner()
 
 
 class TestAnalyzeCLI:
+    def test_help_shows_documented_commands(self):
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "ingest" in result.stdout
+        assert "analyze" in result.stdout
+        assert "benchmark" in result.stdout
+        assert "ingest-cmd" not in result.stdout
+        assert "analyze-cmd" not in result.stdout
+
     def test_analyze_json_output(self, tmp_path):
         proto = tmp_path / "protocol.json"
         proto.write_text(json.dumps({"planned_days": 14, "block_length_days": 7}))
@@ -28,7 +37,7 @@ class TestAnalyzeCLI:
         result = runner.invoke(
             app,
             [
-                "analyze-cmd",
+                "analyze",
                 "--protocol",
                 str(proto),
                 "--observations",
@@ -45,7 +54,7 @@ class TestAnalyzeCLI:
         result = runner.invoke(
             app,
             [
-                "analyze-cmd",
+                "analyze",
                 "--protocol",
                 "/nonexistent/file.json",
                 "--observations",
@@ -61,7 +70,7 @@ class TestIngestCLI:
         result = runner.invoke(
             app,
             [
-                "ingest-cmd",
+                "ingest",
                 "--query",
                 "Test",
             ],

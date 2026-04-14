@@ -1,4 +1,7 @@
 from pitgpt.core.models import (
+    Adherence,
+    AnalysisProtocol,
+    Condition,
     EvidenceQuality,
     IngestionDecision,
     IngestionResult,
@@ -7,9 +10,13 @@ from pitgpt.core.models import (
     QualityGrade,
     ResultCard,
     SafetyTier,
+    YesNo,
 )
 
 __all__ = [
+    "Adherence",
+    "AnalysisProtocol",
+    "Condition",
     "EvidenceQuality",
     "IngestionDecision",
     "IngestionResult",
@@ -18,4 +25,5 @@ __all__ = [
     "QualityGrade",
     "ResultCard",
     "SafetyTier",
+    "YesNo",
 ]

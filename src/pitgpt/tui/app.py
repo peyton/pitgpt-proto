@@ -1,6 +1,4 @@
 import asyncio
-import json
-import os
 from pathlib import Path
 
 from textual import on, work
@@ -21,8 +19,9 @@ from textual.widgets import (
 
 from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import ingest
+from pitgpt.core.io import load_analysis_protocol, parse_observations_csv
 from pitgpt.core.llm import LLMClient
-from pitgpt.core.models import Observation
+from pitgpt.core.settings import load_settings
 
 MODELS = [
     ("Claude Sonnet 4", "anthropic/claude-sonnet-4"),
@@ -162,7 +161,8 @@ class PitGPTApp(App):
             result_widget.update("[red]Please enter a query[/red]")
             return
 
-        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        settings = load_settings()
+        api_key = settings.openrouter_api_key
         if not api_key:
             result_widget.update(
                 "[red]OPENROUTER_API_KEY not set. Export it in your shell or mise.toml.[/red]"
@@ -180,7 +180,14 @@ class PitGPTApp(App):
                     result_widget.update(f"[red]File not found: {line}[/red]")
                     return
 
-        client = LLMClient(model=model, api_key=api_key)
+        client = LLMClient(
+            model=str(model),
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+            timeout_s=settings.llm_timeout_s,
+        )
         try:
             r = asyncio.run(ingest(query, documents, client))
             result_widget.update(_format_ingestion(r))
@@ -210,12 +217,10 @@ class PitGPTApp(App):
             return
 
         try:
-            proto_data = json.loads(proto_p.read_text())
-            obs_data = _parse_csv(obs_p.read_text())
+            proto_data = load_analysis_protocol(proto_p)
+            obs_data = parse_observations_csv(obs_p.read_text())
             r = analyze(proto_data, obs_data)
             result_widget.update(_format_result_card(r))
-        except json.JSONDecodeError as e:
-            result_widget.update(f"[red]Invalid JSON in protocol file: {e}[/red]")
         except Exception as e:
             result_widget.update(f"[red]Error: {e}[/red]")
 
@@ -232,7 +237,7 @@ class PitGPTApp(App):
         case_filter = [c.strip() for c in cases_text.split(",") if c.strip()] or None
 
         try:
-            from benchmarks.runner import run_benchmark
+            from pitgpt.benchmarks.runner import run_benchmark
 
             results = asyncio.run(run_benchmark(model, track, case_filter))
             result_widget.update(_format_benchmark(results))
@@ -405,33 +410,6 @@ def _format_benchmark(results: dict) -> str:
     )
 
     return "\n".join(lines)
-
-
-def _parse_csv(content: str) -> list[Observation]:
-    lines = content.strip().split("\n")
-    if not lines:
-        return []
-    header = [h.strip() for h in lines[0].split(",")]
-    observations = []
-    for line in lines[1:]:
-        if not line.strip():
-            continue
-        values = [v.strip() for v in line.split(",")]
-        row = dict(zip(header, values, strict=False))
-        observations.append(
-            Observation(
-                day_index=int(row.get("day_index", 0)),
-                date=row.get("date", ""),
-                condition=row.get("condition", ""),
-                primary_score=float(row["primary_score"]) if row.get("primary_score") else None,
-                irritation=row.get("irritation", "no"),
-                adherence=row.get("adherence", "yes"),
-                note=row.get("note", ""),
-                is_backfill=row.get("is_backfill", "no"),
-                backfill_days=float(row["backfill_days"]) if row.get("backfill_days") else None,
-            )
-        )
-    return observations
 
 
 def main():

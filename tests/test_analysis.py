@@ -9,7 +9,8 @@ import json
 from pathlib import Path
 
 from pitgpt.core.analysis import analyze
-from pitgpt.core.models import Observation, QualityGrade
+from pitgpt.core.io import parse_observations_csv
+from pitgpt.core.models import AnalysisProtocol, Observation, QualityGrade
 
 FIXTURES_DIR = Path(__file__).parent.parent / "benchmarks" / "analysis_fixtures"
 EXPECTED_DIR = Path(__file__).parent.parent / "benchmarks" / "expected_outputs"
@@ -17,31 +18,12 @@ EXPECTED_DIR = Path(__file__).parent.parent / "benchmarks" / "expected_outputs"
 
 def _load_case(case_id: str):
     prefix = case_id.lower()
-    protocol = json.loads((FIXTURES_DIR / f"{prefix}_protocol.json").read_text())
+    protocol = AnalysisProtocol.model_validate(
+        json.loads((FIXTURES_DIR / f"{prefix}_protocol.json").read_text())
+    )
     obs_csv = (FIXTURES_DIR / f"{prefix}_observations.csv").read_text()
     expected = json.loads((EXPECTED_DIR / f"{prefix}.json").read_text())
-
-    lines = obs_csv.strip().split("\n")
-    header = [h.strip() for h in lines[0].split(",")]
-    observations = []
-    for line in lines[1:]:
-        if not line.strip():
-            continue
-        values = [v.strip() for v in line.split(",")]
-        row = dict(zip(header, values, strict=False))
-        observations.append(
-            Observation(
-                day_index=int(row.get("day_index", 0)),
-                date=row.get("date", ""),
-                condition=row.get("condition", ""),
-                primary_score=float(row["primary_score"]) if row.get("primary_score") else None,
-                irritation=row.get("irritation", "no"),
-                adherence=row.get("adherence", "yes"),
-                note=row.get("note", ""),
-                is_backfill=row.get("is_backfill", "no"),
-                backfill_days=float(row["backfill_days"]) if row.get("backfill_days") else None,
-            )
-        )
+    observations = parse_observations_csv(obs_csv)
     return protocol, observations, expected
 
 
