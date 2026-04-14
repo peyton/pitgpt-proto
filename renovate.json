@@ -26,6 +26,11 @@
   },
   "packageRules": [
     {
+      "description": "Group tightly-coupled Tauri npm and Cargo packages.",
+      "matchPackageNames": ["/^@tauri-apps\\//", "/^tauri(-.*)?$/"],
+      "groupName": "tauri dependencies"
+    },
+    {
       "description": "Automerge low-risk updates after required status checks pass.",
       "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
       "automerge": true

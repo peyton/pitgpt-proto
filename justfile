@@ -2,13 +2,14 @@ default:
     @just --list
 
 mise := "./bin/mise exec --"
-uv_run := "./bin/mise exec -- uv run --python 3.12"
-uv_sync := "./bin/mise exec -- uv sync --python 3.12"
+python := "3.12"
+uv_run := "./bin/mise exec -- uv run --python " + python
+uv_sync := "./bin/mise exec -- uv sync --python " + python
 
 # Bootstrap mise and install all tools + dependencies
 setup:
     ./bin/mise install
-    just rust-components
+    {{mise}} just rust-components
     {{uv_sync}}
     {{mise}} npm --prefix web ci
     {{mise}} npm --prefix web run test:e2e:install
@@ -106,14 +107,26 @@ rust-components:
 
 # Run the main CI checks locally without requiring Docker or GitHub-hosted macOS runners
 ci:
-    just lint
-    just check
-    just test
-    just web-build
-    just web-unit
-    just web-test
-    just tauri-test
-    just audit
+    {{mise}} just lint
+    {{mise}} just check
+    {{mise}} just test
+    {{mise}} just web-build
+    {{mise}} just web-unit
+    {{mise}} just web-test
+    {{mise}} just tauri-test
+    {{mise}} just audit
+
+# Bootstrap dependencies, then run the main local CI gate
+ci-clean:
+    {{mise}} just setup
+    {{mise}} just ci
+
+# Remove generated build and test artifacts
+clean:
+    rm -rf .mypy_cache .pytest_cache .ruff_cache
+    find . -type d -name __pycache__ -prune -exec rm -rf {} +
+    rm -rf benchmarks/runs web/dist web/test-results web/playwright-report
+    rm -rf src-tauri/target src-tauri/gen/apple src-tauri/gen/ios src-tauri/gen/schemas
 
 # Audit Python environment and web dependencies
 audit:
@@ -126,6 +139,8 @@ doctor:
     set -euo pipefail
     ./bin/mise exec -- python --version
     ./bin/mise exec -- uv --version
+    ./bin/mise exec -- just --version
+    ./bin/mise exec -- pkl --version
     ./bin/mise exec -- npm --prefix web --version
     ./bin/mise exec -- cargo --version
     ./bin/mise exec -- rustup component list --installed | grep -E '^(rustfmt|clippy)-'
@@ -215,6 +230,19 @@ tauri-ios-test: _web-deps _ios-deps
     fi
     scripts/tauri-ios-npm-shim.sh
     ./bin/mise exec -- npm --prefix web run tauri -- ios build --debug --target aarch64-sim --ci
+
+# Validate macOS release signing environment without writing secret files
+release-preflight-macos:
+    scripts/apple-release-preflight.sh macos-dmg
+
+# Validate iOS App Store release signing environment without writing secret files
+release-preflight-ios:
+    scripts/apple-release-preflight.sh ios-appstore
+
+# Validate both Apple release signing environments
+release-preflight:
+    {{mise}} just release-preflight-macos
+    {{mise}} just release-preflight-ios
 
 # Regenerate bin/mise bootstrap script
 bootstrap:
