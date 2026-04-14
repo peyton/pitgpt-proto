@@ -142,16 +142,7 @@ export async function validateTrial(
   observations: Observation[],
 ): Promise<ValidationReport> {
   if (isTauriRuntime()) {
-    return {
-      valid: true,
-      errors: [],
-      warnings: [],
-      observation_count: observations.length,
-      planned_days:
-        typeof protocol.planned_days === "number" ? protocol.planned_days : null,
-      block_length_days:
-        typeof protocol.block_length_days === "number" ? protocol.block_length_days : null,
-    };
+    return invokeNative<ValidationReport>("validate_trial", { protocol, observations });
   }
   const res = await fetch(`${BASE}/validate`, {
     method: "POST",

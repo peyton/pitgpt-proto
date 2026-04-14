@@ -25,6 +25,7 @@ pub fn run() {
             commands::generate_schedule,
             commands::plan_trial_reminders,
             commands::analyze,
+            commands::validate_trial,
             commands::analyze_example,
             commands::load_app_state,
             commands::save_app_state,

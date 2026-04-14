@@ -69,9 +69,12 @@ export function clearAllData(): void {
 
 export function exportCSV(observations: Observation[]): string {
   const headers = [
+    "observation_id",
     "day_index",
     "date",
     "condition",
+    "assigned_condition",
+    "actual_condition",
     "primary_score",
     "irritation",
     "adherence",
@@ -82,12 +85,25 @@ export function exportCSV(observations: Observation[]): string {
     "adverse_event_severity",
     "adverse_event_description",
     "secondary_scores",
+    "recorded_at",
+    "timezone",
+    "planned_checkin_time",
+    "minutes_from_planned_checkin",
+    "exposure_start_at",
+    "exposure_end_at",
+    "measurement_timing",
+    "deviation_codes",
+    "confounders",
+    "rescue_action",
   ];
   const rows = observations.map((o) =>
     [
+      o.observation_id ?? "",
       o.day_index,
       o.date,
       o.condition,
+      o.assigned_condition ?? "",
+      o.actual_condition ?? "",
       o.primary_score ?? "",
       o.irritation,
       o.adherence,
@@ -98,6 +114,16 @@ export function exportCSV(observations: Observation[]): string {
       o.adverse_event_severity ?? "",
       o.adverse_event_description ?? "",
       JSON.stringify(o.secondary_scores ?? {}),
+      o.recorded_at ?? "",
+      o.timezone ?? "",
+      o.planned_checkin_time ?? "",
+      o.minutes_from_planned_checkin ?? "",
+      o.exposure_start_at ?? "",
+      o.exposure_end_at ?? "",
+      o.measurement_timing ?? "",
+      JSON.stringify(o.deviation_codes ?? []),
+      JSON.stringify(o.confounders ?? {}),
+      o.rescue_action ?? "",
     ]
       .map(csvCell)
       .join(","),
@@ -176,7 +202,11 @@ function normalizeTrial(value: unknown): Trial | null {
   if (!Array.isArray(trial.observations)) trial.observations = [];
   trial.observations = trial.observations.map((observation) => ({
     ...observation,
+    assigned_condition: observation.assigned_condition ?? null,
+    actual_condition: observation.actual_condition ?? observation.condition,
     secondary_scores: observation.secondary_scores ?? {},
+    deviation_codes: observation.deviation_codes ?? [],
+    confounders: observation.confounders ?? {},
   }));
   if (!Array.isArray(trial.events)) trial.events = [];
   if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];

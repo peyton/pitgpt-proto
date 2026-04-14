@@ -67,6 +67,7 @@ just fix         # Auto-fix with ruff via hk (mutates files)
 just fmt         # Format with ruff (mutates files)
 just typecheck   # Run mypy
 just bench-analysis # Run deterministic analysis benchmarks
+just parity-analysis # Compare Python and Rust deterministic analysis outputs
 just bench-ingestion # Run LLM-backed ingestion benchmarks
 just bench-all    # Run all benchmark tracks
 just serve       # Start API server
@@ -138,6 +139,8 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 - Tauri Rust tests live beside Rust modules in `src-tauri/src/`
 - Shared safety policy and template data live in `shared/`; keep Python, Rust,
   and TypeScript loaders pointed at those files instead of duplicating fixtures.
+- Python analysis is the methodology source of truth. Keep Rust analysis parity
+  green with `just parity-analysis` when changing result semantics.
 - Prefer early returns over nested conditionals
 - Keep functions short and focused
 

@@ -268,6 +268,10 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
             <strong>{result.analysis_method ?? "welch"}</strong>
           </div>
           <div>
+            <span>Action</span>
+            <strong>{formatActionability(result.actionability)}</strong>
+          </div>
+          <div>
             <span>Seed</span>
             <strong>{trial.seed}</strong>
           </div>
@@ -281,20 +285,40 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           </div>
           <div>
             <span>Analysis hash</span>
-            <strong>{trial.analysisPlanHash ?? "—"}</strong>
+            <strong>{result.methods_appendix?.trial_lock?.analysis_plan_hash ?? trial.analysisPlanHash ?? "—"}</strong>
           </div>
           <div>
             <span>Meaningful threshold</span>
-            <strong>{result.minimum_meaningful_difference ?? 0.5}</strong>
+            <strong>{result.equivalence_margin ?? result.minimum_meaningful_difference ?? 0.5}</strong>
+          </div>
+          <div>
+            <span>No meaningful difference</span>
+            <strong>{result.supports_no_meaningful_difference == null ? "—" : result.supports_no_meaningful_difference ? "Supported" : "Not supported"}</strong>
+          </div>
+          <div>
+            <span>Randomization p</span>
+            <strong>{result.randomization_p_value?.toFixed(4) ?? "—"}</strong>
+          </div>
+          <div>
+            <span>Rows used</span>
+            <strong>{result.dataset_snapshot ? `${result.dataset_snapshot.rows_used_primary}/${result.dataset_snapshot.rows_total}` : "—"}</strong>
           </div>
           <div>
             <span>Cohen's d</span>
             <strong>{result.cohens_d?.toFixed(2) ?? "—"}</strong>
           </div>
         </div>
+        {result.harm_benefit_summary && (
+          <p className="advanced-copy">{result.harm_benefit_summary}</p>
+        )}
         {result.paired_block?.difference != null && (
           <p className="advanced-copy">
-            Paired-block estimate: {signed(result.paired_block.difference)} across {result.paired_block.n_pairs} pair{result.paired_block.n_pairs === 1 ? "" : "s"}.
+            Paired-period estimate: {signed(result.paired_block.difference)} across {result.paired_block.n_pairs} pair{result.paired_block.n_pairs === 1 ? "" : "s"}.
+          </p>
+        )}
+        {result.welch_sensitivity?.difference != null && (
+          <p className="advanced-copy">
+            Welch sensitivity: {signed(result.welch_sensitivity.difference)}.
           </p>
         )}
         {result.sensitivity_excluding_partial?.difference != null && (
@@ -302,6 +326,9 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
             Sensitivity without partial-adherence rows: {signed(result.sensitivity_excluding_partial.difference)}.
           </p>
         )}
+        {result.reliability_warnings?.length ? (
+          <ul className="advanced-list">{result.reliability_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        ) : null}
         {result.data_warnings?.length ? (
           <ul className="advanced-list">{result.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
         ) : null}
@@ -337,6 +364,11 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           Export Schedule
         </button>
         <button className="btn btn-s" onClick={() => {
+          downloadFile(JSON.stringify(result.methods_appendix ?? {}, null, 2), "pitgpt-methods-appendix.json", "application/json");
+        }}>
+          Methods Appendix
+        </button>
+        <button className="btn btn-s" onClick={() => {
           downloadFile(exportAppointmentBrief(completed), "pitgpt-appointment-brief.md", "text/markdown");
         }}>
           Appointment Brief
@@ -363,6 +395,18 @@ function formatPct(value: number): string {
 
 function signed(value: number): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function formatActionability(value: CompletedTrial["result"]["actionability"]): string {
+  const labels: Record<string, string> = {
+    switch: "Switch",
+    keep_current: "Keep current",
+    repeat_with_better_controls: "Repeat",
+    stop_for_safety: "Stop for safety",
+    inconclusive_no_action: "No change",
+    insufficient_data: "Insufficient data",
+  };
+  return value ? labels[value] ?? value : "—";
 }
 
 function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTrial["trial"]): string {
