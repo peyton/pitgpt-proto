@@ -28,7 +28,7 @@ tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
 examples/        # Runnable sample protocol, observations, and document
   bin/             # mise bootstrap script
-.github/         # CI workflows
+.github/         # CI workflows and dependency automation config
 docs/            # Documentation
 ```
 
@@ -51,6 +51,8 @@ docs/            # Documentation
 | **actionlint** | GitHub Actions linter        | (builtin)        |
 | **zizmor**   | GitHub Actions security linter | (builtin)        |
 | **act**      | Local CI runner                | —                |
+| **Renovate** | Dependency update PRs          | `renovate.json`  |
+| **Dependabot** | Security update PRs          | `.github/dependabot.yml` |
 
 ## Common Commands
 
@@ -136,6 +138,15 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 Release artifacts are built by `.github/workflows/release.yml` when a GitHub
 Release is published. That workflow rebuilds signed macOS artifacts and a
 signed iOS IPA, then attaches them to the release.
+
+Dependency version updates are handled by Renovate using `renovate.json`.
+Renovate automerges minor, patch, digest, and lockfile-maintenance PRs only
+through GitHub auto-merge, so required status checks remain the merge gate.
+Dependabot scheduled version PRs are disabled in `.github/dependabot.yml` to
+avoid duplicate update PRs, but Dependabot security PRs still run for uv, npm,
+Cargo, and GitHub Actions. `.github/workflows/dependabot-auto-merge.yml` enables
+GitHub auto-merge for same-repo Dependabot patch and minor security PRs without
+checking out or executing pull request code.
 
 Tools are installed via `jdx/mise-action@v4`. Actions are pinned to SHA
 hashes per zizmor best practices. CI starts from a clean runner, so any tool
