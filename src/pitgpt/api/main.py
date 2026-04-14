@@ -1,4 +1,6 @@
+import json
 import os
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -6,7 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from pitgpt.core.analysis import analyze
@@ -71,6 +73,12 @@ class ScheduleRequest(BaseModel):
     duration_weeks: int = Field(gt=0, examples=[6])
     block_length_days: int = Field(gt=0, examples=[7])
     seed: int = Field(ge=0, examples=[12345])
+
+
+class IngestStreamEvent(BaseModel):
+    type: str
+    message: str
+    result: IngestionResult | None = None
 
 
 @app.middleware("http")
@@ -170,6 +178,30 @@ async def analyze_example_endpoint():
 
 @app.post("/ingest", response_model=IngestionResult)
 async def ingest_endpoint(req: IngestRequest):
+    client, model_id = _ingestion_client(req)
+    try:
+        return await ingest(req.query, req.documents, client, model_id)
+    except IngestionInputError as e:
+        raise HTTPException(status_code=413, detail=str(e)) from e
+    except (KeyError, ValidationError, ValueError) as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Provider response failed validation: {e}",
+        ) from e
+    except LLMError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.post("/experiments/ingest-stream")
+async def ingest_stream_endpoint(req: IngestRequest):
+    client, model_id = _ingestion_client(req)
+    return StreamingResponse(
+        _ingest_stream_events(req, client, model_id),
+        media_type="application/x-ndjson",
+    )
+
+
+def _ingestion_client(req: IngestRequest) -> tuple[CompletionClient, str]:
     settings = load_settings()
     provider = req.provider or ProviderKind.OPENROUTER
     if provider == ProviderKind.OPENROUTER:
@@ -197,17 +229,47 @@ async def ingest_endpoint(req: IngestRequest):
         raise HTTPException(
             status_code=400, detail=f"Provider {provider.value} is not supported by API"
         )
+    return client, model_id
+
+
+async def _ingest_stream_events(
+    req: IngestRequest,
+    client: CompletionClient,
+    model_id: str,
+) -> AsyncIterator[str]:
+    yield _stream_event("trace", "Reading your experiment question.")
+    if req.documents:
+        yield _stream_event("trace", f"Reviewing {len(req.documents)} attached source(s).")
+    yield _stream_event("trace", "Checking safety boundaries and trial fit.")
+    yield _stream_event("trace", "Drafting follow-up questions or a protocol.")
     try:
-        return await ingest(req.query, req.documents, client, model_id)
+        result = await ingest(req.query, req.documents, client, model_id)
     except IngestionInputError as e:
-        raise HTTPException(status_code=413, detail=str(e)) from e
+        yield _stream_event("error", str(e))
+        return
     except (KeyError, ValidationError, ValueError) as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Provider response failed validation: {e}",
-        ) from e
+        yield _stream_event("error", f"Provider response failed validation: {e}")
+        return
     except LLMError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        yield _stream_event("error", str(e))
+        return
+
+    if result.decision == "manual_review_before_protocol":
+        yield _stream_event("trace", "Follow-up questions are ready.")
+    elif result.decision == "block":
+        yield _stream_event("trace", "This request is outside the supported experiment scope.")
+    else:
+        yield _stream_event("trace", "Protocol draft is ready for review.")
+    yield _stream_event("result", "Experiment setup complete.", result)
+
+
+def _stream_event(
+    event_type: str,
+    message: str,
+    result: IngestionResult | None = None,
+) -> str:
+    event = IngestStreamEvent(type=event_type, message=message, result=result)
+    return f"{json.dumps(jsonable_encoder(event), separators=(',', ':'))}\n"
 
 
 @app.post("/analyze", response_model=ResultCard)

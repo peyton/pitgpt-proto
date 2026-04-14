@@ -38,6 +38,8 @@ describe("storage", () => {
     }));
 
     expect(state.version).toBe(STORAGE_VERSION);
+    expect(state.experiments).toEqual([]);
+    expect(state.currentExperimentId).toBeNull();
     expect(state.trial?.schedule).toHaveLength(3);
     expect(state.trial?.schedule.at(0)?.start_day).toBe(1);
     expect(state.trial?.schedule.at(2)?.end_day).toBe(42);
@@ -186,5 +188,43 @@ describe("storage", () => {
     expect(raw.trial.protocol).not.toHaveProperty("condition_a_label");
     expect(state.trial?.conditionALabel).toBe("A label");
     expect(state.trial?.protocol.condition_a_label).toBe("A label");
+  });
+
+  it("normalizes experiment conversations and unread state", () => {
+    const state = restoreStateFromJSON(JSON.stringify({
+      trial: null,
+      experiments: [
+        {
+          id: "exp-1",
+          title: "",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:01:00.000Z",
+          status: "generating",
+          unread: true,
+          query: "  Compare routines  ",
+          documents: ["source"],
+          sourceNames: ["study.md"],
+          messages: [
+            {
+              id: "msg-1",
+              role: "trace",
+              content: "Checking safety.",
+              createdAt: "2026-01-01T00:01:00.000Z",
+              status: "streaming",
+            },
+          ],
+        },
+      ],
+      currentExperimentId: "exp-1",
+      completedResults: [],
+      settings: {},
+    }));
+
+    expect(state.experiments).toHaveLength(1);
+    expect(state.experiments[0]?.title).toBe("Compare routines");
+    expect(state.experiments[0]?.unread).toBe(true);
+    expect(state.experiments[0]?.sourceNames).toEqual(["study.md"]);
+    expect(state.experiments[0]?.messages[0]?.role).toBe("trace");
+    expect(state.currentExperimentId).toBe("exp-1");
   });
 });

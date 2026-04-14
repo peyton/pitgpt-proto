@@ -42,6 +42,12 @@ interface ApiRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface IngestStreamEvent {
+  type: "trace" | "result" | "error";
+  message: string;
+  result?: IngestionResult | null;
+}
+
 export async function ingest(
   query: string,
   documents: string[] = [],
@@ -68,6 +74,115 @@ export async function ingest(
     throw new Error(await readErrorMessage(res, "Ingestion failed"));
   }
   return res.json();
+}
+
+export async function ingestExperimentStream(
+  query: string,
+  documents: string[] = [],
+  model: string | undefined,
+  provider: AiProviderKind | undefined,
+  onEvent: (event: IngestStreamEvent) => void,
+  options: ApiRequestOptions = {},
+): Promise<IngestionResult> {
+  throwIfAborted(options.signal);
+  if (isTauriRuntime()) {
+    return ingestNativeWithTrace(query, documents, model, provider, onEvent, options);
+  }
+
+  const res = await fetch(`${BASE}/experiments/ingest-stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    signal: options.signal,
+    body: JSON.stringify({
+      query,
+      documents,
+      model: model ?? "anthropic/claude-sonnet-4",
+      provider,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, "Experiment setup failed"));
+  }
+  if (!res.body) {
+    const result = await ingest(query, documents, model, provider, options);
+    onEvent({ type: "result", message: "Experiment setup complete.", result });
+    return result;
+  }
+
+  let finalResult: IngestionResult | null = null;
+  let buffer = "";
+  const decoder = new TextDecoder();
+  const reader = res.body.getReader();
+  try {
+    while (true) {
+      throwIfAborted(options.signal);
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const event = parseStreamEvent(line);
+        if (!event) continue;
+        onEvent(event);
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "result" && event.result) finalResult = event.result;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const trailing = parseStreamEvent(buffer);
+  if (trailing) {
+    onEvent(trailing);
+    if (trailing.type === "error") throw new Error(trailing.message);
+    if (trailing.type === "result" && trailing.result) finalResult = trailing.result;
+  }
+  if (!finalResult) throw new Error("Experiment setup ended without a result.");
+  return finalResult;
+}
+
+async function ingestNativeWithTrace(
+  query: string,
+  documents: string[],
+  model: string | undefined,
+  provider: AiProviderKind | undefined,
+  onEvent: (event: IngestStreamEvent) => void,
+  options: ApiRequestOptions,
+): Promise<IngestionResult> {
+  onEvent({ type: "trace", message: "Reading your experiment question." });
+  if (documents.length > 0) {
+    onEvent({ type: "trace", message: `Reviewing ${documents.length} attached source(s).` });
+  }
+  onEvent({ type: "trace", message: "Checking safety boundaries and trial fit." });
+  onEvent({ type: "trace", message: "Drafting follow-up questions or a protocol." });
+  const result = await ingest(query, documents, model, provider, options);
+  if (result.decision === "manual_review_before_protocol") {
+    onEvent({ type: "trace", message: "Follow-up questions are ready." });
+  } else if (result.decision === "block") {
+    onEvent({ type: "trace", message: "This request is outside the supported experiment scope." });
+  } else {
+    onEvent({ type: "trace", message: "Protocol draft is ready for review." });
+  }
+  onEvent({ type: "result", message: "Experiment setup complete.", result });
+  return result;
+}
+
+function parseStreamEvent(line: string): IngestStreamEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const parsed = JSON.parse(trimmed) as Partial<IngestStreamEvent>;
+  if (
+    (parsed.type === "trace" || parsed.type === "result" || parsed.type === "error") &&
+    typeof parsed.message === "string"
+  ) {
+    return {
+      type: parsed.type,
+      message: parsed.message,
+      result: parsed.result ?? null,
+    };
+  }
+  return null;
 }
 
 async function ingestNative(

@@ -47,6 +47,15 @@ export type AiToolStatus =
   | "not_found"
   | "unsupported_platform"
   | "reserved";
+export type ExperimentStatus =
+  | "draft"
+  | "generating"
+  | "needs_review"
+  | "ready_to_lock"
+  | "blocked"
+  | "active"
+  | "completed"
+  | "error";
 
 export interface Protocol {
   template: string | null;
@@ -368,6 +377,31 @@ export interface Trial {
   completedAt?: string;
 }
 
+export interface ExperimentMessage {
+  id: string;
+  role: "user" | "assistant" | "trace";
+  content: string;
+  createdAt: string;
+  status?: "streaming" | "done" | "error";
+  questions?: string[];
+  ingestionResult?: IngestionResult;
+}
+
+export interface ExperimentConversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  status: ExperimentStatus;
+  unread: boolean;
+  query: string;
+  documents: string[];
+  sourceNames: string[];
+  ingestionResult?: IngestionResult | null;
+  trialId?: string;
+  messages: ExperimentMessage[];
+}
+
 export interface TrialEvent {
   id: string;
   type:
@@ -405,6 +439,8 @@ export interface Settings {
 export interface AppState {
   version: number;
   trial: Trial | null;
+  experiments: ExperimentConversation[];
+  currentExperimentId: string | null;
   completedResults: CompletedTrial[];
   settings: Settings;
 }
