@@ -321,14 +321,43 @@ test("mocked tauri runtime discovers providers and saves native settings", async
   await expect(page.getByText("Ollama is running.")).toBeVisible();
   await page.locator(".provider-row", { hasText: "Ollama" }).getByRole("button", { name: "Use" }).click();
 
-  const savedSettings = await page.evaluate(() => {
-    const win = window as typeof window & { __TAURI_STATE__?: { settings?: Record<string, unknown> } };
-    return win.__TAURI_STATE__?.settings;
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const win = window as typeof window & { __TAURI_STATE__?: { settings?: Record<string, unknown> } };
+        return win.__TAURI_STATE__?.settings;
+      }),
+    )
+    .toMatchObject({
+      preferredProvider: "ollama",
+      preferredModel: "llama3.1:latest",
+    });
+});
+
+test("mocked tauri runtime cancels native ingestion", async ({ page }) => {
+  await mockTauriRuntime(page);
+  await page.goto("/");
+
+  await page.getByLabel("Experiment question").fill("Compare CeraVe and La Roche-Posay");
+  await page.getByLabel("Generate protocol").click();
+  await expect(page.getByLabel("Stop generation")).toBeVisible();
+  await page.getByLabel("Stop generation").click();
+
+  await expect(page.getByLabel("Generate protocol")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Generated Protocol" })).toHaveCount(0);
+
+  const nativeState = await page.evaluate(() => {
+    const win = window as typeof window & {
+      __TAURI_CANCEL__?: Record<string, unknown>;
+      __TAURI_INGEST_ARGS__?: Record<string, unknown>;
+    };
+    return {
+      cancel: win.__TAURI_CANCEL__,
+      ingest: win.__TAURI_INGEST_ARGS__,
+    };
   });
-  expect(savedSettings).toMatchObject({
-    preferredProvider: "ollama",
-    preferredModel: "llama3.1:latest",
-  });
+  expect(nativeState.ingest?.requestId).toEqual(expect.any(String));
+  expect(nativeState.cancel?.requestId).toBe(nativeState.ingest?.requestId);
 });
 
 test("mobile sidebar opens navigation", async ({ page }, testInfo) => {
@@ -409,6 +438,17 @@ async function mockTauriRuntime(page: Page): Promise<void> {
       if (command === "analyze") return ${JSON.stringify(analysisResult)};
       if (command === "analyze_example") return ${JSON.stringify(analysisResult)};
       if (command === "generate_schedule") return [];
+      if (command === "ingest_local") {
+        window.__TAURI_INGEST_ARGS__ = args;
+        return new Promise((_resolve, reject) => {
+          window.__TAURI_INGEST_REJECT__ = reject;
+        });
+      }
+      if (command === "cancel_ingest_local") {
+        window.__TAURI_CANCEL__ = args;
+        window.__TAURI_INGEST_REJECT__?.(new Error("Ingestion cancelled."));
+        return true;
+      }
       throw new Error("Unhandled Tauri command: " + command);
     }
   `;
