@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -82,10 +82,24 @@ function TimeSeriesChart({ observations, condALabel, condBLabel }: {
           {bPoints.length > 1 && <polyline className="chart-line" stroke="#FF80B5" points={polyline(bPoints)} />}
           {/* Dots */}
           <g fill="#FF006E">
-            {aPoints.map((o) => <circle key={o.day_index} cx={xScale(o.day_index)} cy={yScale(o.primary_score!)} className="chart-dot" />)}
+            {aPoints.map((o) => (
+              <circle
+                key={observationKey(o)}
+                cx={xScale(o.day_index)}
+                cy={yScale(o.primary_score!)}
+                className="chart-dot"
+              />
+            ))}
           </g>
           <g fill="#FF80B5">
-            {bPoints.map((o) => <circle key={o.day_index} cx={xScale(o.day_index)} cy={yScale(o.primary_score!)} className="chart-dot" />)}
+            {bPoints.map((o) => (
+              <circle
+                key={observationKey(o)}
+                cx={xScale(o.day_index)}
+                cy={yScale(o.primary_score!)}
+                className="chart-dot"
+              />
+            ))}
           </g>
         </svg>
       </div>
@@ -168,7 +182,7 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
             <div className="stat-label">Difference <InfoTooltip text="Mean A minus Mean B. The confidence interval tells you how certain this difference is." /></div>
             <div className="stat-value stat-positive">{result.difference != null ? `${result.difference > 0 ? "+" : ""}${result.difference.toFixed(1)}` : "—"}</div>
             <div className="stat-sub" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
-              CI: [{result.ci_lower?.toFixed(1)}, {result.ci_upper?.toFixed(1)}]
+              CI: {formatInterval(result.ci_lower, result.ci_upper)}
             </div>
           </div>
           <div className="stat-card">
@@ -422,6 +436,12 @@ export function Results() {
   const navigate = useNavigate();
   const [selectedIndex, setSelectedIndex] = useState(Math.max(0, state.completedResults.length - 1));
 
+  useEffect(() => {
+    setSelectedIndex((current) =>
+      Math.min(Math.max(0, current), Math.max(0, state.completedResults.length - 1)),
+    );
+  }, [state.completedResults.length]);
+
   const latest = state.completedResults[selectedIndex] ?? state.completedResults[state.completedResults.length - 1];
 
   if (!latest) {
@@ -457,4 +477,13 @@ export function Results() {
       <ResultView completed={latest} />
     </>
   );
+}
+
+function observationKey(observation: Observation): string {
+  return observation.observation_id || `${observation.date}-${observation.condition}-${observation.day_index}`;
+}
+
+function formatInterval(lower: number | null, upper: number | null): string {
+  if (lower == null || upper == null) return "—";
+  return `[${lower.toFixed(1)}, ${upper.toFixed(1)}]`;
 }

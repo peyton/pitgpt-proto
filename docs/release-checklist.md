@@ -54,6 +54,10 @@ key to `APPLE_API_KEY_PATH`, defaulting to `private_keys/AuthKey.p8`. For iOS it
 decoded provisioning profile to `~/Library/MobileDevice/Provisioning Profiles/PitGPT.mobileprovision`
 unless `IOS_PROVISIONING_PROFILE_PATH` overrides that destination.
 
+The rolling macOS preview workflow delegates tag, release-note, stale-asset cleanup, and artifact
+upload work to `scripts/publish-macos-preview.sh` so the workflow stays lintable and the release
+publishing logic remains testable outside GitHub Actions.
+
 ## Local Release Checks
 
 Run these before publishing:

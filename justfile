@@ -142,10 +142,10 @@ doctor:
     ./bin/mise exec -- just --version
     ./bin/mise exec -- pkl --version
     ./bin/mise exec -- npm --prefix web --version
+    test -d web/node_modules || (echo "web/node_modules missing; run just setup or just web-install" >&2; exit 1)
     ./bin/mise exec -- cargo --version
     ./bin/mise exec -- rustup component list --installed | grep -E '^(rustfmt|clippy)-'
     ./bin/mise exec -- npm --prefix web exec tauri -- --version
-    test -d web/node_modules || (echo "web/node_modules missing; run just web-install" >&2; exit 1)
     if command -v xcodebuild >/dev/null 2>&1; then
       xcodebuild -version | head -n 1
     else

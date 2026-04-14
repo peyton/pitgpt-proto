@@ -14,7 +14,12 @@ const TOKEN_KEY = "pitgpt_api_token";
 const STATE_KEY = "pitgpt_state";
 
 export function setApiToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  const trimmed = token.trim();
+  if (trimmed) {
+    localStorage.setItem(TOKEN_KEY, trimmed);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
 }
 
 function authHeaders(): HeadersInit {
@@ -27,7 +32,7 @@ function readTokenFromState(): string {
     const raw = localStorage.getItem(STATE_KEY);
     if (!raw) return "";
     const parsed = JSON.parse(raw) as { settings?: { apiToken?: unknown } };
-    return typeof parsed.settings?.apiToken === "string" ? parsed.settings.apiToken : "";
+    return typeof parsed.settings?.apiToken === "string" ? parsed.settings.apiToken.trim() : "";
   } catch {
     return "";
   }
@@ -60,8 +65,7 @@ export async function ingest(
     }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Ingestion failed");
+    throw new Error(await readErrorMessage(res, "Ingestion failed"));
   }
   return res.json();
 }
@@ -131,8 +135,7 @@ export async function analyze(
     body: JSON.stringify({ protocol, observations }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Analysis failed");
+    throw new Error(await readErrorMessage(res, "Analysis failed"));
   }
   return res.json();
 }
@@ -150,8 +153,7 @@ export async function validateTrial(
     body: JSON.stringify({ protocol, observations }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Validation failed");
+    throw new Error(await readErrorMessage(res, "Validation failed"));
   }
   return res.json();
 }
@@ -162,8 +164,7 @@ export async function analyzeExample(): Promise<ResultCard> {
   }
   const res = await fetch(`${BASE}/analyze/example`, { headers: authHeaders() });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Example analysis failed");
+    throw new Error(await readErrorMessage(res, "Example analysis failed"));
   }
   return res.json();
 }
@@ -190,8 +191,7 @@ export async function generateScheduleApi(
     }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Schedule generation failed");
+    throw new Error(await readErrorMessage(res, "Schedule generation failed"));
   }
   return res.json();
 }
@@ -210,7 +210,19 @@ export async function listProviders(): Promise<AiProviderInfo[]> {
   if (isTauriRuntime()) {
     return invokeNative<AiProviderInfo[]>("discover_ai_tools");
   }
-  const res = await fetch(`${BASE}/providers`, { headers: authHeaders() });
-  if (!res.ok) return [];
-  return res.json();
+  try {
+    const res = await fetch(`${BASE}/providers`, { headers: authHeaders() });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  const err = await res.json().catch(() => null) as { detail?: unknown; error?: { message?: unknown } } | null;
+  if (typeof err?.detail === "string" && err.detail.trim()) return err.detail;
+  if (typeof err?.error?.message === "string" && err.error.message.trim()) return err.error.message;
+  if (res.statusText) return res.statusText;
+  return fallback;
 }

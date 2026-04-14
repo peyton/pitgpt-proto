@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useApp } from "../lib/AppContext";
 import { healthCheck, listProviders, setApiToken } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
-import { clearAllData, downloadFile, exportCSV, exportJSON, loadState, restoreStateFromJSON } from "../lib/storage";
+import { clearAllData, downloadFile, exportCSV, exportJSON, restoreStateFromJSON } from "../lib/storage";
 import { getRuntimeMode } from "../lib/runtime";
 import { syncNativeReminderSchedule, type NativeReminderSync } from "../lib/nativeNotifications";
 import type { AiProviderInfo, AiProviderKind } from "../lib/types";
@@ -87,7 +87,7 @@ export function Settings() {
     setApiToken(token);
   };
 
-  const storageSize = new Blob([JSON.stringify(loadState())]).size;
+  const storageSize = new Blob([exportJSON(state)]).size;
   const sizeLabel = storageSize < 1024 ? `${storageSize} B` : `~${Math.round(storageSize / 1024)} KB`;
 
   return (
@@ -255,9 +255,9 @@ export function Settings() {
         <div className="setting-row">
           <div className="setting-label">
             <h3>Version</h3>
-            <p>PitGPT v1.0 — Personal Experiment Engine</p>
+            <p>PitGPT v0.1 — Personal Experiment Engine</p>
           </div>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--gray-400)" }}>v1.0.0</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--gray-400)" }}>v0.1.0</span>
         </div>
         <div className="setting-row">
           <div className="setting-label">

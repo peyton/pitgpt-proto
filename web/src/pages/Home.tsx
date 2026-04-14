@@ -17,6 +17,9 @@ interface SourceDocument {
   content: string;
 }
 
+const MAX_SOURCE_CHARS = 12_000;
+const MAX_TOTAL_SOURCE_CHARS = 40_000;
+
 const quickPrompts = [
   '"CeraVe vs La Roche-Posay for dry skin"',
   '"Vitamin C serum vs niacinamide"',
@@ -52,16 +55,26 @@ export function Home() {
   const addSource = useCallback((name: string, content: string) => {
     const trimmed = content.trim();
     if (!trimmed) return;
-    if (trimmed.length > 12000) {
+    if (trimmed.length > MAX_SOURCE_CHARS) {
       setError("That source is too large. Keep each source under 12,000 characters.");
       return;
     }
+    if (sources.some((source) => source.content === trimmed)) {
+      setError("That source is already attached.");
+      return;
+    }
+    const totalChars = sources.reduce((total, source) => total + source.content.length, 0);
+    if (totalChars + trimmed.length > MAX_TOTAL_SOURCE_CHARS) {
+      setError("Attached sources are too large in total. Keep all sources under 40,000 characters.");
+      return;
+    }
     setSourceOpen(true);
+    setError(null);
     setSources((current) => [
       ...current,
       { id: sourceId(), name, content: trimmed },
     ]);
-  }, []);
+  }, [sources]);
 
   const handleSubmit = useCallback(
     async (q: string) => {

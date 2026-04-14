@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from pitgpt.api.main import app
+from pitgpt.api.main import _parse_cors_origins, _request_id_from_header, app
 from pitgpt.core.llm import LLMError
 from pitgpt.core.models import (
     EvidenceQuality,
@@ -113,6 +113,8 @@ class TestAnalyzeEndpoint:
             "/analyze", json={"protocol": {"planned_days": 0}, "observations": []}
         )
         assert resp.status_code == 422
+        assert resp.json()["error"]["message"] == "Request validation failed"
+        assert "request_id" in resp.json()
 
     def test_invalid_observation_rejected(self, api_client):
         resp = api_client.post(
@@ -130,6 +132,7 @@ class TestAnalyzeEndpoint:
             },
         )
         assert resp.status_code == 422
+        assert resp.headers["X-Request-ID"]
 
 
 class TestValidateEndpoint:
@@ -179,6 +182,11 @@ class TestOptionalAuth:
 
         assert client.get("/health").status_code == 200
         assert client.get("/openapi.json").status_code == 200
+
+    def test_request_id_header_is_trimmed(self, api_client):
+        resp = api_client.get("/health", headers={"X-Request-ID": " release-check "})
+
+        assert resp.headers["X-Request-ID"] == "release-check"
 
 
 class TestIngestEndpoint:
@@ -253,3 +261,18 @@ class TestIngestEndpoint:
         resp = api_client.post("/ingest", json={"query": "Test"})
         assert resp.status_code == 502
         assert "Provider response failed validation" in resp.json()["detail"]
+
+
+def test_cors_origins_are_trimmed_and_empty_values_are_ignored() -> None:
+    assert _parse_cors_origins(" http://localhost:5173, https://pitgpt.test, ") == [
+        "http://localhost:5173",
+        "https://pitgpt.test",
+    ]
+
+
+def test_request_id_rejects_control_characters_and_long_values() -> None:
+    generated = _request_id_from_header("bad\nvalue")
+    too_long = _request_id_from_header("x" * 129)
+
+    assert generated != "bad\nvalue"
+    assert too_long != "x" * 129

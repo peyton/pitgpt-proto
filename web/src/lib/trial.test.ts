@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { appendObservationIfNew, buildObservationForDate, canonicalJson, stableHash } from "./trial";
+import {
+  appendObservationIfNew,
+  buildObservationForDate,
+  canBackfill,
+  canonicalJson,
+  checkAdverseEventStreak,
+  createTrial,
+  getCurrentPeriodIndex,
+  getDaysLeft,
+  stableHash,
+} from "./trial";
 import type { Observation, Trial } from "./types";
 
 const baseObservation: Observation = {
@@ -107,6 +117,64 @@ describe("appendObservationIfNew", () => {
     expect(observation.observation_id).toMatch(/^obs-/);
     expect(observation.deviation_codes).toEqual([]);
     expect(observation.confounders).toEqual({});
+  });
+});
+
+describe("createTrial", () => {
+  it("does not mutate the ingestion result while locking labels", () => {
+    const ingestion = {
+      ...baseTrial.ingestion,
+      protocol: {
+        ...baseTrial.protocol,
+        condition_a_label: "Original A",
+        condition_b_label: "Original B",
+      },
+    };
+
+    const trial = createTrial(ingestion, "  Test A  ", "");
+
+    expect(ingestion.protocol?.condition_a_label).toBe("Original A");
+    expect(trial.conditionALabel).toBe("Test A");
+    expect(trial.conditionBLabel).toBe("Original B");
+    expect(trial.ingestion.protocol?.condition_a_label).toBe("Test A");
+  });
+});
+
+describe("trial date helpers", () => {
+  it("does not allow backfills before the trial starts", () => {
+    const tomorrowTrial = {
+      ...baseTrial,
+      createdAt: new Date(Date.now() + 86400000).toISOString(),
+      observations: [],
+    };
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+
+    expect(canBackfill(tomorrowTrial, today.toISOString().slice(0, 10))).toBe(false);
+  });
+
+  it("clamps period and days-left math before day one", () => {
+    const tomorrowTrial = {
+      ...baseTrial,
+      createdAt: new Date(Date.now() + 86400000).toISOString(),
+      observations: [],
+    };
+
+    expect(getCurrentPeriodIndex(tomorrowTrial)).toBe(0);
+    expect(getDaysLeft(tomorrowTrial)).toBe(14);
+  });
+
+  it("requires truly consecutive irritation days for the safety streak", () => {
+    const trial = {
+      ...baseTrial,
+      observations: [
+        { ...baseObservation, day_index: 1, date: "2026-01-01", irritation: "yes" as const },
+        { ...baseObservation, day_index: 3, date: "2026-01-03", irritation: "yes" as const },
+        { ...baseObservation, day_index: 5, date: "2026-01-05", irritation: "yes" as const },
+      ],
+    };
+
+    expect(checkAdverseEventStreak(trial)).toBe(false);
   });
 });
 

@@ -121,4 +121,5 @@ if [ "$mode" = "ios-appstore" ]; then
     printf '::error title=Invalid iOS provisioning profile::IOS_PROVISIONING_PROFILE_B64 could not be decoded\n'
     exit 1
   fi
+  chmod 600 "$profile_path"
 fi

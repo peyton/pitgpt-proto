@@ -73,6 +73,7 @@ def test_macos_preview_release_is_scoped_to_native_app_changes() -> None:
 
     assert "branches: [master]" in preview_workflow
     assert "PREVIEW_TAG: macos-preview" in preview_workflow
+    assert "scripts/publish-macos-preview.sh" in preview_workflow
     assert '"src-tauri/**"' in preview_workflow
     assert '"web/**"' in preview_workflow
     assert '"shared/**"' in preview_workflow
@@ -166,6 +167,59 @@ def test_apple_release_scripts_report_missing_secret_modes() -> None:
     assert "Missing Apple signing secret" in required.stdout
 
 
+def test_ios_release_preflight_writes_private_files(tmp_path: Path) -> None:
+    """Decoded iOS release files should not be left world-readable on runners."""
+    script = ROOT / "scripts" / "apple-release-preflight.sh"
+    profile_path = tmp_path / "PitGPT.mobileprovision"
+    api_key_path = tmp_path / "AuthKey.p8"
+    env = {
+        "APPLE_API_ISSUER": "issuer",
+        "APPLE_API_KEY": "key",
+        "APPLE_API_KEY_P8_B64": "a2V5",
+        "APPLE_CERTIFICATE": "cert",
+        "APPLE_CERTIFICATE_PASSWORD": "password",
+        "APPLE_DEVELOPMENT_TEAM": "team",
+        "APPLE_SIGNING_IDENTITY": "identity",
+        "IOS_PROVISIONING_PROFILE_B64": "cHJvZmlsZQ==",
+        "APPLE_API_KEY_PATH": str(api_key_path),
+        "IOS_PROVISIONING_PROFILE_PATH": str(profile_path),
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+    }
+
+    result = subprocess.run(
+        [str(script), "ios-appstore", "--write-files"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert api_key_path.read_text(encoding="utf-8") == "key"
+    assert profile_path.read_text(encoding="utf-8") == "profile"
+    assert oct(api_key_path.stat().st_mode & 0o777) == "0o600"
+    assert oct(profile_path.stat().st_mode & 0o777) == "0o600"
+
+
+def test_tauri_ios_npm_shim_rejects_non_repo_root(tmp_path: Path) -> None:
+    """The iOS npm shim should fail clearly instead of creating stray files elsewhere."""
+    script = ROOT / "scripts" / "tauri-ios-npm-shim.sh"
+
+    result = subprocess.run(
+        [str(script), str(tmp_path)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Could not find PitGPT repo root" in result.stderr
+    assert not (tmp_path / "src-tauri" / "gen" / "apple" / "package.json").exists()
+
+
 def test_artifact_collection_fails_when_expected_files_are_missing() -> None:
     """Release workflows should fail with a clear annotation when Tauri emits no artifact."""
     script = ROOT / "scripts" / "collect-tauri-artifacts.sh"
@@ -215,3 +269,21 @@ def test_release_checklist_documents_required_secrets() -> None:
         assert name in checklist
     assert "app-store-connect" in checklist
     assert "macos-preview" in checklist
+
+
+def test_macos_preview_publish_script_requires_release_context() -> None:
+    """The preview publish script should fail before gh calls when CI env is incomplete."""
+    script = ROOT / "scripts" / "publish-macos-preview.sh"
+    assert os.access(script, os.X_OK)
+
+    result = subprocess.run(
+        [str(script)],
+        cwd=ROOT,
+        env={"PATH": os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Missing preview release environment" in result.stdout

@@ -220,6 +220,15 @@ test("backfill accepts only the last two days and records metadata", async ({ pa
   await page.goto("/");
   await page.getByRole("button", { name: /Custom A\/B/ }).click();
   await page.getByRole("button", { name: "Lock Protocol & Start" }).click();
+  await page.evaluate((createdAt) => {
+    const raw = window.localStorage.getItem("pitgpt_state");
+    if (!raw) throw new Error("missing app state");
+    const state = JSON.parse(raw) as { trial?: { createdAt?: string } };
+    if (!state.trial) throw new Error("missing trial");
+    state.trial.createdAt = createdAt;
+    window.localStorage.setItem("pitgpt_state", JSON.stringify(state));
+  }, dateOffset(-2) + "T00:00:00.000Z");
+  await page.reload();
   await page.getByText("Backfill recent day").click();
 
   await page.getByLabel("Backfill date").fill(dateOffset(-3));

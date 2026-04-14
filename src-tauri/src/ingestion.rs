@@ -3,6 +3,8 @@ use serde_json::Value;
 use crate::models::ProviderKind;
 
 const SAFETY_POLICY: &str = include_str!("../../shared/safety_policy.md");
+const MAX_DOCUMENT_CHARS: usize = 12_000;
+const MAX_TOTAL_DOCUMENT_CHARS: usize = 40_000;
 
 pub async fn ingest_local_result(
     query: String,
@@ -75,7 +77,7 @@ pub async fn ingest_ollama(
 }
 
 fn build_user_message(query: &str, documents: &[String]) -> String {
-    let mut parts = vec![format!("User query: {query}")];
+    let mut parts = vec![format!("User query: {}", query.trim())];
     for (idx, doc) in documents.iter().enumerate() {
         parts.push(format!("\n--- Uploaded Document {} ---\n{doc}", idx + 1));
     }
@@ -89,17 +91,17 @@ fn validate_inputs(query: &str, documents: &[String]) -> Result<(), String> {
     let mut total = 0;
     for (idx, doc) in documents.iter().enumerate() {
         total += doc.len();
-        if doc.len() > 12_000 {
+        if doc.len() > MAX_DOCUMENT_CHARS {
             return Err(format!(
-                "Document {} is too large ({} chars). Limit each source to 12,000 chars.",
+                "Document {} is too large ({} chars). Limit each source to {MAX_DOCUMENT_CHARS} chars.",
                 idx + 1,
                 doc.len()
             ));
         }
     }
-    if total > 40_000 {
+    if total > MAX_TOTAL_DOCUMENT_CHARS {
         return Err(format!(
-            "Sources are too large in total ({total} chars). Limit all sources to 40,000 chars."
+            "Sources are too large in total ({total} chars). Limit all sources to {MAX_TOTAL_DOCUMENT_CHARS} chars."
         ));
     }
     Ok(())
@@ -136,6 +138,13 @@ fn validate_ingestion_result(value: &Value) -> Result<(), String> {
     {
         return Err("blocked or manual-review decisions must not include protocol".to_string());
     }
+    let has_block_reason = obj
+        .get("block_reason")
+        .and_then(|value| value.as_str())
+        .is_some_and(|value| !value.trim().is_empty());
+    if decision == "block" && !has_block_reason {
+        return Err("block decisions require block_reason".to_string());
+    }
     Ok(())
 }
 
@@ -156,5 +165,27 @@ mod tests {
     fn validates_document_limits_before_provider_call() {
         let err = validate_inputs("test", &["x".repeat(12_001)]).unwrap_err();
         assert!(err.contains("too large"));
+    }
+
+    #[test]
+    fn trims_query_in_provider_prompt() {
+        let prompt = build_user_message("  compare routines  ", &[]);
+
+        assert_eq!(prompt, "User query: compare routines");
+    }
+
+    #[test]
+    fn validates_block_reason_contract() {
+        let err = validate_ingestion_result(&serde_json::json!({
+            "decision": "block",
+            "safety_tier": "RED",
+            "evidence_quality": "weak",
+            "protocol": null,
+            "user_message": "No.",
+            "block_reason": "",
+        }))
+        .unwrap_err();
+
+        assert!(err.contains("block_reason"));
     }
 }

@@ -100,16 +100,21 @@ pub async fn fetch_ollama_models(base_url: &str) -> Result<Vec<String>, String> 
 }
 
 pub fn parse_ollama_models(data: &serde_json::Value) -> Vec<String> {
-    data.get("models")
+    let mut models: Vec<String> = data
+        .get("models")
         .and_then(|models| models.as_array())
         .map(|models| {
             models
                 .iter()
                 .filter_map(|item| item.get("name").and_then(|name| name.as_str()))
+                .filter(|name| !name.trim().is_empty())
                 .map(ToString::to_string)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    models.sort();
+    models.dedup();
+    models
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -158,7 +163,9 @@ mod tests {
         let data = serde_json::json!({
             "models": [
                 {"name": "llama3.1:latest"},
-                {"name": "mistral:latest"}
+                {"name": "mistral:latest"},
+                {"name": "llama3.1:latest"},
+                {"name": ""}
             ]
         });
 

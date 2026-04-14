@@ -5,6 +5,15 @@ import type { AppState, Observation, Settings, Trial } from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
 export const STORAGE_VERSION = 3;
+const PROVIDER_KINDS = new Set<Settings["preferredProvider"]>([
+  "openrouter",
+  "ollama",
+  "claude_cli",
+  "codex_cli",
+  "chatgpt_cli",
+  "ios_on_device",
+]);
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export const defaultSettings: Settings = {
   reminderEnabled: true,
@@ -18,7 +27,12 @@ export const defaultSettings: Settings = {
 };
 
 export function defaultState(): AppState {
-  return { version: STORAGE_VERSION, trial: null, completedResults: [], settings: { ...defaultSettings } };
+  return {
+    version: STORAGE_VERSION,
+    trial: null,
+    completedResults: [],
+    settings: { ...defaultSettings },
+  };
 }
 
 export function loadState(): AppState {
@@ -128,7 +142,7 @@ export function exportCSV(observations: Observation[]): string {
       .map(csvCell)
       .join(","),
   );
-  return [headers.map(csvCell).join(","), ...rows].join("\n");
+  return `${[headers.map(csvCell).join(","), ...rows].join("\n")}\n`;
 }
 
 export function exportJSON(state: AppState): string {
@@ -145,7 +159,10 @@ export function downloadFile(content: string, filename: string, type: string): v
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
 }
 
@@ -161,8 +178,12 @@ function normalizeState(value: unknown): AppState {
     trial: normalizeTrial(value.trial),
     completedResults: Array.isArray(value.completedResults)
       ? value.completedResults
-          .map((item) => (isRecord(item) ? { trial: normalizeTrial(item.trial), result: item.result } : null))
-          .filter((item): item is AppState["completedResults"][number] => Boolean(item?.trial && item.result))
+          .map((item) =>
+            isRecord(item) ? { trial: normalizeTrial(item.trial), result: item.result } : null,
+          )
+          .filter((item): item is AppState["completedResults"][number] =>
+            Boolean(item?.trial && item.result),
+          )
       : [],
     settings: normalizeSettings(value.settings),
   };
@@ -170,46 +191,56 @@ function normalizeState(value: unknown): AppState {
 
 function normalizeSettings(value: unknown): Settings {
   if (!isRecord(value)) return { ...defaultSettings };
+  const preferredProvider = isProviderKind(value.preferredProvider)
+    ? value.preferredProvider
+    : defaultSettings.preferredProvider;
   return {
     reminderEnabled: typeof value.reminderEnabled === "boolean" ? value.reminderEnabled : true,
-    reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : "21:00",
+    reminderTime:
+      typeof value.reminderTime === "string" && TIME_PATTERN.test(value.reminderTime)
+        ? value.reminderTime
+        : "21:00",
     emailReminderEnabled:
       typeof value.emailReminderEnabled === "boolean" ? value.emailReminderEnabled : false,
     apiToken: typeof value.apiToken === "string" ? value.apiToken : "",
-    preferredProvider:
-      typeof value.preferredProvider === "string"
-        ? (value.preferredProvider as Settings["preferredProvider"])
-        : "openrouter",
+    preferredProvider,
     preferredModel: typeof value.preferredModel === "string" ? value.preferredModel : "",
-    localAiConsentByProvider: isRecord(value.localAiConsentByProvider)
-      ? value.localAiConsentByProvider
-      : {},
+    localAiConsentByProvider: normalizeConsent(value.localAiConsentByProvider),
     onDeviceModelRuntimeEnabled: false,
   };
 }
 
 function normalizeTrial(value: unknown): Trial | null {
   if (!isRecord(value) || !isRecord(value.protocol)) return null;
-  const trial = value as unknown as Trial;
-  trial.protocol.condition_a_label = trial.protocol.condition_a_label ?? trial.conditionALabel ?? "Condition A";
-  trial.protocol.condition_b_label = trial.protocol.condition_b_label ?? trial.conditionBLabel ?? "Condition B";
-  trial.protocol.secondary_outcomes = Array.isArray(trial.protocol.secondary_outcomes)
-    ? trial.protocol.secondary_outcomes
-    : [];
-  trial.protocol.amendments = Array.isArray(trial.protocol.amendments)
-    ? trial.protocol.amendments
-    : [];
-  if (!Array.isArray(trial.observations)) trial.observations = [];
-  trial.observations = trial.observations.map((observation) => ({
-    ...observation,
-    assigned_condition: observation.assigned_condition ?? null,
-    actual_condition: observation.actual_condition ?? observation.condition,
-    secondary_scores: observation.secondary_scores ?? {},
-    deviation_codes: observation.deviation_codes ?? [],
-    confounders: observation.confounders ?? {},
-  }));
-  if (!Array.isArray(trial.events)) trial.events = [];
-  if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];
+  const input = value as unknown as Trial;
+  const conditionALabel = nonEmptyString(input.conditionALabel, "Condition A");
+  const conditionBLabel = nonEmptyString(input.conditionBLabel, "Condition B");
+  const protocol = {
+    ...input.protocol,
+    condition_a_label: nonEmptyString(input.protocol.condition_a_label, conditionALabel),
+    condition_b_label: nonEmptyString(input.protocol.condition_b_label, conditionBLabel),
+    secondary_outcomes: Array.isArray(input.protocol.secondary_outcomes)
+      ? input.protocol.secondary_outcomes
+      : [],
+    amendments: Array.isArray(input.protocol.amendments) ? input.protocol.amendments : [],
+  };
+  const observations = Array.isArray(input.observations) ? input.observations : [];
+  const trial: Trial = {
+    ...input,
+    conditionALabel,
+    conditionBLabel,
+    protocol,
+    observations: observations.map((observation) => ({
+      ...observation,
+      assigned_condition: observation.assigned_condition ?? null,
+      actual_condition: observation.actual_condition ?? observation.condition,
+      secondary_scores: observation.secondary_scores ?? {},
+      deviation_codes: observation.deviation_codes ?? [],
+      confounders: observation.confounders ?? {},
+    })),
+    events: Array.isArray(input.events) ? input.events : [],
+    adverseEvents: Array.isArray(input.adverseEvents) ? input.adverseEvents : [],
+  };
   if (!Array.isArray(trial.schedule) || needsScheduleMigration(trial)) {
     trial.schedule = generateSchedule(
       trial.protocol.duration_weeks,
@@ -246,4 +277,23 @@ function needsScheduleMigration(trial: Trial): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isProviderKind(value: unknown): value is Settings["preferredProvider"] {
+  return typeof value === "string" && PROVIDER_KINDS.has(value as Settings["preferredProvider"]);
+}
+
+function normalizeConsent(value: unknown): Settings["localAiConsentByProvider"] {
+  if (!isRecord(value)) return {};
+  const consent: Settings["localAiConsentByProvider"] = {};
+  for (const [key, enabled] of Object.entries(value)) {
+    if (isProviderKind(key) && typeof enabled === "boolean") {
+      consent[key] = enabled;
+    }
+  }
+  return consent;
+}
+
+function nonEmptyString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
