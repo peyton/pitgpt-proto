@@ -4,9 +4,12 @@ PitGPT is a data-only personal clinical trial engine prototype. It turns a
 question plus optional research notes into a structured personal A/B experiment,
 then analyzes completed observations with deterministic statistics.
 
-PitGPT is not a doctor, diagnosis tool, treatment recommender, symptom tracker,
-or product ranking engine. The current prototype is built for low-risk personal
-experiments and safety-gated research ingestion.
+PitGPT is not a doctor, diagnosis tool, medication planner, or product ranking
+engine. The current prototype is built for low-risk personal experiments and
+safety-gated research ingestion. Low-risk routines that touch a condition can be
+framed when they are reversible, non-urgent, and do not change medications or
+replace care, with concise language for bringing the plan or result to a
+clinician.
 
 ## What You Can Run
 
@@ -27,11 +30,15 @@ experiments and safety-gated research ingestion.
 - `just web-dev`: launch the React web frontend.
 - `just web-build`: build the React web frontend.
 - `just web-unit` and `just web-test`: run frontend unit and browser tests.
+- `just tauri-dev`: launch the macOS Tauri app using the React UI.
+- `just tauri-build`: build the macOS Tauri app bundle.
+- `just tauri-test`: run Rust tests for native commands, storage, providers, and analysis.
+- `just tauri-ios-test`: build the iOS simulator target used by CI.
 - `just audit` and `just doctor`: check dependency health and local prerequisites.
 
 ## Setup
 
-Use Python 3.12 and Node 22. The repository pins the toolchain with
+Use Python 3.12, Node 22, and Rust 1.94. The repository pins the toolchain with
 `mise.toml` and `.python-version`; the `just` recipes run tools through
 `./bin/mise exec --`.
 The mise config is the source of truth for local and CI tools, including `hk`,
@@ -45,6 +52,7 @@ Manual setup is:
 
 ```sh
 ./bin/mise install
+./bin/mise exec -- rustup component add rustfmt clippy
 ./bin/mise exec -- uv sync --python 3.12
 ./bin/mise exec -- npm --prefix web install
 ```
@@ -53,6 +61,9 @@ Manual setup is:
 
 - Web novice path: `just serve` plus `just web-dev`, then choose **Run example**
   or **Start template**.
+- Native macOS path: `just tauri-dev`, then use templates, check-ins, exports,
+  analysis, or Ollama-backed local ingestion.
+- iOS simulator path: install Xcode and CocoaPods, then run `just tauri-ios-test`.
 - CLI no-key path: `pitgpt demo analyze` or `pitgpt trial init`.
 - API demo path: `GET /templates`, `POST /schedule`, and `GET /analyze/example`.
 - Research ingestion path: set `OPENROUTER_API_KEY`, then use `pitgpt ingest` or
@@ -103,6 +114,8 @@ Optional configuration:
 - `PITGPT_LLM_TIMEOUT_S`: defaults to `120`
 - `PITGPT_LLM_TEMPERATURE`: defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
+- `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
+- `PITGPT_OLLAMA_MODEL`: defaults to `llama3.1`
 
 ## API, TUI, And Web
 
@@ -143,6 +156,62 @@ Build the frontend with:
 just web-build
 ```
 
+## Native Desktop And iOS
+
+The Tauri v2 app lives in `src-tauri/` and reuses the Vite React UI. Web mode
+continues to call FastAPI through `/api`; native mode routes templates,
+schedules, analysis, storage, export, local ingestion, and AI discovery through
+Rust commands. Tauri storage is app-local JSON, so the native app can function
+offline without a Python sidecar.
+
+Run the macOS app:
+
+```sh
+just tauri-dev
+```
+
+Build the macOS app:
+
+```sh
+just tauri-build
+```
+
+Run native Rust tests:
+
+```sh
+just tauri-test
+```
+
+Ollama is the offline provider in this phase. The app discovers Ollama models
+from `http://localhost:11434/api/tags`; it also detects `claude`, `codex`, and
+`chatgpt` CLIs and labels them as local tools that may need an account or
+network access. The `ios_on_device` provider is reserved for future on-device
+model runtime work and is not selectable yet.
+
+iOS currently supports the offline app core: templates, local JSON storage,
+trial tracking, schedule generation, exports, and deterministic analysis. It
+does not discover Mac-installed CLIs. iOS Tauri generation/builds require Xcode
+and CocoaPods. The `just` recipes run `scripts/tauri-ios-npm-shim.sh` after
+Tauri project generation so Xcode can find the repo's web package from the
+generated `src-tauri/gen/apple` project:
+
+```sh
+just tauri-ios-test
+```
+
+GitHub CI skips signed macOS artifact creation when Apple signing secrets are
+not configured. Release builds require Apple signing secrets in the
+`apple-signing` GitHub environment for signed/notarized macOS builds and signed
+iOS release IPAs:
+`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+`APPLE_TEAM_ID`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
+`APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
+`IOS_PROVISIONING_PROFILE_B64`.
+
+On `master`, changes to the native app inputs (`src-tauri/`, `web/`, `shared/`,
+or native build config) also update the rolling GitHub prerelease tagged
+`macos-preview` with the latest signed macOS DMG.
+
 ## Benchmarks
 
 Run deterministic analysis cases:
@@ -168,6 +237,10 @@ just typecheck   # mypy on src/pitgpt
 just check       # lint + GitHub Actions checks
 just web-unit    # Vitest unit tests
 just web-test    # Playwright browser tests
+just tauri-test  # Rust native tests
+just tauri-build # macOS Tauri bundle
+just rust-components # install rustfmt + clippy for the pinned Rust toolchain
+just ci          # main local CI gate
 just audit       # uv pip check + npm audit
 just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
@@ -182,6 +255,11 @@ When adding or changing hook and CI tools, declare them in `mise.toml`. GitHub
 Actions installs only the mise-managed toolchain on a clean runner, and `hk.pkl`
 requires the `pkl` CLI before any hook step can run. CI's raw `hk run check`
 command also needs `GITHUB_TOKEN` for the `zizmor` step.
+
+Before handing off code changes, run `just ci` for substantive work or the
+smallest relevant local gate plus `just check` for narrow fixes. After pushing,
+watch the matching GitHub Actions run until it reaches `success`; if it fails,
+use the job logs as the next task and keep fixing unless the blocker is external.
 
 ## More Docs
 

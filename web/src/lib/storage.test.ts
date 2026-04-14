@@ -52,6 +52,7 @@ describe("storage", () => {
         primary_score: 7,
         irritation: "no",
         adherence: "yes",
+        adherence_reason: "",
         note: 'sleep, "travel"',
         is_backfill: "no",
         backfill_days: null,
@@ -60,7 +61,25 @@ describe("storage", () => {
 
     expect(csv).toContain('"sleep, ""travel"""');
     expect(csv.split("\n")[0]).toBe(
-      '"day_index","date","condition","primary_score","irritation","adherence","note","is_backfill","backfill_days"',
+      '"day_index","date","condition","primary_score","irritation","adherence","adherence_reason","note","is_backfill","backfill_days","adverse_event_severity","adverse_event_description"',
     );
+  });
+
+  it("migrates provider settings with reserved on-device runtime disabled", () => {
+    const state = restoreStateFromJSON(JSON.stringify({
+      trial: null,
+      completedResults: [],
+      settings: {
+        preferredProvider: "ollama",
+        preferredModel: "llama3.1:latest",
+        localAiConsentByProvider: { ollama: true },
+        onDeviceModelRuntimeEnabled: true,
+      },
+    }));
+
+    expect(state.settings.preferredProvider).toBe("ollama");
+    expect(state.settings.preferredModel).toBe("llama3.1:latest");
+    expect(state.settings.localAiConsentByProvider.ollama).toBe(true);
+    expect(state.settings.onDeviceModelRuntimeEnabled).toBe(false);
   });
 });

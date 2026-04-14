@@ -13,8 +13,8 @@ just setup
 
 This installs the mise-managed tools and syncs Python dependencies with
 Python 3.12 through `uv`. It also installs web frontend dependencies with
-Node 22. The mise-managed tools include the hook runtime (`hk` and `pkl`) and
-GitHub Actions linters used by CI.
+Node 22 and Rust 1.94 for the Tauri target. The mise-managed tools include the
+hook runtime (`hk` and `pkl`) and GitHub Actions linters used by CI.
 
 If you prefer manual setup:
 
@@ -89,7 +89,8 @@ pitgpt validate --protocol my-trial/protocol.json --observations my-trial/observ
 ## Run Research Ingestion
 
 Ingestion sends the query and document text to an OpenRouter-compatible model.
-It requires `OPENROUTER_API_KEY`.
+It requires `OPENROUTER_API_KEY` unless you explicitly select the local Ollama
+provider through the API or Tauri app.
 
 ```sh
 export OPENROUTER_API_KEY=...
@@ -114,6 +115,18 @@ OPENROUTER_API_KEY not set
 
 The default model is `anthropic/claude-sonnet-4`. Override it with either
 `--model` or `PITGPT_DEFAULT_MODEL`.
+
+Local provider discovery:
+
+```sh
+curl http://127.0.0.1:8000/providers
+```
+
+`openrouter` remains the default. `ollama` uses `PITGPT_OLLAMA_BASE_URL`
+(`http://localhost:11434` by default) and `PITGPT_OLLAMA_MODEL`
+(`llama3.1` by default). `claude_cli`, `codex_cli`, and `chatgpt_cli` are
+discovered as local tools but may require an account or network access.
+`ios_on_device` is reserved for later on-device model runtime work.
 
 ## Start The API
 
@@ -192,6 +205,55 @@ just web-unit
 just web-test
 ```
 
+## Run The Tauri macOS App
+
+The Tauri app reuses the React frontend and calls Rust commands for offline
+templates, schedules, analysis, local JSON storage, exports, provider
+discovery, and Ollama-backed ingestion.
+
+```sh
+just tauri-dev
+```
+
+Build a macOS app bundle:
+
+```sh
+just tauri-build
+```
+
+Run native tests:
+
+```sh
+just tauri-test
+```
+
+Expected behavior without network access:
+
+- Start from a bundled template.
+- Lock condition labels and submit check-ins.
+- Persist and reload app state from app-local JSON.
+- Export JSON, CSV, and appointment brief files.
+- Analyze completed observations with deterministic Rust statistics.
+
+Ollama is the only offline AI provider in this phase. If `ollama` is on `PATH`
+and `http://localhost:11434/api/tags` returns models, Settings offers those
+models first.
+
+## Build The iOS Target
+
+iOS uses the same offline Rust core and React UI, but it does not discover
+Mac-installed CLI tools. Settings marks on-device AI as planned. Future work
+can attach an implementation to the reserved `ios_on_device` provider.
+
+iOS generation and simulator builds require Xcode and CocoaPods:
+
+```sh
+just tauri-ios-test
+```
+
+If CocoaPods is missing, Tauri iOS initialization fails before the simulator
+build. CI installs CocoaPods before running the iOS path.
+
 ## Run Benchmarks
 
 Analysis-only benchmarks work without an API key:
@@ -216,4 +278,5 @@ just doctor
 ```
 
 `just doctor` warns when `OPENROUTER_API_KEY` is missing because only ingestion
-requires it.
+requires it. It also prints Rust, Tauri, Xcode, and CocoaPods status for native
+builds.

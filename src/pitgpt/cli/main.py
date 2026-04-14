@@ -392,11 +392,16 @@ def _print_ingestion_result(result):
     content_parts = [
         f"[bold]Decision:[/bold] {result.decision.value}",
         f"[bold]Safety Tier:[/bold] [{color}]{result.safety_tier.value}[/{color}]",
+        f"[bold]Risk Level:[/bold] {result.risk_level.value}",
         f"[bold]Evidence Quality:[/bold] {result.evidence_quality.value}",
         f"[bold]Evidence Conflict:[/bold] {result.evidence_conflict}",
         f"[bold]Policy Version:[/bold] {result.policy_version or 'unknown'}",
         f"[bold]Model:[/bold] {result.model or 'unknown'}",
     ]
+    if result.risk_rationale:
+        content_parts.append(f"[bold]Risk Rationale:[/bold] {result.risk_rationale}")
+    if result.clinician_note:
+        content_parts.append(f"[bold]Clinician Note:[/bold] {result.clinician_note}")
 
     if result.protocol:
         p = result.protocol
@@ -416,10 +421,21 @@ def _print_ingestion_result(result):
             content_parts.append(f"  Screening: {p.screening}")
         if p.warnings:
             content_parts.append(f"  Warnings: {p.warnings}")
+        if p.clinician_note:
+            content_parts.append(f"  Clinician Note: {p.clinician_note}")
+        if p.suggested_confounders:
+            content_parts.append(f"  Optional Context: {', '.join(p.suggested_confounders)}")
 
     if result.source_summaries:
         content_parts.extend(["", "[bold underline]Source Summaries[/bold underline]"])
         content_parts.extend(f"  - {item}" for item in result.source_summaries)
+
+    if result.sources:
+        content_parts.extend(["", "[bold underline]Sources[/bold underline]"])
+        content_parts.extend(
+            f"  - {source.title or source.source_id}: {source.summary or source.rationale}"
+            for source in result.sources
+        )
 
     if result.claimed_outcomes:
         content_parts.extend(["", "[bold underline]Claimed Outcomes[/bold underline]"])

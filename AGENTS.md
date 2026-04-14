@@ -8,7 +8,7 @@
 
 PitGPT is a data-only personal clinical trial engine. It ingests research,
 runs analysis on protocol + observations, and surfaces results via a CLI,
-API, TUI, and web frontend.
+API, TUI, web frontend, and Tauri native app.
 
 ## Repository Layout
 
@@ -22,12 +22,13 @@ src/pitgpt/      # Main Python package
 web/             # React web frontend (Vite + TypeScript)
   src/           # Components, pages, lib
   public/        # Static assets (logos)
+src-tauri/       # Tauri v2 Rust native target for macOS and iOS
+shared/          # Policy and template fixtures shared across Python/Rust/TypeScript
 tests/           # pytest test suite
 benchmarks/      # Benchmark fixtures, expected outputs, and saved runs
 examples/        # Runnable sample protocol, observations, and document
-scripts/         # Helper scripts (mise-env.sh)
-bin/             # mise bootstrap script
-.github/         # CI workflows
+  bin/             # mise bootstrap script
+.github/         # CI workflows and dependency automation config
 docs/            # Documentation
 ```
 
@@ -45,9 +46,13 @@ docs/            # Documentation
 | **pytest**   | Testing                        | `pyproject.toml` |
 | **vitest**   | Web unit tests                 | `web/package.json` |
 | **playwright** | Web browser tests            | `web/playwright.config.ts` |
+| **cargo**    | Tauri Rust build/test/lint      | `src-tauri/Cargo.toml` |
+| **tauri**    | Native desktop/iOS builds       | `web/package.json` |
 | **actionlint** | GitHub Actions linter        | (builtin)        |
 | **zizmor**   | GitHub Actions security linter | (builtin)        |
 | **act**      | Local CI runner                | —                |
+| **Renovate** | Dependency update PRs          | `renovate.json`  |
+| **Dependabot** | Security update PRs          | `.github/dependabot.yml` |
 
 ## Common Commands
 
@@ -71,7 +76,12 @@ just web-build   # Build web frontend for production
 just web-unit    # Run Vitest unit tests
 just web-test    # Run Playwright browser tests
 just web-install # Install web frontend dependencies
-just ci          # Run CI locally with act
+just tauri-dev   # Start the macOS Tauri app
+just tauri-build # Build the macOS Tauri app
+just tauri-test  # Run Rust native tests
+just rust-components # Install rustfmt and clippy for the pinned Rust toolchain
+just tauri-ios-test # Build the iOS simulator target
+just ci          # Run the main local CI gate
 just bootstrap   # Regenerate bin/mise bootstrap script
 ```
 
@@ -81,11 +91,21 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 2. **Code**: Make changes in `src/pitgpt/`
 3. **Test**: `just test`
 4. **Lint**: `just lint` (runs automatically on commit via hk)
-5. **CI**: `just ci` to test GitHub Actions locally
+5. **Local gate**: run `just ci` for substantive changes, or the narrower
+   relevant commands plus `just check` for small, scoped fixes.
+6. **GitHub CI**: after pushing, watch the relevant GitHub Actions run to a
+   terminal `success` conclusion before handing work back.
 
 ## Conventions
 
 - Python 3.12+, PEP 8, type hints everywhere
+- Rust 1.94 for Tauri; run through mise-managed `cargo`
+- Rust formatting and clippy require toolchain components; `just setup` installs
+  them, and `just rust-components` refreshes them if a clean runner lacks them.
+- Tauri iOS builds must run `scripts/tauri-ios-npm-shim.sh` after `tauri ios
+  init`. The generated Xcode project runs its Rust build phase from
+  `src-tauri/gen/apple`, and the shim lets that phase resolve the repo's web
+  package on clean runners.
 - Use `uv run` to execute Python tools (not global installs)
 - Use `hk` for linting, not raw ruff/mypy commands
 - Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
@@ -93,6 +113,9 @@ just bootstrap   # Regenerate bin/mise bootstrap script
   it through mise.
 - Ruff config: line length 100, select E/F/I/UP/B/SIM
 - Tests live in `tests/`, mirror `src/pitgpt/` structure
+- Tauri Rust tests live beside Rust modules in `src-tauri/src/`
+- Shared safety policy and template data live in `shared/`; keep Python, Rust,
+  and TypeScript loaders pointed at those files instead of duplicating fixtures.
 - Prefer early returns over nested conditionals
 - Keep functions short and focused
 
@@ -103,7 +126,32 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 - **check**: `hk run check --all` (includes actionlint + zizmor)
 - **test**: `uv run pytest`
 - **web**: npm install, build, Vitest, Playwright, npm audit
+- **rust**: cargo fmt, clippy, and cargo test for `src-tauri`
+- **tauri-macos-build**: signed/notarized macOS artifacts on `master` and manual
+  runs when the `apple-signing` environment secrets are configured; otherwise it
+  emits a notice and skips artifact creation without failing CI
+- **ios-simulator**: Tauri iOS simulator build on PRs and `master` using
+  `macos-15` so generated Xcode projects match the available Xcode format; the
+  workflow runs the Tauri iOS npm shim after project generation
 - **audit**: `uv pip check` and npm audit
+
+`.github/workflows/macos-preview-release.yml` runs on `master` when macOS app
+inputs change (`src-tauri/`, `web/`, `shared/`, and native build config). It
+builds signed macOS DMGs and updates the rolling GitHub prerelease tagged
+`macos-preview`. The official release workflow excludes that preview tag.
+
+Release artifacts are built by `.github/workflows/release.yml` when a GitHub
+Release is published. That workflow rebuilds signed macOS artifacts and a
+signed iOS IPA, then attaches them to the release.
+
+Dependency version updates are handled by Renovate using `renovate.json`.
+Renovate automerges minor, patch, digest, and lockfile-maintenance PRs only
+through GitHub auto-merge, so required status checks remain the merge gate.
+Dependabot scheduled version PRs are disabled in `.github/dependabot.yml` to
+avoid duplicate update PRs, but Dependabot security PRs still run for uv, npm,
+Cargo, and GitHub Actions. `.github/workflows/dependabot-auto-merge.yml` enables
+GitHub auto-merge for same-repo Dependabot patch and minor security PRs without
+checking out or executing pull request code.
 
 Tools are installed via `jdx/mise-action@v4`. Actions are pinned to SHA
 hashes per zizmor best practices. CI starts from a clean runner, so any tool
@@ -111,14 +159,58 @@ needed by `hk.pkl`, hook steps, or workflow commands must be listed in
 `mise.toml`. The `check` job runs hk's `zizmor` step through the raw hook
 command, so it must export `GITHUB_TOKEN` rather than only `GH_TOKEN`.
 
+## CI Handoff Rule
+
+Do not hand off completed code changes while GitHub CI is failing for the branch
+you touched. After pushing a branch or updating `master`, use `gh run list` and
+`gh run watch` (or `gh run view --log-failed`) to follow the relevant Actions run
+until it succeeds. If CI fails, inspect the failing job logs, fix the underlying
+repo or workflow issue, push the fix, and watch the next run. Only hand back with
+a failing or unrun GitHub CI state when the blocker is genuinely external, such
+as a GitHub outage, unavailable paid macOS runner capacity, or missing production
+secrets for a release-only job; include the exact run URL, failing job, and
+blocker in the handoff.
+
+For local verification, prefer `just ci` before pushing substantial changes. For
+smaller changes, run the narrowest meaningful subset plus `just check`; examples:
+Python behavior changes need `just test` and `just typecheck`, web changes need
+`just web-build`, `just web-unit`, and relevant Playwright coverage, and Tauri
+Rust changes need `just tauri-lint` and `just tauri-test`. GitHub CI remains the
+source of truth before handoff.
+
+## Product Safety Direction
+
+PitGPT uses risk-stratified personal experimentation. Low-risk routines that
+touch a condition can be allowed when the routine is reversible, non-urgent,
+does not change medications or supplements, and helps the user organize
+observations for a clinician conversation. Keep doctor language concise and
+respectful. Block medication changes, urgent symptoms, diagnosis requests,
+invasive interventions, high-risk ingestible changes, and anything that replaces
+clinical care.
+
 ## Environment Variables
 
-- `OPENROUTER_API_KEY` — Required for LLM calls (prompted interactively if missing)
+- `OPENROUTER_API_KEY` — Required for LLM calls; set it explicitly when needed
 - `PITGPT_DEFAULT_MODEL` — Defaults to `anthropic/claude-sonnet-4`
 - `PITGPT_LLM_BASE_URL` — Defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S` — Defaults to `120`
 - `PITGPT_LLM_TEMPERATURE` — Defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS` — Defaults to `4096`
+- `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`
+- `PITGPT_OLLAMA_MODEL` — Defaults to `llama3.1`
+
+Signing secrets used by native CI/release workflows must live in the
+`apple-signing` GitHub environment:
+
+- `APPLE_CERTIFICATE`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+- `APPLE_TEAM_ID`
+- `APPLE_API_KEY`
+- `APPLE_API_ISSUER`
+- `APPLE_API_KEY_P8_B64`
+- `APPLE_DEVELOPMENT_TEAM`
+- `IOS_PROVISIONING_PROFILE_B64`
 
 ## Key Documents
 

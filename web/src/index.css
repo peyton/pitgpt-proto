@@ -392,6 +392,17 @@ a:hover { text-decoration: underline; }
 }
 .optional-note:focus { border-color: var(--pink-500); box-shadow: 0 0 0 3px var(--pink-100); }
 .optional-note::placeholder { color: var(--gray-400); }
+.text-input {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--r-md);
+  color: var(--black);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+  padding: 10px 12px;
+  width: 100%;
+}
+.text-input:focus { border-color: var(--pink-500); box-shadow: 0 0 0 3px var(--pink-100); }
 
 /* CHAT INPUT */
 .chat-input {
@@ -725,6 +736,15 @@ a:hover { text-decoration: underline; }
   margin-bottom: 24px;
   padding: 14px 20px;
 }
+.adverse-event-box {
+  background: var(--danger-bg);
+  border: 1px solid #FECACA;
+  border-radius: var(--r-md);
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 14px;
+}
 
 .checkin-card {
   background: var(--white);
@@ -1045,6 +1065,23 @@ a:hover { text-decoration: underline; }
 .setting-row:last-child { border: none; }
 .setting-label h3 { font-size: 15px; font-weight: 600; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
 .setting-label p { font-size: 13px; color: var(--gray-400); }
+.provider-list {
+  border-top: 1px solid var(--gray-100);
+}
+.provider-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.settings-note {
+  color: var(--gray-500);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 12px;
+}
 
 .time-input {
   padding: 8px 14px;

@@ -8,13 +8,17 @@ from pitgpt.core.models import (
     AnalysisProtocol,
     Condition,
     EvidenceQuality,
+    ExtractedClaim,
     IngestionDecision,
     IngestionResult,
     Observation,
     Protocol,
     QualityGrade,
+    ResearchSource,
     ResultCard,
+    RiskLevel,
     SafetyTier,
+    SuitabilityScore,
     YesNo,
 )
 
@@ -24,6 +28,11 @@ class TestEnums:
         assert SafetyTier.GREEN.value == "GREEN"
         assert SafetyTier.YELLOW.value == "YELLOW"
         assert SafetyTier.RED.value == "RED"
+
+    def test_risk_level_values(self):
+        assert RiskLevel.LOW.value == "low"
+        assert RiskLevel.CONDITION_ADJACENT_LOW.value == "condition_adjacent_low"
+        assert RiskLevel.HIGH.value == "high"
 
     def test_evidence_quality_values(self):
         assert EvidenceQuality.NOVEL.value == "novel"
@@ -69,6 +78,22 @@ class TestProtocol:
         assert p.template == "Skincare Product"
         assert p.screening == "No broken skin"
 
+    def test_protocol_supports_outcome_anchors_and_clinician_note(self):
+        p = Protocol(
+            duration_weeks=4,
+            block_length_days=7,
+            cadence="daily AM",
+            washout="None",
+            primary_outcome_question="Morning comfort (0-10)",
+            outcome_anchor_low="0 = worst morning comfort you would normally log",
+            outcome_anchor_mid="5 = typical morning comfort",
+            outcome_anchor_high="10 = best morning comfort you would normally log",
+            suggested_confounders=["sleep duration", "travel"],
+            clinician_note="Consider bringing this plan to your clinician if it affects symptoms.",
+        )
+        assert p.outcome_anchor_mid.startswith("5 =")
+        assert p.suggested_confounders == ["sleep duration", "travel"]
+
 
 class TestAnalysisProtocol:
     def test_defaults(self):
@@ -87,6 +112,9 @@ class TestIngestionResult:
             decision=IngestionDecision.GENERATE_PROTOCOL,
             safety_tier=SafetyTier.GREEN,
             evidence_quality=EvidenceQuality.NOVEL,
+            risk_level=RiskLevel.CONDITION_ADJACENT_LOW,
+            risk_rationale="Low-risk routine with condition context.",
+            clinician_note="Consider bringing this plan to your clinician if it affects symptoms.",
             protocol=Protocol(
                 duration_weeks=6,
                 block_length_days=7,
@@ -98,6 +126,7 @@ class TestIngestionResult:
         )
         assert r.block_reason is None
         assert r.protocol is not None
+        assert r.risk_level == RiskLevel.CONDITION_ADJACENT_LOW
 
     def test_block(self):
         r = IngestionResult(
@@ -131,6 +160,49 @@ class TestIngestionResult:
         assert r2.decision == r.decision
         assert r2.evidence_conflict is True
         assert r2.protocol.template == "Skincare Product"
+
+    def test_structured_source_claim_and_suitability_metadata(self):
+        r = IngestionResult(
+            decision=IngestionDecision.GENERATE_PROTOCOL_WITH_RESTRICTIONS,
+            safety_tier=SafetyTier.YELLOW,
+            evidence_quality=EvidenceQuality.WEAK,
+            risk_level=RiskLevel.CONDITION_ADJACENT_LOW,
+            risk_rationale="Low-risk sleep routine; no medication changes.",
+            clinician_note="Consider bringing this plan to your clinician if it affects symptoms.",
+            protocol=Protocol(
+                template="Sleep Routine",
+                duration_weeks=4,
+                block_length_days=7,
+                cadence="daily AM",
+                washout="None",
+                primary_outcome_question="Morning restfulness (0-10)",
+            ),
+            user_message="Ready with restrictions.",
+            sources=[
+                ResearchSource(
+                    source_id="source-1",
+                    source_type="article",
+                    title="Light timing note",
+                    evidence_quality=EvidenceQuality.WEAK,
+                    summary="Suggests timing may affect restfulness.",
+                )
+            ],
+            extracted_claims=[
+                ExtractedClaim(
+                    intervention="morning light",
+                    comparator="usual routine",
+                    routine="sleep",
+                    outcome="morning restfulness",
+                    source_refs=["source-1"],
+                )
+            ],
+            suitability_scores=[
+                SuitabilityScore(dimension="risk", score=5, rationale="Routine is reversible.")
+            ],
+        )
+        assert r.sources[0].source_id == "source-1"
+        assert r.extracted_claims[0].outcome == "morning restfulness"
+        assert r.suitability_scores[0].score == 5
 
 
 class TestObservation:

@@ -64,6 +64,38 @@ class TestIngestIntegration:
         assert "--- Uploaded Document 1 ---" in user_message
         assert "Source text about cosmetic comfort outcomes." in user_message
 
+    @respx.mock
+    @patch.dict(
+        "os.environ",
+        {"PITGPT_OLLAMA_BASE_URL": "http://ollama.test", "PITGPT_OLLAMA_MODEL": "llama3.1"},
+    )
+    def test_ingest_can_use_ollama_provider(self):
+        route = respx.post("http://ollama.test/api/chat").mock(
+            return_value=httpx.Response(
+                200,
+                json={"message": {"content": json.dumps(_green_ingestion_payload())}},
+            )
+        )
+
+        client = TestClient(app)
+        resp = client.post(
+            "/ingest",
+            json={
+                "query": "Compare CeraVe and La Roche-Posay",
+                "documents": [],
+                "model": "llama3.1:latest",
+                "provider": "ollama",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["model"] == "llama3.1:latest"
+        assert route.called
+
+        payload = json.loads(route.calls[0].request.content)
+        assert payload["model"] == "llama3.1:latest"
+        assert payload["format"] == "json"
+
 
 class TestAnalyzeIntegration:
     def test_analyze_reports_integrity_fields_through_http_boundary(self):

@@ -1,0 +1,26 @@
+[package]
+name = "pitgpt-tauri"
+version = "0.1.0"
+description = "PitGPT native Tauri shell"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "pitgpt_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+statrs = "0.18"
+tauri = { version = "2", features = [] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "process", "rt", "time"] }
+which = "8"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,4 +1,6 @@
 import { generateSchedule } from "./randomize";
+import { isTauriRuntime, invokeNative } from "./runtime";
+import { stableHash } from "./trial";
 import type { AppState, Observation, Settings, Trial } from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
@@ -8,6 +10,10 @@ export const defaultSettings: Settings = {
   reminderEnabled: true,
   reminderTime: "21:00",
   emailReminderEnabled: false,
+  preferredProvider: "openrouter",
+  preferredModel: "",
+  localAiConsentByProvider: {},
+  onDeviceModelRuntimeEnabled: false,
 };
 
 export function defaultState(): AppState {
@@ -15,6 +21,7 @@ export function defaultState(): AppState {
 }
 
 export function loadState(): AppState {
+  if (isTauriRuntime()) return defaultState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return normalizeState(JSON.parse(raw));
@@ -24,7 +31,22 @@ export function loadState(): AppState {
   return defaultState();
 }
 
+export async function loadStateAsync(): Promise<AppState> {
+  if (!isTauriRuntime()) return loadState();
+  try {
+    const raw = await invokeNative<unknown | null>("load_app_state");
+    if (raw) return normalizeState(raw);
+  } catch {
+    // Native state is optional; corrupt or missing state starts fresh.
+  }
+  return defaultState();
+}
+
 export function saveState(state: AppState): void {
+  if (isTauriRuntime()) {
+    void invokeNative("save_app_state", { state: normalizeState(state) });
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeState(state)));
 }
 
@@ -37,6 +59,10 @@ export function restoreStateFromJSON(content: string): AppState {
 }
 
 export function clearAllData(): void {
+  if (isTauriRuntime()) {
+    void invokeNative("clear_app_state");
+    return;
+  }
   localStorage.removeItem(STORAGE_KEY);
 }
 
@@ -48,9 +74,12 @@ export function exportCSV(observations: Observation[]): string {
     "primary_score",
     "irritation",
     "adherence",
+    "adherence_reason",
     "note",
     "is_backfill",
     "backfill_days",
+    "adverse_event_severity",
+    "adverse_event_description",
   ];
   const rows = observations.map((o) =>
     [
@@ -60,9 +89,12 @@ export function exportCSV(observations: Observation[]): string {
       o.primary_score ?? "",
       o.irritation,
       o.adherence,
+      o.adherence_reason ?? "",
       o.note,
       o.is_backfill,
       o.backfill_days ?? "",
+      o.adverse_event_severity ?? "",
+      o.adverse_event_description ?? "",
     ]
       .map(csvCell)
       .join(","),
@@ -75,6 +107,10 @@ export function exportJSON(state: AppState): string {
 }
 
 export function downloadFile(content: string, filename: string, type: string): void {
+  if (isTauriRuntime()) {
+    void invokeNative("export_file", { filename, content });
+    return;
+  }
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -110,6 +146,15 @@ function normalizeSettings(value: unknown): Settings {
     reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : "21:00",
     emailReminderEnabled:
       typeof value.emailReminderEnabled === "boolean" ? value.emailReminderEnabled : false,
+    preferredProvider:
+      typeof value.preferredProvider === "string"
+        ? (value.preferredProvider as Settings["preferredProvider"])
+        : "openrouter",
+    preferredModel: typeof value.preferredModel === "string" ? value.preferredModel : "",
+    localAiConsentByProvider: isRecord(value.localAiConsentByProvider)
+      ? value.localAiConsentByProvider
+      : {},
+    onDeviceModelRuntimeEnabled: false,
   };
 }
 
@@ -117,12 +162,29 @@ function normalizeTrial(value: unknown): Trial | null {
   if (!isRecord(value) || !isRecord(value.protocol)) return null;
   const trial = value as unknown as Trial;
   if (!Array.isArray(trial.observations)) trial.observations = [];
+  if (!Array.isArray(trial.events)) trial.events = [];
+  if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];
   if (!Array.isArray(trial.schedule) || needsScheduleMigration(trial)) {
     trial.schedule = generateSchedule(
       trial.protocol.duration_weeks,
       trial.protocol.block_length_days,
       Number.isFinite(trial.seed) ? trial.seed : 0,
     );
+  }
+  if (!trial.protocolHash) {
+    trial.protocolHash = stableHash({
+      protocol: trial.protocol,
+      conditionALabel: trial.conditionALabel,
+      conditionBLabel: trial.conditionBLabel,
+    });
+  }
+  if (!trial.analysisPlanHash) {
+    trial.analysisPlanHash = stableHash({
+      planned_days: trial.protocol.duration_weeks * 7,
+      block_length_days: trial.protocol.block_length_days,
+      method: "paired_periods_plus_welch_sensitivity",
+      minimum_meaningful_difference: 0.5,
+    });
   }
   return trial;
 }

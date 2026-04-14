@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page, type Route, type TestInfo } from "@playwright/test";
 
 const protocol = {
   template: "Skincare Product",
@@ -51,6 +51,7 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify({ status: "ok" }),
     });
   });
+  await mockProviders(page, []);
 });
 
 test("query and source upload flow reaches results", async ({ page }) => {
@@ -232,6 +233,70 @@ test("settings persist reminders and delete data clears state", async ({ page },
   expect(state.completedResults).toHaveLength(0);
 });
 
+test("settings selects an available local provider", async ({ page }, testInfo) => {
+  await mockProviders(page, [
+    {
+      kind: "openrouter",
+      status: "installed_unavailable",
+      label: "OpenRouter",
+      is_local: false,
+      is_offline: false,
+      models: [],
+      detail: "Set OPENROUTER_API_KEY to use hosted models.",
+    },
+    {
+      kind: "ollama",
+      status: "available",
+      label: "Ollama",
+      is_local: true,
+      is_offline: true,
+      models: ["llama3.1:latest", "mistral:latest"],
+      detail: "Ollama is running.",
+    },
+    {
+      kind: "ios_on_device",
+      status: "reserved",
+      label: "iOS On-Device",
+      is_local: true,
+      is_offline: true,
+      models: [],
+      detail: "On-device models are planned for a later release.",
+    },
+  ]);
+
+  await page.goto("/");
+  await goToSettings(page, testInfo);
+
+  await expect(page.getByText("Ollama is running.")).toBeVisible();
+  await page.locator(".provider-row", { hasText: "Ollama" }).getByRole("button", { name: "Use" }).click();
+
+  const settings = await page.evaluate(() => {
+    const raw = window.localStorage.getItem("pitgpt_state");
+    return raw ? JSON.parse(raw).settings : null;
+  });
+  expect(settings.preferredProvider).toBe("ollama");
+  expect(settings.preferredModel).toBe("llama3.1:latest");
+});
+
+test("mocked tauri runtime discovers providers and saves native settings", async ({ page }, testInfo) => {
+  await mockTauriRuntime(page);
+  await page.goto("/");
+  await goToSettings(page, testInfo);
+
+  await expect(page.getByText("desktop")).toBeVisible();
+  await expect(page.getByText("Ollama is running.")).toBeVisible();
+  await page.locator(".provider-row", { hasText: "Ollama" }).getByRole("button", { name: "Use" }).click();
+
+  const savedSettings = await page.evaluate(() => {
+    const win = window as typeof window & { __TAURI_STATE__?: { settings?: Record<string, unknown> } };
+    return win.__TAURI_STATE__?.settings;
+  });
+  expect(savedSettings).toMatchObject({
+    preferredProvider: "ollama",
+    preferredModel: "llama3.1:latest",
+  });
+});
+
 test("mobile sidebar opens navigation", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "mobile-only navigation check");
 
@@ -249,6 +314,75 @@ async function mockIngest(page: Page, body: unknown): Promise<void> {
       contentType: "application/json",
       body: JSON.stringify(body),
     });
+  });
+}
+
+async function mockProviders(page: Page, body: unknown): Promise<void> {
+  await page.unroute("**/api/providers").catch(() => undefined);
+  await page.unroute("**/providers").catch(() => undefined);
+  const providerResponse = async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
+  };
+  await page.route("**/api/providers", providerResponse);
+  await page.route("**/providers", providerResponse);
+}
+
+async function mockTauriRuntime(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.__TAURI_INTERNALS__ = {};
+  });
+  const moduleBody = `
+    const providers = ${JSON.stringify([
+      {
+        kind: "ollama",
+        status: "available",
+        label: "Ollama",
+        is_local: true,
+        is_offline: true,
+        models: ["llama3.1:latest"],
+        detail: "Ollama is running.",
+      },
+      {
+        kind: "ios_on_device",
+        status: "reserved",
+        label: "iOS On-Device Models",
+        is_local: true,
+        is_offline: true,
+        models: [],
+        detail: "Reserved for future on-device model runtime work.",
+      },
+    ])};
+    export async function invoke(command, args = {}) {
+      window.__TAURI_CALLS__ = [...(window.__TAURI_CALLS__ || []), { command, args }];
+      if (command === "load_app_state") return window.__TAURI_STATE__ || null;
+      if (command === "save_app_state") {
+        window.__TAURI_STATE__ = args.state;
+        return null;
+      }
+      if (command === "clear_app_state") {
+        window.__TAURI_STATE__ = null;
+        return null;
+      }
+      if (command === "discover_ai_tools") return providers;
+      if (command === "export_file") {
+        window.__TAURI_EXPORT__ = args;
+        return "/tmp/" + args.filename;
+      }
+      if (command === "analyze") return ${JSON.stringify(analysisResult)};
+      if (command === "analyze_example") return ${JSON.stringify(analysisResult)};
+      if (command === "generate_schedule") return [];
+      throw new Error("Unhandled Tauri command: " + command);
+    }
+  `;
+  await page.route("**/*tauri-apps_api_core*.js*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/javascript", body: moduleBody });
+  });
+  await page.route("**/*@tauri-apps*core*.js*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/javascript", body: moduleBody });
   });
 }
 

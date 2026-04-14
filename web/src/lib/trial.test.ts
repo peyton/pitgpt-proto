@@ -64,5 +64,21 @@ describe("appendObservationIfNew", () => {
 
     expect(updated).not.toBe(baseTrial);
     expect(updated.observations).toHaveLength(2);
+    expect(updated.events?.some((event) => event.type === "checkin_submitted")).toBe(true);
+  });
+
+  it("preserves discomfort as an adverse event", () => {
+    const updated = appendObservationIfNew(baseTrial, {
+      ...baseObservation,
+      day_index: 2,
+      date: "2026-01-02",
+      irritation: "yes",
+      adverse_event_severity: "moderate",
+      adverse_event_description: "Redness after use.",
+    });
+
+    expect(updated.adverseEvents).toHaveLength(1);
+    expect(updated.adverseEvents?.[0]?.description).toBe("Redness after use.");
+    expect(updated.events?.some((event) => event.type === "adverse_event_logged")).toBe(true);
   });
 });

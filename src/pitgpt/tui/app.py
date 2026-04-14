@@ -275,8 +275,13 @@ def _format_ingestion(r) -> str:
     lines = [
         f"[bold]Decision:[/bold]  {r.decision.value}",
         f"[bold]Safety:[/bold]    [{color}]{r.safety_tier.value}[/{color}]",
+        f"[bold]Risk:[/bold]      {r.risk_level.value}",
         f"[bold]Evidence:[/bold]  {r.evidence_quality.value} (conflict: {r.evidence_conflict})",
     ]
+    if r.risk_rationale:
+        lines.append(f"[bold]Why:[/bold]       {r.risk_rationale}")
+    if r.clinician_note:
+        lines.append(f"[bold]Clinician:[/bold] {r.clinician_note}")
     if r.protocol:
         p = r.protocol
         lines.append("")
@@ -290,6 +295,10 @@ def _format_ingestion(r) -> str:
             lines.append(f"  Screening: {p.screening}")
         if p.warnings:
             lines.append(f"  [yellow]Warnings:  {p.warnings}[/yellow]")
+        if p.clinician_note:
+            lines.append(f"  Clinician: {p.clinician_note}")
+        if p.suggested_confounders:
+            lines.append(f"  Context:   {', '.join(p.suggested_confounders)}")
     if r.block_reason:
         lines.append(f"\n[red bold]Blocked:[/red bold] {r.block_reason}")
     lines.append(f"\n[italic]{r.user_message}[/italic]")

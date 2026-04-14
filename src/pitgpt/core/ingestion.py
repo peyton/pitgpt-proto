@@ -1,10 +1,17 @@
-from pitgpt.core.llm import LLMClient
+from typing import Protocol as TypingProtocol
+
+from pydantic import BaseModel
+
 from pitgpt.core.models import (
     EvidenceQuality,
+    ExtractedClaim,
     IngestionDecision,
     IngestionResult,
     Protocol,
+    ResearchSource,
+    RiskLevel,
     SafetyTier,
+    SuitabilityScore,
 )
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
 
@@ -16,10 +23,16 @@ class IngestionInputError(ValueError):
     pass
 
 
+class CompletionClient(TypingProtocol):
+    model: str
+
+    async def complete(self, system: str, user: str) -> dict[str, object]: ...
+
+
 async def ingest(
     query: str,
     documents: list[str],
-    client: LLMClient,
+    client: CompletionClient,
     model_id: str | None = None,
 ) -> IngestionResult:
     _validate_inputs(query, documents)
@@ -36,18 +49,25 @@ async def ingest(
         protocol = Protocol.model_validate(protocol_data)
 
     return IngestionResult(
-        decision=IngestionDecision(raw["decision"]),
-        safety_tier=SafetyTier(raw["safety_tier"]),
-        evidence_quality=EvidenceQuality(raw["evidence_quality"]),
-        evidence_conflict=raw.get("evidence_conflict", False),
+        decision=IngestionDecision(str(raw["decision"])),
+        safety_tier=SafetyTier(str(raw["safety_tier"])),
+        evidence_quality=EvidenceQuality(str(raw["evidence_quality"])),
+        evidence_conflict=bool(raw.get("evidence_conflict", False)),
+        risk_level=RiskLevel(str(raw.get("risk_level", RiskLevel.LOW.value))),
+        risk_rationale=str(raw.get("risk_rationale", "")),
+        clinician_note=str(raw.get("clinician_note", "")),
         protocol=protocol,
-        block_reason=raw.get("block_reason"),
-        user_message=raw.get("user_message", ""),
-        policy_version=raw.get("policy_version", SAFETY_POLICY_VERSION),
+        block_reason=_optional_string(raw.get("block_reason")),
+        user_message=str(raw.get("user_message", "")),
+        policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
         model=model_id or client.model,
         response_validation_status="validated",
         source_summaries=_string_list(raw.get("source_summaries")),
         claimed_outcomes=_string_list(raw.get("claimed_outcomes")),
+        sources=_model_list(raw.get("sources"), ResearchSource),
+        extracted_claims=_model_list(raw.get("extracted_claims"), ExtractedClaim),
+        suitability_scores=_model_list(raw.get("suitability_scores"), SuitabilityScore),
+        next_steps=_string_list(raw.get("next_steps")),
     )
 
 
@@ -74,3 +94,19 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item).strip()]
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _model_list[ModelT: BaseModel](value: object, model_type: type[ModelT]) -> list[ModelT]:
+    if not isinstance(value, list):
+        return []
+    result: list[ModelT] = []
+    for item in value:
+        if isinstance(item, dict):
+            result.append(model_type.model_validate(item))
+    return result

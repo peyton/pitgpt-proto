@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: Signed macOS Artifacts
+    runs-on: macos-14
+    if: github.event.release.tag_name != 'macos-preview'
+    environment: apple-signing
+    permissions:
+      contents: write
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+      APPLE_API_KEY_PATH: private_keys/AuthKey.p8
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: npm --prefix web ci
+      - name: Validate Apple signing secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8_B64 APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing Apple signing secret::$name is required for signed macOS release artifacts"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Write App Store Connect API key
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$APPLE_API_KEY_PATH")"
+          printf '%s' "$APPLE_API_KEY_P8_B64" | base64 -d > "$APPLE_API_KEY_PATH"
+          chmod 600 "$APPLE_API_KEY_PATH"
+      - run: npm --prefix web run tauri:build
+      - name: Attach macOS artifacts
+        run: |
+          set -euo pipefail
+          artifacts_file="$RUNNER_TEMP/macos-artifacts.txt"
+          find src-tauri/target/release/bundle -type f -name '*.dmg' -print > "$artifacts_file"
+          if [ ! -s "$artifacts_file" ]; then
+            echo "::error title=Missing macOS artifact::No DMG was produced"
+            exit 1
+          fi
+          while IFS= read -r artifact; do
+            gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
+          done < "$artifacts_file"
+
+  ios:
+    name: Signed iOS IPA
+    runs-on: macos-15
+    if: github.event.release.tag_name != 'macos-preview'
+    environment: apple-signing
+    permissions:
+      contents: write
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_P8_B64: ${{ secrets.APPLE_API_KEY_P8_B64 }}
+      APPLE_API_KEY_PATH: private_keys/AuthKey.p8
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      IOS_PROVISIONING_PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_B64 }}
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: brew install cocoapods
+      - run: npm --prefix web ci
+      - run: rustup target add aarch64-apple-ios
+      - name: Validate Apple iOS signing secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8_B64 APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_DEVELOPMENT_TEAM APPLE_SIGNING_IDENTITY IOS_PROVISIONING_PROFILE_B64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing Apple signing secret::$name is required for signed iOS release artifacts"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Write App Store Connect API key and provisioning profile
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$APPLE_API_KEY_PATH")"
+          printf '%s' "$APPLE_API_KEY_P8_B64" | base64 -d > "$APPLE_API_KEY_PATH"
+          chmod 600 "$APPLE_API_KEY_PATH"
+          profile_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$profile_dir"
+          printf '%s' "$IOS_PROVISIONING_PROFILE_B64" | base64 -d > "$profile_dir/PitGPT.mobileprovision"
+      - run: npm --prefix web run tauri -- ios init --ci
+      - run: scripts/tauri-ios-npm-shim.sh
+      - run: npm --prefix web run tauri -- ios build --target aarch64 --export-method release-testing --ci
+      - name: Attach iOS IPA
+        run: |
+          set -euo pipefail
+          artifacts_file="$RUNNER_TEMP/ios-artifacts.txt"
+          find src-tauri -type f -name '*.ipa' -print > "$artifacts_file"
+          if [ ! -s "$artifacts_file" ]; then
+            echo "::error title=Missing iOS artifact::No IPA was produced"
+            exit 1
+          fi
+          while IFS= read -r artifact; do
+            gh release upload "$GITHUB_REF_NAME" "$artifact" --clobber
+          done < "$artifacts_file"

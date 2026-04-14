@@ -5,7 +5,11 @@ from typing import Any
 
 import httpx
 
-from pitgpt.core.settings import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_TIMEOUT_S
+from pitgpt.core.settings import (
+    DEFAULT_LLM_BASE_URL,
+    DEFAULT_LLM_TIMEOUT_S,
+    DEFAULT_OLLAMA_BASE_URL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,48 @@ class LLMClient:
         raise LLMError(f"LLM request failed after {MAX_RETRIES} attempts: {last_error}")
 
 
+class OllamaClient:
+    def __init__(
+        self,
+        model: str,
+        base_url: str = DEFAULT_OLLAMA_BASE_URL,
+        temperature: float = 0.0,
+        timeout_s: float = DEFAULT_LLM_TIMEOUT_S,
+    ):
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.temperature = temperature
+        self.timeout_s = timeout_s
+
+    async def complete(self, system: str, user: str) -> dict[str, Any]:
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": self.temperature},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_s) as client:
+                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+        except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError) as e:
+            raise LLMError(f"Ollama request failed: {e}") from e
+
+        content = _extract_ollama_message_content(data)
+        try:
+            parsed: object = json.loads(content)
+        except json.JSONDecodeError as e:
+            raise LLMError(f"Ollama response was not valid JSON: {e}") from e
+        if not isinstance(parsed, dict):
+            raise LLMError("Ollama response JSON must be an object")
+        return parsed
+
+
 def _extract_message_content(data: Any) -> str:
     if not isinstance(data, dict):
         raise LLMError("LLM response was not a JSON object")
@@ -105,4 +151,16 @@ def _extract_message_content(data: Any) -> str:
     content = message.get("content")
     if not isinstance(content, str) or content == "":
         raise LLMError("LLM response message missing content")
+    return content
+
+
+def _extract_ollama_message_content(data: Any) -> str:
+    if not isinstance(data, dict):
+        raise LLMError("Ollama response was not a JSON object")
+    message = data.get("message")
+    if not isinstance(message, dict):
+        raise LLMError("Ollama response missing message")
+    content = message.get("content")
+    if not isinstance(content, str) or content == "":
+        raise LLMError("Ollama response message missing content")
     return content

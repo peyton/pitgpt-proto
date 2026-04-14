@@ -10,6 +10,14 @@ class SafetyTier(StrEnum):
     RED = "RED"
 
 
+class RiskLevel(StrEnum):
+    LOW = "low"
+    CONDITION_ADJACENT_LOW = "condition_adjacent_low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CLINICIAN_REVIEW = "clinician_review"
+
+
 class EvidenceQuality(StrEnum):
     NOVEL = "novel"
     WEAK = "weak"
@@ -53,6 +61,34 @@ class AnalysisMethod(StrEnum):
     INSUFFICIENT_DATA = "insufficient_data"
 
 
+class ResearchSource(BaseModel):
+    source_id: str = ""
+    source_type: str = "text"
+    title: str = ""
+    locator: str = ""
+    evidence_quality: EvidenceQuality | None = None
+    summary: str = ""
+    rationale: str = ""
+
+
+class ExtractedClaim(BaseModel):
+    intervention: str = ""
+    comparator: str = ""
+    routine: str = ""
+    outcome: str = ""
+    population: str = ""
+    duration: str = ""
+    timing: str = ""
+    effect_size: str = ""
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class SuitabilityScore(BaseModel):
+    dimension: str
+    score: int = Field(ge=1, le=5)
+    rationale: str = ""
+
+
 class Protocol(BaseModel):
     template: str | None = None
     duration_weeks: int = Field(gt=0)
@@ -62,6 +98,14 @@ class Protocol(BaseModel):
     primary_outcome_question: str
     screening: str = ""
     warnings: str = ""
+    outcome_anchor_low: str = ""
+    outcome_anchor_mid: str = ""
+    outcome_anchor_high: str = ""
+    condition_a_instructions: str = ""
+    condition_b_instructions: str = ""
+    suggested_confounders: list[str] = Field(default_factory=list)
+    clinician_note: str = ""
+    readiness_checklist: list[str] = Field(default_factory=list)
 
 
 class AnalysisProtocol(BaseModel):
@@ -75,6 +119,9 @@ class IngestionResult(BaseModel):
     safety_tier: SafetyTier
     evidence_quality: EvidenceQuality
     evidence_conflict: bool = False
+    risk_level: RiskLevel = RiskLevel.LOW
+    risk_rationale: str = ""
+    clinician_note: str = ""
     protocol: Protocol | None = None
     block_reason: str | None = None
     user_message: str
@@ -83,6 +130,10 @@ class IngestionResult(BaseModel):
     response_validation_status: str = "validated"
     source_summaries: list[str] = Field(default_factory=list)
     claimed_outcomes: list[str] = Field(default_factory=list)
+    sources: list[ResearchSource] = Field(default_factory=list)
+    extracted_claims: list[ExtractedClaim] = Field(default_factory=list)
+    suitability_scores: list[SuitabilityScore] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_decision_contract(self) -> "IngestionResult":

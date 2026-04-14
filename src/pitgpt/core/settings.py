@@ -7,6 +7,8 @@ DEFAULT_LLM_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_LLM_TIMEOUT_S = 120.0
 DEFAULT_LLM_TEMPERATURE = 0.0
 DEFAULT_LLM_MAX_TOKENS = 4096
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "llama3.1"
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,8 @@ class Settings:
     llm_timeout_s: float = DEFAULT_LLM_TIMEOUT_S
     llm_temperature: float = DEFAULT_LLM_TEMPERATURE
     llm_max_tokens: int = DEFAULT_LLM_MAX_TOKENS
+    ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    ollama_default_model: str = DEFAULT_OLLAMA_MODEL
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -28,6 +32,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_timeout_s=_float_from_env(source, "PITGPT_LLM_TIMEOUT_S", DEFAULT_LLM_TIMEOUT_S),
         llm_temperature=_float_from_env(source, "PITGPT_LLM_TEMPERATURE", DEFAULT_LLM_TEMPERATURE),
         llm_max_tokens=_int_from_env(source, "PITGPT_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS),
+        ollama_base_url=source.get("PITGPT_OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
+        ollama_default_model=source.get("PITGPT_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
     )
 
 
