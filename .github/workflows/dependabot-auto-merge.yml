@@ -10,7 +10,8 @@ permissions: {}
 jobs:
   dependabot-auto-merge:
     name: Dependabot security auto-merge
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     # pull_request_target gives the workflow a write-capable token for enabling
     # auto-merge; this job never checks out or runs pull request code.
     if: >-

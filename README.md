@@ -40,6 +40,8 @@ clinician.
 - `just tauri-test`: run Rust tests for native commands, storage, providers, and analysis.
 - `just tauri-ios-test`: build the iOS simulator target used by CI.
 - `just audit` and `just doctor`: check dependency health and local prerequisites.
+- `just ci-clean`: bootstrap dependencies and run the main local CI gate.
+- `just release-preflight`: verify Apple signing environment variables before release.
 
 ## Setup
 
@@ -47,7 +49,7 @@ Use Python 3.12, Node 22, and Rust 1.94. The repository pins the toolchain with
 `mise.toml` and `.python-version`; the `just` recipes run tools through
 `./bin/mise exec --`.
 The mise config is the source of truth for local and CI tools, including `hk`,
-`pkl`, `actionlint`, and `zizmor`.
+`pkl`, `just`, `actionlint`, and `zizmor`.
 
 ```sh
 just setup
@@ -59,7 +61,7 @@ Manual setup is:
 ./bin/mise install
 ./bin/mise exec -- rustup component add rustfmt clippy
 ./bin/mise exec -- uv sync --python 3.12
-./bin/mise exec -- npm --prefix web install
+./bin/mise exec -- npm --prefix web ci
 ```
 
 ## Choose Your Path
@@ -221,11 +223,13 @@ just tauri-ios-test
 GitHub CI skips signed macOS artifact creation when Apple signing secrets are
 not configured. Release builds require Apple signing secrets in the
 `apple-signing` GitHub environment for signed/notarized macOS builds and signed
-iOS release IPAs:
+iOS App Store Connect IPAs:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_TEAM_ID`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
 `APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
 `IOS_PROVISIONING_PROFILE_B64`.
+See `docs/release-checklist.md` for the release preflight commands, secret
+definitions, build-number behavior, and current Mac App Store gaps.
 
 On `master`, changes to the native app inputs (`src-tauri/`, `web/`, `shared/`,
 or native build config) also update the rolling GitHub prerelease tagged
@@ -260,6 +264,9 @@ just tauri-test  # Rust native tests
 just tauri-build # macOS Tauri bundle
 just rust-components # install rustfmt + clippy for the pinned Rust toolchain
 just ci          # main local CI gate
+just ci-clean    # bootstrap dependencies and run the main local CI gate
+just clean       # remove generated build and test artifacts
+just release-preflight # validate Apple release signing environment
 just audit       # uv pip check + npm audit
 just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
@@ -284,6 +291,7 @@ use the job logs as the next task and keep fixing unless the blocker is external
 
 - `docs/operator-guide.md`: step-by-step user workflows
 - `docs/quickstart.md`: choose CLI, web, TUI, or API path
+- `docs/release-checklist.md`: Apple signing and release workflow checklist
 - `docs/project-purpose.md`: current purpose and safety contract
 - `docs/architecture.md`: module map and data flow
 - `docs/scope.md`: prototype scope versus PRD and post-MVP ideas
