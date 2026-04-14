@@ -11,6 +11,7 @@ jobs:
   macos:
     name: Signed macOS Artifacts
     runs-on: macos-14
+    if: github.event.release.tag_name != 'macos-preview'
     environment: apple-signing
     permissions:
       contents: write
@@ -65,6 +66,7 @@ jobs:
   ios:
     name: Signed iOS IPA
     runs-on: macos-15
+    if: github.event.release.tag_name != 'macos-preview'
     environment: apple-signing
     permissions:
       contents: write

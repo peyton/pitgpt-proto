@@ -135,6 +135,11 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
   workflow runs the Tauri iOS npm shim after project generation
 - **audit**: `uv pip check` and npm audit
 
+`.github/workflows/macos-preview-release.yml` runs on `master` when macOS app
+inputs change (`src-tauri/`, `web/`, `shared/`, and native build config). It
+builds signed macOS DMGs and updates the rolling GitHub prerelease tagged
+`macos-preview`. The official release workflow excludes that preview tag.
+
 Release artifacts are built by `.github/workflows/release.yml` when a GitHub
 Release is published. That workflow rebuilds signed macOS artifacts and a
 signed iOS IPA, then attaches them to the release.

@@ -31,3 +31,21 @@ def test_hk_ruff_steps_use_project_environment() -> None:
     assert 'fix = "uv run --python 3.12 ruff format' in hk_config
     assert 'check = "uv run --python 3.12 ruff check' in hk_config
     assert 'fix = "uv run --python 3.12 ruff check' in hk_config
+
+
+def test_macos_preview_release_is_scoped_to_native_app_changes() -> None:
+    """Preview releases should only publish from master native app changes."""
+    preview_workflow = (ROOT / ".github" / "workflows" / "macos-preview-release.yml").read_text(
+        encoding="utf-8",
+    )
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8",
+    )
+
+    assert "branches: [master]" in preview_workflow
+    assert "PREVIEW_TAG: macos-preview" in preview_workflow
+    assert '"src-tauri/**"' in preview_workflow
+    assert '"web/**"' in preview_workflow
+    assert '"shared/**"' in preview_workflow
+    assert "contents: write" in preview_workflow
+    assert "github.event.release.tag_name != 'macos-preview'" in release_workflow
