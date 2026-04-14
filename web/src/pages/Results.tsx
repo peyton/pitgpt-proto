@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { downloadFile, exportCSV } from "../lib/storage";
+import { computeTrialAuditHash } from "../lib/trial";
 import type { CompletedTrial, Observation } from "../lib/types";
 
 const safetyBadgeClass: Record<string, string> = {
@@ -100,7 +101,7 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
   return (
     <div className="page-container wide">
       <div className="fade-up" style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-.5px", marginBottom: 4 }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 4 }}>
           {trial.conditionALabel} vs. {trial.conditionBLabel}
         </h1>
         <span style={{ fontSize: 13, color: "var(--gray-400)", fontFamily: "var(--mono)" }}>
@@ -112,6 +113,9 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
       <div className="verdict-card fade-up fade-up-1">
         <h2>{getVerdictHeadline(result, trial)}</h2>
         <p>{result.summary}</p>
+        {result.meets_minimum_meaningful_effect === false && (
+          <p>The measured difference is below the default threshold for a meaningful change.</p>
+        )}
       </div>
 
       <div className="integrity-grid fade-up fade-up-2">
@@ -145,55 +149,102 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="stats-grid fade-up fade-up-3">
-        <div className="stat-card">
-          <div className="stat-label">Mean A <InfoTooltip text={`Average daily score on days using ${trial.conditionALabel}.`} /></div>
-          <div className="stat-value stat-positive">{result.mean_a?.toFixed(1) ?? "—"}</div>
-          <div className="stat-sub">{trial.conditionALabel}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Mean B <InfoTooltip text={`Average daily score on days using ${trial.conditionBLabel}.`} /></div>
-          <div className="stat-value">{result.mean_b?.toFixed(1) ?? "—"}</div>
-          <div className="stat-sub">{trial.conditionBLabel}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Difference <InfoTooltip text="Mean A minus Mean B. The confidence interval tells you how certain this difference is." /></div>
-          <div className="stat-value stat-positive">{result.difference != null ? `${result.difference > 0 ? "+" : ""}${result.difference.toFixed(1)}` : "—"}</div>
-          <div className="stat-sub" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
-            CI: [{result.ci_lower?.toFixed(1)}, {result.ci_upper?.toFixed(1)}]
+      <details className="advanced-disclosure fade-up fade-up-3">
+        <summary>Statistics and chart</summary>
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-label">Mean A <InfoTooltip text={`Average daily score on days using ${trial.conditionALabel}.`} /></div>
+            <div className="stat-value stat-positive">{result.mean_a?.toFixed(1) ?? "—"}</div>
+            <div className="stat-sub">{trial.conditionALabel}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Mean B <InfoTooltip text={`Average daily score on days using ${trial.conditionBLabel}.`} /></div>
+            <div className="stat-value">{result.mean_b?.toFixed(1) ?? "—"}</div>
+            <div className="stat-sub">{trial.conditionBLabel}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Difference <InfoTooltip text="Mean A minus Mean B. The confidence interval tells you how certain this difference is." /></div>
+            <div className="stat-value stat-positive">{result.difference != null ? `${result.difference > 0 ? "+" : ""}${result.difference.toFixed(1)}` : "—"}</div>
+            <div className="stat-sub" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+              CI: [{result.ci_lower?.toFixed(1)}, {result.ci_upper?.toFixed(1)}]
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Quality <InfoTooltip text={`Grade ${result.quality_grade}: ${gradeLabel[result.quality_grade]}.`} /></div>
+            <div className="stat-value">
+              <span className={`grade-badge ${gradeClass[result.quality_grade]}`}>{result.quality_grade}</span>
+            </div>
+            <div className="stat-sub">{gradeLabel[result.quality_grade]}</div>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">Quality <InfoTooltip text={`Grade ${result.quality_grade}: ${gradeLabel[result.quality_grade]}.`} /></div>
-          <div className="stat-value">
-            <span className={`grade-badge ${gradeClass[result.quality_grade]}`}>{result.quality_grade}</span>
-          </div>
-          <div className="stat-sub">{gradeLabel[result.quality_grade]}</div>
+
+        <TimeSeriesChart
+          observations={trial.observations}
+          condALabel={trial.conditionALabel}
+          condBLabel={trial.conditionBLabel}
+        />
+      </details>
+
+      <details className="advanced-disclosure fade-up fade-up-4">
+        <summary>Caveats</summary>
+        <div className="caveats-card">
+          <p><strong>Expectancy effect:</strong> This experiment was not blinded. You knew which product you were using, which can unconsciously influence your satisfaction ratings.</p>
+          <p><strong>Regression to the mean:</strong> If you started the trial during a particularly good or bad skin period, some change may simply be a return to your baseline.</p>
+          <p><strong>Personal evidence only:</strong> This result applies to you, under these conditions, with this protocol. It is not generalizable and does not constitute medical advice.</p>
+          {result.caveats && <p>{result.caveats}</p>}
         </div>
-      </div>
+      </details>
 
-      {/* Chart */}
-      <TimeSeriesChart
-        observations={trial.observations}
-        condALabel={trial.conditionALabel}
-        condBLabel={trial.conditionBLabel}
-      />
-
-      {/* Caveats */}
-      <div className="caveats-card fade-up fade-up-4">
-        <h3>
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <path d="M10 2l8 14H2L10 2z" stroke="var(--caution)" strokeWidth="1.5" strokeLinejoin="round" fill="var(--caution-bg)" />
-            <path d="M10 8v3M10 13v1" stroke="var(--caution)" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          Important Caveats
-        </h3>
-        <p><strong>Expectancy effect:</strong> This experiment was not blinded. You knew which product you were using, which can unconsciously influence your satisfaction ratings.</p>
-        <p><strong>Regression to the mean:</strong> If you started the trial during a particularly good or bad skin period, some "change" may simply be a return to your baseline.</p>
-        <p><strong>Personal evidence only:</strong> This result applies to you, under these conditions, with this protocol. It is not generalizable and does not constitute medical advice.</p>
-        {result.caveats && <p>{result.caveats}</p>}
-      </div>
+      <details className="advanced-disclosure fade-up fade-up-4">
+        <summary>Advanced analysis</summary>
+        <div className="advanced-grid">
+          <div>
+            <span>Method</span>
+            <strong>{result.analysis_method ?? "welch"}</strong>
+          </div>
+          <div>
+            <span>Seed</span>
+            <strong>{trial.seed}</strong>
+          </div>
+          <div>
+            <span>Audit hash</span>
+            <strong>{computeTrialAuditHash(trial)}</strong>
+          </div>
+          <div>
+            <span>Meaningful threshold</span>
+            <strong>{result.minimum_meaningful_difference ?? 0.5}</strong>
+          </div>
+          <div>
+            <span>Cohen's d</span>
+            <strong>{result.cohens_d?.toFixed(2) ?? "—"}</strong>
+          </div>
+        </div>
+        {result.paired_block?.difference != null && (
+          <p className="advanced-copy">
+            Paired-block estimate: {signed(result.paired_block.difference)} across {result.paired_block.n_pairs} pair{result.paired_block.n_pairs === 1 ? "" : "s"}.
+          </p>
+        )}
+        {result.sensitivity_excluding_partial?.difference != null && (
+          <p className="advanced-copy">
+            Sensitivity without partial-adherence rows: {signed(result.sensitivity_excluding_partial.difference)}.
+          </p>
+        )}
+        {result.data_warnings?.length ? (
+          <ul className="advanced-list">{result.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        ) : null}
+        {result.block_breakdown.length > 0 && (
+          <div className="block-table">
+            {result.block_breakdown.map((block) => (
+              <div key={`${block.block_index}-${block.condition}`}>
+                <span>Period {block.block_index + 1} · {block.condition}</span>
+                <strong>{block.mean.toFixed(1)}</strong>
+                <small>n={block.n}</small>
+              </div>
+            ))}
+          </div>
+        )}
+        <pre className="raw-json">{JSON.stringify({ trial, result }, null, 2)}</pre>
+      </details>
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 12, marginTop: 24 }} className="fade-up fade-up-5">
@@ -206,6 +257,11 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           downloadFile(JSON.stringify({ trial, result }, null, 2), "pitgpt-trial.json", "application/json");
         }}>
           Export JSON
+        </button>
+        <button className="btn btn-s" onClick={() => {
+          downloadFile(JSON.stringify({ seed: trial.seed, schedule: trial.schedule }, null, 2), "pitgpt-schedule.json", "application/json");
+        }}>
+          Export Schedule
         </button>
         <button className="btn btn-p" onClick={() => navigate("/")}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -227,14 +283,16 @@ function formatPct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function signed(value: number): string {
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTrial["trial"]): string {
   if (result.verdict === "insufficient_data") return "Insufficient data for a conclusion.";
   if (result.verdict === "inconclusive") return "Results are inconclusive.";
   const winner = result.verdict === "favors_a" ? trial.conditionALabel : trial.conditionBLabel;
-  const pct = result.mean_a != null && result.mean_b != null
-    ? Math.round((Math.max(result.n_used_a, result.n_used_b) / (result.n_used_a + result.n_used_b)) * 100)
-    : null;
-  return pct ? `${winner} scored higher on ${pct}% of days.` : `${winner} performed better in this trial.`;
+  if (result.difference == null) return `${winner} performed better in this trial.`;
+  return `${winner} performed better by ${Math.abs(result.difference).toFixed(1)} points on average.`;
 }
 
 export function Results() {

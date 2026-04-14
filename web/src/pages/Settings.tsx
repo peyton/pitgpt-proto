@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useApp } from "../lib/AppContext";
 import { healthCheck } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
-import { clearAllData, downloadFile, exportCSV, exportJSON, loadState } from "../lib/storage";
+import { clearAllData, downloadFile, exportCSV, exportJSON, loadState, restoreStateFromJSON } from "../lib/storage";
 
 type ApiStatus = "checking" | "online" | "offline";
 
 export function Settings() {
-  const { state, updateSettings, clearAll } = useApp();
+  const { state, updateSettings, restoreAll, clearAll } = useApp();
   const { settings } = state;
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -31,10 +34,28 @@ export function Settings() {
     downloadFile(exportJSON(state), "pitgpt-export.json", "application/json");
   };
 
+  const handleImport = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        restoreAll(restoreStateFromJSON(String(reader.result ?? "")));
+        setImportError(null);
+      } catch (error) {
+        setImportError(error instanceof Error ? error.message : "Could not import that file.");
+      } finally {
+        event.target.value = "";
+      }
+    };
+    reader.onerror = () => setImportError("Could not read that file.");
+    reader.readAsText(file);
+  };
+
   const handleDelete = () => {
-    if (!confirm("Permanently delete ALL data? This cannot be undone.")) return;
     clearAllData();
     clearAll();
+    setShowDeleteConfirm(false);
   };
 
   const storageSize = new Blob([JSON.stringify(loadState())]).size;
@@ -42,7 +63,7 @@ export function Settings() {
 
   return (
     <div className="page-container" style={{ maxWidth: 640 }}>
-      <h1 className="fade-up" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-.5px", marginBottom: 32 }}>Settings</h1>
+      <h1 className="fade-up" style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 32 }}>Settings</h1>
 
       <div className="settings-section fade-up fade-up-1">
         <h2>Reminders</h2>
@@ -71,13 +92,14 @@ export function Settings() {
         </div>
         <div className="setting-row">
           <div className="setting-label">
-            <h3>Email Reminders <InfoTooltip text="Optional backup reminder via email. Stored locally and never shared." /></h3>
-            <p>Backup notification via email</p>
+            <h3>Email Reminders <InfoTooltip text="Email delivery is not implemented in this local-first prototype." /></h3>
+            <p>Not available in the local prototype</p>
           </div>
           <button
-            className={`toggle${settings.emailReminderEnabled ? " on" : ""}`}
-            onClick={() => updateSettings({ emailReminderEnabled: !settings.emailReminderEnabled })}
+            className="toggle"
+            onClick={() => updateSettings({ emailReminderEnabled: false })}
             aria-label="Toggle email reminder"
+            disabled
           />
         </div>
       </div>
@@ -92,8 +114,11 @@ export function Settings() {
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-s btn-sm" onClick={handleExportCSV}>CSV</button>
             <button className="btn btn-s btn-sm" onClick={handleExportJSON}>JSON</button>
+            <button className="btn btn-s btn-sm" onClick={() => importInputRef.current?.click()}>Import</button>
           </div>
         </div>
+        <input ref={importInputRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleImport} />
+        {importError && <p className="form-error" role="alert">{importError}</p>}
         <div className="setting-row">
           <div className="setting-label">
             <h3>Storage <InfoTooltip text="All data is stored locally on your device. Nothing is sent to a server. You are the only person who can see your experiments." /></h3>
@@ -131,8 +156,25 @@ export function Settings() {
       <div className="danger-zone fade-up fade-up-4">
         <h3>Danger Zone</h3>
         <p>Permanently delete all your data, including all trials, check-ins, and results. This action cannot be undone.</p>
-        <button className="btn btn-d btn-sm" onClick={handleDelete}>Delete All Data</button>
+        <button className="btn btn-d btn-sm" onClick={() => setShowDeleteConfirm(true)}>Delete All Data</button>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+            <h3 id="delete-title">Delete all local data?</h3>
+            <p>Trials, check-ins, settings, and completed results will be removed from this browser.</p>
+            <div className="modal-actions">
+              <button className="btn btn-s" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-d" onClick={handleDelete}>
+                Delete All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

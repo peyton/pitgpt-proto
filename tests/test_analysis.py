@@ -6,11 +6,12 @@ reasonable tolerances.
 """
 
 import json
+import warnings
 from pathlib import Path
 
-from pitgpt.core.analysis import analyze
+from pitgpt.core.analysis import analyze, validate_observations
 from pitgpt.core.io import parse_observations_csv
-from pitgpt.core.models import AnalysisProtocol, Observation, QualityGrade
+from pitgpt.core.models import AnalysisMethod, AnalysisProtocol, Observation, QualityGrade
 
 FIXTURES_DIR = Path(__file__).parent.parent / "benchmarks" / "analysis_fixtures"
 EXPECTED_DIR = Path(__file__).parent.parent / "benchmarks" / "expected_outputs"
@@ -302,3 +303,47 @@ class TestRoundingPrecision:
         proto, obs, exp = _load_case("RES-007")
         result = analyze(proto, obs)
         assert result.ci_upper == exp["ci_upper"]
+
+
+class TestProgressiveDisclosureAuditFixes:
+    def test_zero_variance_samples_do_not_emit_scipy_precision_warning(self):
+        protocol = AnalysisProtocol(planned_days=14, block_length_days=7)
+        observations = [
+            Observation(day_index=day, date=f"2026-01-{day:02d}", condition="A", primary_score=7)
+            for day in range(1, 8)
+        ] + [
+            Observation(day_index=day, date=f"2026-01-{day:02d}", condition="B", primary_score=5)
+            for day in range(8, 15)
+        ]
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = analyze(protocol, observations)
+
+        assert result.ci_lower == result.ci_upper == 2.0
+        assert not any("Precision loss" in str(warning.message) for warning in caught)
+
+    def test_duplicate_and_gap_warnings_are_reported(self):
+        protocol = AnalysisProtocol(planned_days=7, block_length_days=7)
+        observations = [
+            Observation(day_index=1, date="2026-01-01", condition="A", primary_score=7),
+            Observation(day_index=1, date="2026-01-01", condition="B", primary_score=6),
+            Observation(day_index=3, date="2026-01-03", condition="A", primary_score=7),
+        ]
+
+        warnings_ = validate_observations(observations, protocol)
+
+        assert any("Duplicate day_index" in warning for warning in warnings_)
+        assert any("Duplicate date" in warning for warning in warnings_)
+        assert any("Missing day_index" in warning for warning in warnings_)
+
+    def test_paired_block_method_is_reported_when_pairs_exist(self):
+        proto, obs, _ = _load_case("RES-001")
+
+        result = analyze(proto, obs)
+
+        assert result.analysis_method == AnalysisMethod.PAIRED_BLOCKS
+        assert result.paired_block is not None
+        assert result.paired_block.n_pairs > 0
+        assert result.minimum_meaningful_difference == proto.minimum_meaningful_difference
+        assert result.meets_minimum_meaningful_effect is True

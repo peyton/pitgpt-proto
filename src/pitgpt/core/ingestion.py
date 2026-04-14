@@ -6,14 +6,23 @@ from pitgpt.core.models import (
     Protocol,
     SafetyTier,
 )
-from pitgpt.core.policy import SAFETY_POLICY_PROMPT
+from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
+
+MAX_DOCUMENT_CHARS = 12_000
+MAX_TOTAL_DOCUMENT_CHARS = 40_000
+
+
+class IngestionInputError(ValueError):
+    pass
 
 
 async def ingest(
     query: str,
     documents: list[str],
     client: LLMClient,
+    model_id: str | None = None,
 ) -> IngestionResult:
+    _validate_inputs(query, documents)
     user_parts = [f"User query: {query}"]
     for i, doc in enumerate(documents, 1):
         user_parts.append(f"\n--- Uploaded Document {i} ---\n{doc}")
@@ -24,16 +33,7 @@ async def ingest(
     protocol_data = raw.get("protocol")
     protocol = None
     if protocol_data and isinstance(protocol_data, dict):
-        protocol = Protocol(
-            template=protocol_data.get("template"),
-            duration_weeks=protocol_data.get("duration_weeks", 6),
-            block_length_days=protocol_data.get("block_length_days", 7),
-            cadence=protocol_data.get("cadence", "daily"),
-            washout=protocol_data.get("washout", "None"),
-            primary_outcome_question=protocol_data.get("primary_outcome_question", ""),
-            screening=protocol_data.get("screening", ""),
-            warnings=protocol_data.get("warnings", ""),
-        )
+        protocol = Protocol.model_validate(protocol_data)
 
     return IngestionResult(
         decision=IngestionDecision(raw["decision"]),
@@ -43,4 +43,34 @@ async def ingest(
         protocol=protocol,
         block_reason=raw.get("block_reason"),
         user_message=raw.get("user_message", ""),
+        policy_version=raw.get("policy_version", SAFETY_POLICY_VERSION),
+        model=model_id or client.model,
+        response_validation_status="validated",
+        source_summaries=_string_list(raw.get("source_summaries")),
+        claimed_outcomes=_string_list(raw.get("claimed_outcomes")),
     )
+
+
+def _validate_inputs(query: str, documents: list[str]) -> None:
+    if not query.strip():
+        raise IngestionInputError("Query is required.")
+    total_chars = 0
+    for i, doc in enumerate(documents, 1):
+        doc_len = len(doc)
+        total_chars += doc_len
+        if doc_len > MAX_DOCUMENT_CHARS:
+            raise IngestionInputError(
+                f"Document {i} is too large ({doc_len:,} chars). "
+                f"Limit each source to {MAX_DOCUMENT_CHARS:,} chars."
+            )
+    if total_chars > MAX_TOTAL_DOCUMENT_CHARS:
+        raise IngestionInputError(
+            f"Sources are too large in total ({total_chars:,} chars). "
+            f"Limit all sources to {MAX_TOTAL_DOCUMENT_CHARS:,} chars."
+        )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]

@@ -58,6 +58,24 @@ bench model="" track="all" cases="":
     if [ -n "{{cases}}" ]; then args="$args --cases {{cases}}"; fi
     ./bin/mise exec -- uv run --python 3.12 pitgpt benchmark run $args
 
+# Run deterministic analysis benchmarks
+bench-analysis:
+    {{uv_run}} pitgpt benchmark run --track analysis
+
+# Run ingestion benchmarks through the configured LLM provider
+bench-ingestion model="":
+    #!/usr/bin/env bash
+    args="--track ingestion"
+    if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
+    ./bin/mise exec -- uv run --python 3.12 pitgpt benchmark run $args
+
+# Run all benchmark tracks
+bench-all model="":
+    #!/usr/bin/env bash
+    args=""
+    if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
+    ./bin/mise exec -- uv run --python 3.12 pitgpt benchmark run $args
+
 # Generate benchmark comparison report
 bench-report output="":
     #!/usr/bin/env bash
@@ -80,6 +98,25 @@ analyze protocol observations:
 ci:
     {{mise}} act -j ci
 
+# Audit Python environment and web dependencies
+audit:
+    {{mise}} uv pip check --python 3.12
+    {{mise}} npm --prefix web audit
+
+# Check local toolchain and common prerequisites
+doctor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ./bin/mise exec -- python --version
+    ./bin/mise exec -- uv --version
+    ./bin/mise exec -- npm --prefix web --version
+    test -d web/node_modules || (echo "web/node_modules missing; run just web-install" >&2; exit 1)
+    if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+      echo "OPENROUTER_API_KEY is not set; ingest and ingestion benchmarks will be unavailable"
+    else
+      echo "OPENROUTER_API_KEY is set"
+    fi
+
 # Install web frontend dependencies
 web-install:
     {{mise}} npm --prefix web ci
@@ -91,6 +128,10 @@ web-dev:
 # Build web frontend for production
 web-build:
     {{mise}} npm --prefix web run build
+
+# Run web unit tests
+web-unit:
+    {{mise}} npm --prefix web run test:unit
 
 # Run web browser integration tests
 web-test:

@@ -3,6 +3,10 @@
 export type SafetyTier = "GREEN" | "YELLOW" | "RED";
 export type EvidenceQuality = "novel" | "weak" | "moderate" | "strong";
 export type QualityGrade = "A" | "B" | "C" | "D";
+export type Condition = "A" | "B";
+export type YesNo = "yes" | "no";
+export type Adherence = "yes" | "no" | "partial";
+export type AnalysisMethod = "welch" | "paired_blocks" | "insufficient_data";
 export type IngestionDecision =
   | "generate_protocol"
   | "generate_protocol_with_restrictions"
@@ -29,17 +33,22 @@ export interface IngestionResult {
   protocol: Protocol | null;
   block_reason: string | null;
   user_message: string;
+  policy_version?: string;
+  model?: string | null;
+  response_validation_status?: string;
+  source_summaries?: string[];
+  claimed_outcomes?: string[];
 }
 
 export interface Observation {
   day_index: number;
   date: string;
-  condition: string;
+  condition: Condition;
   primary_score: number | null;
-  irritation: string;
-  adherence: string;
+  irritation: YesNo;
+  adherence: Adherence;
   note: string;
-  is_backfill: string;
+  is_backfill: YesNo;
   backfill_days: number | null;
 }
 
@@ -58,15 +67,24 @@ export interface SensitivityResult {
   n_used_b: number;
 }
 
+export interface PairedBlockEstimate {
+  difference: number | null;
+  ci_lower: number | null;
+  ci_upper: number | null;
+  n_pairs: number;
+}
+
 export interface ResultCard {
   quality_grade: QualityGrade;
   verdict: Verdict;
+  analysis_method?: AnalysisMethod;
   mean_a: number | null;
   mean_b: number | null;
   difference: number | null;
   ci_lower: number | null;
   ci_upper: number | null;
   cohens_d: number | null;
+  paired_block?: PairedBlockEstimate | null;
   n_used_a: number;
   n_used_b: number;
   adherence_rate: number;
@@ -76,6 +94,9 @@ export interface ResultCard {
   block_breakdown: BlockBreakdown[];
   sensitivity_excluding_partial: SensitivityResult | null;
   planned_days_defaulted: boolean;
+  minimum_meaningful_difference?: number;
+  meets_minimum_meaningful_effect?: boolean | null;
+  data_warnings?: string[];
   summary: string;
   caveats: string;
 }
@@ -83,8 +104,12 @@ export interface ResultCard {
 // Client-only types
 
 export interface Assignment {
-  week: number;
-  condition: "A" | "B";
+  period_index: number;
+  pair_index: number;
+  condition: Condition;
+  start_day: number;
+  end_day: number;
+  week?: number;
 }
 
 export interface Trial {
@@ -108,6 +133,7 @@ export interface Settings {
 }
 
 export interface AppState {
+  version: number;
   trial: Trial | null;
   completedResults: CompletedTrial[];
   settings: Settings;

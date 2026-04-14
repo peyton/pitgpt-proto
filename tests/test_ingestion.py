@@ -5,8 +5,9 @@ import json
 import httpx
 import pytest
 import respx
+from pydantic import ValidationError
 
-from pitgpt.core.ingestion import ingest
+from pitgpt.core.ingestion import MAX_DOCUMENT_CHARS, IngestionInputError, ingest
 from pitgpt.core.llm import LLMClient, LLMError
 from pitgpt.core.models import EvidenceQuality, IngestionDecision, SafetyTier
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
@@ -57,6 +58,9 @@ class TestIngestionGreen:
         assert result.protocol is not None
         assert result.protocol.template == "Skincare Product"
         assert result.protocol.duration_weeks == 6
+        assert result.policy_version == SAFETY_POLICY_VERSION
+        assert result.model == "test/model"
+        assert result.response_validation_status == "validated"
 
 
 class TestIngestionYellow:
@@ -157,6 +161,35 @@ class TestLLMErrors:
         ]
         with pytest.raises(LLMError):
             await ingest("test", [], client)
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_generated_protocol_missing_required_fields_rejected(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "novel",
+                        "protocol": {
+                            "cadence": "daily",
+                            "washout": "None",
+                            "primary_outcome_question": "Comfort (0-10)",
+                        },
+                        "user_message": "Malformed.",
+                    }
+                ),
+            )
+        )
+        with pytest.raises(ValidationError):
+            await ingest("test", [], client)
+
+    @pytest.mark.asyncio
+    async def test_large_document_rejected_before_llm_call(self, client):
+        with pytest.raises(IngestionInputError, match="too large"):
+            await ingest("test", ["x" * (MAX_DOCUMENT_CHARS + 1)], client)
 
     @respx.mock
     @pytest.mark.asyncio

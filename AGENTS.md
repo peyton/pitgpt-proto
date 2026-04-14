@@ -43,6 +43,8 @@ docs/            # Documentation
 | **ruff**     | Python linter + formatter      | `pyproject.toml` |
 | **mypy**     | Type checking                  | `pyproject.toml` |
 | **pytest**   | Testing                        | `pyproject.toml` |
+| **vitest**   | Web unit tests                 | `web/package.json` |
+| **playwright** | Web browser tests            | `web/playwright.config.ts` |
 | **actionlint** | GitHub Actions linter        | (builtin)        |
 | **zizmor**   | GitHub Actions security linter | (builtin)        |
 | **act**      | Local CI runner                | —                |
@@ -54,13 +56,20 @@ just setup       # Bootstrap mise + install all deps
 just test        # Run tests
 just lint        # Run non-mutating pre-commit linters via hk
 just check       # Run all checks (lint + GHA linting)
+just audit       # Run uv pip check and npm audit
+just doctor      # Check local toolchain and common prerequisites
 just fix         # Auto-fix with ruff via hk (mutates files)
 just fmt         # Format with ruff (mutates files)
 just typecheck   # Run mypy
+just bench-analysis # Run deterministic analysis benchmarks
+just bench-ingestion # Run LLM-backed ingestion benchmarks
+just bench-all    # Run all benchmark tracks
 just serve       # Start API server
 just tui         # Launch TUI
 just web-dev     # Start web frontend dev server
 just web-build   # Build web frontend for production
+just web-unit    # Run Vitest unit tests
+just web-test    # Run Playwright browser tests
 just web-install # Install web frontend dependencies
 just ci          # Run CI locally with act
 just bootstrap   # Regenerate bin/mise bootstrap script
@@ -93,6 +102,8 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 - **lint**: `hk run pre-commit --all`
 - **check**: `hk run check --all` (includes actionlint + zizmor)
 - **test**: `uv run pytest`
+- **web**: npm install, build, Vitest, Playwright, npm audit
+- **audit**: `uv pip check` and npm audit
 
 Tools are installed via `jdx/mise-action@v4`. Actions are pinned to SHA
 hashes per zizmor best practices. CI starts from a clean runner, so any tool
@@ -114,6 +125,7 @@ command, so it must export `GITHUB_TOKEN` rather than only `GH_TOKEN`.
 - [`docs/prd-v1.md`](docs/prd-v1.md) — Product Requirements Document v1
   (original docx preserved at `docs/prd-v1.docx`)
 - [`docs/operator-guide.md`](docs/operator-guide.md) — Local operator workflows
+- [`docs/quickstart.md`](docs/quickstart.md) — Choose CLI, web, TUI, or API path
 - [`docs/project-purpose.md`](docs/project-purpose.md) — Current prototype purpose
 - [`docs/architecture.md`](docs/architecture.md) — Package map and data flow
 - [`docs/scope.md`](docs/scope.md) — Current scope and explicit non-scope

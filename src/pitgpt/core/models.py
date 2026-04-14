@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SafetyTier(StrEnum):
@@ -47,6 +47,12 @@ class Adherence(StrEnum):
     NO = "no"
 
 
+class AnalysisMethod(StrEnum):
+    WELCH = "welch"
+    PAIRED_BLOCKS = "paired_blocks"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
 class Protocol(BaseModel):
     template: str | None = None
     duration_weeks: int = Field(gt=0)
@@ -61,6 +67,7 @@ class Protocol(BaseModel):
 class AnalysisProtocol(BaseModel):
     planned_days: int = Field(default=42, gt=0)
     block_length_days: int = Field(default=7, gt=0)
+    minimum_meaningful_difference: float = Field(default=0.5, ge=0)
 
 
 class IngestionResult(BaseModel):
@@ -71,6 +78,35 @@ class IngestionResult(BaseModel):
     protocol: Protocol | None = None
     block_reason: str | None = None
     user_message: str
+    policy_version: str = ""
+    model: str | None = None
+    response_validation_status: str = "validated"
+    source_summaries: list[str] = Field(default_factory=list)
+    claimed_outcomes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_decision_contract(self) -> "IngestionResult":
+        if (
+            self.decision
+            in {
+                IngestionDecision.GENERATE_PROTOCOL,
+                IngestionDecision.GENERATE_PROTOCOL_WITH_RESTRICTIONS,
+            }
+            and self.protocol is None
+        ):
+            raise ValueError("generated protocol decisions require protocol")
+        if (
+            self.decision
+            in {
+                IngestionDecision.BLOCK,
+                IngestionDecision.MANUAL_REVIEW_BEFORE_PROTOCOL,
+            }
+            and self.protocol is not None
+        ):
+            raise ValueError("blocked or manual-review decisions must not include protocol")
+        if self.decision == IngestionDecision.BLOCK and not self.block_reason:
+            raise ValueError("block decisions require block_reason")
+        return self
 
 
 class Observation(BaseModel):
@@ -92,6 +128,13 @@ class BlockBreakdown(BaseModel):
     n: int
 
 
+class PairedBlockEstimate(BaseModel):
+    difference: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    n_pairs: int = 0
+
+
 class SensitivityResult(BaseModel):
     difference: float | None = None
     ci_lower: float | None = None
@@ -100,18 +143,28 @@ class SensitivityResult(BaseModel):
     n_used_b: int = 0
 
 
+class ScheduleAssignment(BaseModel):
+    period_index: int = Field(ge=0)
+    pair_index: int = Field(ge=0)
+    condition: Condition
+    start_day: int = Field(ge=1)
+    end_day: int = Field(ge=1)
+
+
 Verdict = Literal["favors_a", "favors_b", "inconclusive", "insufficient_data"]
 
 
 class ResultCard(BaseModel):
     quality_grade: QualityGrade
     verdict: Verdict = "insufficient_data"
+    analysis_method: AnalysisMethod = AnalysisMethod.INSUFFICIENT_DATA
     mean_a: float | None = None
     mean_b: float | None = None
     difference: float | None = None
     ci_lower: float | None = None
     ci_upper: float | None = None
     cohens_d: float | None = None
+    paired_block: PairedBlockEstimate | None = None
     n_used_a: int = 0
     n_used_b: int = 0
     adherence_rate: float = 0.0
@@ -121,5 +174,8 @@ class ResultCard(BaseModel):
     block_breakdown: list[BlockBreakdown] = Field(default_factory=list)
     sensitivity_excluding_partial: SensitivityResult | None = None
     planned_days_defaulted: bool = False
+    minimum_meaningful_difference: float = 0.5
+    meets_minimum_meaningful_effect: bool | None = None
+    data_warnings: list[str] = Field(default_factory=list)
     summary: str = ""
     caveats: str = ""

@@ -1,4 +1,4 @@
-import type { IngestionResult, Observation, ResultCard } from "./types";
+import type { Assignment, IngestionResult, Observation, ResultCard } from "./types";
 
 const BASE = "/api";
 
@@ -35,6 +35,36 @@ export async function analyze(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Analysis failed");
+  }
+  return res.json();
+}
+
+export async function analyzeExample(): Promise<ResultCard> {
+  const res = await fetch(`${BASE}/analyze/example`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Example analysis failed");
+  }
+  return res.json();
+}
+
+export async function generateScheduleApi(
+  durationWeeks: number,
+  blockLengthDays: number,
+  seed: number,
+): Promise<Assignment[]> {
+  const res = await fetch(`${BASE}/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      duration_weeks: durationWeeks,
+      block_length_days: blockLengthDays,
+      seed,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Schedule generation failed");
   }
   return res.json();
 }

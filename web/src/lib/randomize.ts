@@ -20,34 +20,50 @@ function mulberry32(seed: number): () => number {
  */
 export function generateSchedule(
   durationWeeks: number,
-  _blockLengthDays: number,
+  blockLengthDays: number,
   seed: number,
 ): Assignment[] {
+  if (durationWeeks <= 0) throw new Error("durationWeeks must be positive");
+  if (blockLengthDays <= 0) throw new Error("blockLengthDays must be positive");
+
   const rng = mulberry32(seed);
-  const numPairs = Math.floor(durationWeeks / 2);
+  const totalDays = durationWeeks * 7;
+  const periodCount = getPeriodCount(durationWeeks, blockLengthDays);
   const schedule: Assignment[] = [];
 
-  for (let pair = 0; pair < numPairs; pair++) {
+  for (let pair = 0; pair < Math.ceil(periodCount / 2); pair++) {
     const aFirst = rng() < 0.5;
-    const w1 = pair * 2;
-    const w2 = pair * 2 + 1;
-    schedule.push(
-      { week: w1, condition: aFirst ? "A" : "B" },
-      { week: w2, condition: aFirst ? "B" : "A" },
-    );
-  }
+    const conditions: Array<"A" | "B"> = aFirst ? ["A", "B"] : ["B", "A"];
 
-  // Handle odd week
-  if (durationWeeks % 2 === 1) {
-    schedule.push({
-      week: durationWeeks - 1,
-      condition: rng() < 0.5 ? "A" : "B",
-    });
+    for (const [offset, condition] of conditions.entries()) {
+      const periodIndex = pair * 2 + offset;
+      if (periodIndex >= periodCount) break;
+      const startDay = periodIndex * blockLengthDays + 1;
+      const endDay = Math.min(totalDays, startDay + blockLengthDays - 1);
+      schedule.push({
+        period_index: periodIndex,
+        pair_index: pair,
+        condition,
+        start_day: startDay,
+        end_day: endDay,
+        week: periodIndex,
+      });
+    }
   }
 
   return schedule;
 }
 
 export function generateSeed(): number {
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const values = new Uint32Array(1);
+    crypto.getRandomValues(values);
+    return (values[0] ?? 0) % 2147483647;
+  }
   return Math.floor(Math.random() * 2147483647);
+}
+
+export function getPeriodCount(durationWeeks: number, blockLengthDays: number): number {
+  if (durationWeeks <= 0 || blockLengthDays <= 0) return 0;
+  return Math.ceil((durationWeeks * 7) / blockLengthDays);
 }

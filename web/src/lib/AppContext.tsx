@@ -7,7 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import type { AppState, CompletedTrial, IngestionResult, Observation, Settings, Trial } from "./types";
-import { loadState, saveState } from "./storage";
+import { defaultState, loadState, saveState } from "./storage";
+import { appendObservationIfNew } from "./trial";
 
 interface AppContextValue {
   state: AppState;
@@ -15,6 +16,7 @@ interface AppContextValue {
   addObservation: (obs: Observation) => void;
   completeTrial: (result: CompletedTrial) => void;
   updateSettings: (settings: Partial<Settings>) => void;
+  restoreAll: (state: AppState) => void;
   setIngestionResult: (result: IngestionResult | null) => void;
   ingestionResult: IngestionResult | null;
   clearAll: () => void;
@@ -45,10 +47,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (obs: Observation) => {
       persist((current) => {
         if (!current.trial) return current;
-        const updated = {
-          ...current.trial,
-          observations: [...current.trial.observations, obs],
-        };
+        const updated = appendObservationIfNew(current.trial, obs);
+        if (updated === current.trial) return current;
         return { ...current, trial: updated };
       });
     },
@@ -76,17 +76,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [persist],
   );
 
+  const restoreAll = useCallback(
+    (restored: AppState) => {
+      persist(restored);
+      setIngestionResult(null);
+    },
+    [persist],
+  );
+
   const clearAll = useCallback(() => {
-    const fresh: AppState = {
-      trial: null,
-      completedResults: [],
-      settings: {
-        reminderEnabled: true,
-        reminderTime: "21:00",
-        emailReminderEnabled: false,
-      },
-    };
-    persist(fresh);
+    persist(defaultState());
     setIngestionResult(null);
   }, [persist]);
 
@@ -97,11 +96,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addObservation,
       completeTrial,
       updateSettings,
+      restoreAll,
       setIngestionResult,
       ingestionResult,
       clearAll,
     }),
-    [state, setTrial, addObservation, completeTrial, updateSettings, ingestionResult, clearAll],
+    [
+      state,
+      setTrial,
+      addObservation,
+      completeTrial,
+      updateSettings,
+      restoreAll,
+      ingestionResult,
+      clearAll,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

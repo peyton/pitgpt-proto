@@ -9,20 +9,25 @@ Implemented:
 - Research ingestion through an OpenRouter-compatible LLM call
 - GREEN/YELLOW/RED safety policy prompt
 - Protocol-shaped ingestion output validation
-- Deterministic A/B trial analysis
+- Document length guards and ingestion metadata
+- Deterministic A/B trial analysis with paired-period summaries and Welch sensitivity
 - CLI, FastAPI, and Textual TUI interfaces
-- React web frontend for local trial setup and check-ins
+- React web frontend for local trial setup, protocol lock, randomized schedules,
+  check-ins, early stops, import/export, and completed-result history
+- Local templates and bundled example analysis without an API key
+- Read/demo API endpoints for templates, schedules, and example analysis
 - Benchmark runner, scoring, and report commands
 - Example protocol, observations, and safe research note
+- Web build, browser tests, unit tests, and dependency audit recipes
 
 ## Explicitly Not Implemented
 
 - User accounts
-- Data persistence
+- Server-side data persistence
 - Calendar scheduling
-- Daily reminders
-- Randomized assignment generation
-- Protocol lock enforcement over time
+- Email, push, SMS, or calendar reminder delivery
+- Background reminder jobs
+- Server-enforced protocol lock enforcement over time
 - Photo capture
 - Wearable integrations
 - Community protocol sharing

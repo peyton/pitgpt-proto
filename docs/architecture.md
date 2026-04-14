@@ -4,7 +4,7 @@ PitGPT is one Python distribution with a `src/` layout.
 
 ```text
 src/pitgpt/
-  core/         domain models, settings, file parsing, safety policy, LLM, analysis
+  core/         domain models, settings, file parsing, safety policy, LLM, analysis, schedules, templates
   api/          FastAPI wrapper
   cli/          Typer command line interface
   tui/          Textual terminal UI
@@ -24,7 +24,8 @@ docs/           operator, product, architecture, and scope docs
    `pitgpt.core.policy.SAFETY_POLICY_PROMPT`.
 4. `pitgpt.core.llm.LLMClient.complete` calls the provider, validates the
    provider response shape, parses JSON, and returns a JSON object.
-5. `pitgpt.core.ingestion.ingest` validates the object into `IngestionResult`.
+5. `pitgpt.core.ingestion.ingest` enforces source-size limits, validates the
+   object into `IngestionResult`, and attaches policy/model metadata.
 
 ## Data Flow: Trial Analysis
 
@@ -33,8 +34,17 @@ docs/           operator, product, architecture, and scope docs
 2. `pitgpt.core.io.parse_observations_csv` centralizes CSV parsing.
 3. `pitgpt.core.models` validates conditions, adherence, backfill flags, and
    0-10 primary scores.
-4. `pitgpt.core.analysis.analyze` filters unusable rows, computes Welch
-   two-sample statistics, grades data quality, and returns `ResultCard`.
+4. `pitgpt.core.analysis.analyze` validates day/date shape, filters unusable
+   rows, computes paired-period summaries plus Welch sensitivity, grades data
+   quality, and returns `ResultCard`.
+
+## Data Flow: Schedules And Templates
+
+1. `pitgpt.core.templates` defines local no-key trial templates.
+2. `pitgpt.core.schedule.generate_schedule` turns `duration_weeks`,
+   `block_length_days`, and a seed into period assignments.
+3. The API, CLI, and web frontend use the same period shape:
+   `period_index`, `pair_index`, `condition`, `start_day`, and `end_day`.
 
 ## Boundaries
 

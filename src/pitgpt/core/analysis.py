@@ -6,9 +6,11 @@ from typing import Any
 from scipy import stats
 
 from pitgpt.core.models import (
+    AnalysisMethod,
     AnalysisProtocol,
     BlockBreakdown,
     Observation,
+    PairedBlockEstimate,
     QualityGrade,
     ResultCard,
     SensitivityResult,
@@ -25,6 +27,7 @@ def analyze(
     protocol_model = _coerce_protocol(protocol)
     planned_days_defaulted = "planned_days" not in protocol_model.model_fields_set
     planned_days = protocol_model.planned_days
+    data_warnings = validate_observations(observations, protocol_model)
 
     early_stop = _detect_early_stop(observations, planned_days)
     denom = (
@@ -65,6 +68,7 @@ def analyze(
         return ResultCard(
             quality_grade=QualityGrade.D,
             verdict="insufficient_data",
+            analysis_method=AnalysisMethod.INSUFFICIENT_DATA,
             n_used_a=len(scores_a),
             n_used_b=len(scores_b),
             adherence_rate=_round4(adherence_rate),
@@ -72,8 +76,10 @@ def analyze(
             early_stop=early_stop,
             late_backfill_excluded=late_backfill_excluded,
             planned_days_defaulted=planned_days_defaulted,
+            minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
+            data_warnings=data_warnings,
             summary="Insufficient data for reliable inference.",
-            caveats=" ".join(caveats_parts),
+            caveats=" ".join([*caveats_parts, *data_warnings]),
         )
 
     mean_a = sum(scores_a) / len(scores_a)
@@ -81,20 +87,16 @@ def analyze(
     raw_diff = mean_a - mean_b
     difference = _round2(raw_diff)
 
-    t_stat, _p_value = stats.ttest_ind(scores_a, scores_b, equal_var=False)
-    se = abs(raw_diff / t_stat) if t_stat != 0 else 0.0
-    df = _welch_df(scores_a, scores_b)
-    t_crit = stats.t.ppf(0.975, df) if df > 0 else 1.96
-    margin = se * t_crit
-    ci_lower = _round2(raw_diff - margin)
-    ci_upper = _round2(raw_diff + margin)
+    ci_lower, ci_upper = _welch_ci(scores_a, scores_b, raw_diff)
 
     cohens_d = _compute_cohens_d(scores_a, scores_b)
     verdict = _compute_verdict(difference, ci_lower, ci_upper)
+    meets_minimum = abs(difference) >= protocol_model.minimum_meaningful_difference
 
     grade = _compute_grade(adherence_rate, days_logged_pct, early_stop, planned_days, observations)
 
     block_breakdown = _compute_block_breakdown(filtered, protocol_model)
+    paired_block = _compute_paired_block_estimate(block_breakdown)
     sensitivity = _compute_sensitivity(observations)
 
     imbalance_warning = _check_imbalance(len(scores_a), len(scores_b))
@@ -118,17 +120,24 @@ def analyze(
         imbalance_warning,
         underpowered_warning,
         planned_days_defaulted,
+        data_warnings,
     )
 
     return ResultCard(
         quality_grade=grade,
         verdict=verdict,
+        analysis_method=(
+            AnalysisMethod.PAIRED_BLOCKS
+            if paired_block is not None and paired_block.difference is not None
+            else AnalysisMethod.WELCH
+        ),
         mean_a=_round2(mean_a),
         mean_b=_round2(mean_b),
         difference=difference,
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         cohens_d=cohens_d,
+        paired_block=paired_block,
         n_used_a=len(scores_a),
         n_used_b=len(scores_b),
         adherence_rate=_round4(adherence_rate),
@@ -138,6 +147,9 @@ def analyze(
         block_breakdown=block_breakdown,
         sensitivity_excluding_partial=sensitivity,
         planned_days_defaulted=planned_days_defaulted,
+        minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
+        meets_minimum_meaningful_effect=meets_minimum,
+        data_warnings=data_warnings,
         summary=summary,
         caveats=caveats,
     )
@@ -196,6 +208,68 @@ def _welch_df(a: list[float], b: list[float]) -> float:
     if denom == 0:
         return 1.0
     return num / denom
+
+
+def _welch_ci(a: list[float], b: list[float], raw_diff: float) -> tuple[float, float]:
+    na, nb = len(a), len(b)
+    va = _sample_variance(a)
+    vb = _sample_variance(b)
+    se = math.sqrt((va / na) + (vb / nb))
+    if se == 0:
+        rounded = _round2(raw_diff)
+        return rounded, rounded
+    df = _welch_df(a, b)
+    t_crit = stats.t.ppf(0.975, df) if df > 0 else 1.96
+    margin = se * t_crit
+    return _round2(raw_diff - margin), _round2(raw_diff + margin)
+
+
+def _sample_variance(values: list[float]) -> float:
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    return sum((x - mean) ** 2 for x in values) / (n - 1)
+
+
+def validate_observations(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+) -> list[str]:
+    warnings: list[str] = []
+    if not observations:
+        return warnings
+
+    days = [o.day_index for o in observations]
+    dates = [o.date for o in observations if o.date]
+    duplicate_days = sorted({day for day in days if days.count(day) > 1})
+    duplicate_dates = sorted({date for date in dates if dates.count(date) > 1})
+    if duplicate_days:
+        warnings.append(f"Duplicate day_index value(s): {', '.join(map(str, duplicate_days))}.")
+    if duplicate_dates:
+        warnings.append(f"Duplicate date value(s): {', '.join(duplicate_dates)}.")
+
+    if days != sorted(days):
+        warnings.append("Observations are not sorted by day_index.")
+    if dates != sorted(dates):
+        warnings.append("Observations are not sorted by date.")
+
+    expected_days = set(range(1, min(max(days), protocol.planned_days) + 1))
+    missing_days = sorted(expected_days.difference(days))
+    if missing_days:
+        preview = ", ".join(map(str, missing_days[:5]))
+        suffix = "..." if len(missing_days) > 5 else ""
+        warnings.append(f"Missing day_index value(s): {preview}{suffix}.")
+
+    usable = _filter_observations(observations)
+    n_a = sum(1 for o in usable if o.condition == "A" and o.primary_score is not None)
+    n_b = sum(1 for o in usable if o.condition == "B" and o.primary_score is not None)
+    if n_a == 0 or n_b == 0:
+        warnings.append("Both conditions need usable scored observations.")
+    elif max(n_a, n_b) / min(n_a, n_b) >= 2:
+        warnings.append("Usable observations are highly imbalanced between conditions.")
+
+    return warnings
 
 
 def _compute_grade(
@@ -290,6 +364,41 @@ def _compute_block_breakdown(
     return result
 
 
+def _compute_paired_block_estimate(
+    block_breakdown: list[BlockBreakdown],
+) -> PairedBlockEstimate | None:
+    by_pair: dict[int, dict[str, float]] = {}
+    for block in block_breakdown:
+        pair_index = block.block_index // 2
+        by_pair.setdefault(pair_index, {})[block.condition] = block.mean
+
+    paired_diffs = [
+        pair["A"] - pair["B"] for pair in by_pair.values() if "A" in pair and "B" in pair
+    ]
+    if not paired_diffs:
+        return None
+    if len(paired_diffs) < 2:
+        return PairedBlockEstimate(n_pairs=len(paired_diffs), difference=_round2(paired_diffs[0]))
+
+    mean_diff = sum(paired_diffs) / len(paired_diffs)
+    variance = _sample_variance(paired_diffs)
+    se = math.sqrt(variance / len(paired_diffs))
+    if se == 0:
+        ci_lower = ci_upper = _round2(mean_diff)
+    else:
+        t_crit = stats.t.ppf(0.975, len(paired_diffs) - 1)
+        margin = se * t_crit
+        ci_lower = _round2(mean_diff - margin)
+        ci_upper = _round2(mean_diff + margin)
+
+    return PairedBlockEstimate(
+        difference=_round2(mean_diff),
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        n_pairs=len(paired_diffs),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Improvement #6: Sensitivity analysis excluding partial-adherence rows
 # ---------------------------------------------------------------------------
@@ -318,16 +427,13 @@ def _compute_sensitivity(observations: list[Observation]) -> SensitivityResult |
     mean_b = sum(sb) / len(sb)
     diff = _round2(mean_a - mean_b)
 
-    t_stat, _ = stats.ttest_ind(sa, sb, equal_var=False)
-    se = abs(diff / t_stat) if t_stat != 0 else 0.0
-    df = _welch_df(sa, sb)
-    t_crit = stats.t.ppf(0.975, df) if df > 0 else 1.96
-    margin = se * t_crit
+    raw_diff = mean_a - mean_b
+    ci_lower, ci_upper = _welch_ci(sa, sb, raw_diff)
 
     return SensitivityResult(
         difference=diff,
-        ci_lower=_round2(diff - margin),
-        ci_upper=_round2(diff + margin),
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
         n_used_a=len(sa),
         n_used_b=len(sb),
     )
@@ -429,6 +535,7 @@ def _generate_caveats(
     imbalance_warning: str | None,
     underpowered_warning: str | None,
     planned_days_defaulted: bool,
+    data_warnings: list[str],
 ) -> str:
     caveats = ["Unblinded self-report; expectancy effects possible."]
     if early_stop:
@@ -445,4 +552,5 @@ def _generate_caveats(
         caveats.append(underpowered_warning)
     if planned_days_defaulted:
         caveats.append(f"planned_days missing from protocol; defaulted to {_PLANNED_DAYS_DEFAULT}.")
+    caveats.extend(data_warnings)
     return " ".join(caveats)

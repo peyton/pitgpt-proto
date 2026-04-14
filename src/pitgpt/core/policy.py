@@ -89,10 +89,14 @@ decision=manual_review_before_protocol and explain why review is needed.
     "warnings": "<string or empty>"
   },
   "block_reason": "<string or null>",
+  "policy_version": "2026-04-14",
+  "source_summaries": ["<short source summary>", "..."],
+  "claimed_outcomes": ["<outcome or claim found in source>", "..."],
   "user_message": "<plain-language explanation for the user>"
 }
 
 For block or manual_review decisions, set protocol to null. \
 For block decisions, always provide block_reason. \
+Use source_summaries and claimed_outcomes for uploaded documents; return [] when none. \
 user_message should be 1-2 sentences a layperson can understand.
 """

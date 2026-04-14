@@ -12,6 +12,11 @@ experiments and safety-gated research ingestion.
 
 - `pitgpt analyze`: analyze a completed A/B trial from a protocol JSON file and
   observations CSV file. This does not require an API key.
+- `pitgpt demo analyze`: analyze the bundled example trial without an API key.
+- `pitgpt trial init`: create protocol, schedule, and observations templates.
+- `pitgpt trial randomize`: generate a deterministic period schedule.
+- `pitgpt checkin add`: append one observation row with duplicate guards.
+- `pitgpt validate`: validate protocol and observation files before analysis.
 - `pitgpt ingest`: send a question and optional documents to the research
   ingestion engine. This requires `OPENROUTER_API_KEY`.
 - `pitgpt benchmark run`: run the benchmark suite against deterministic analysis
@@ -21,6 +26,8 @@ experiments and safety-gated research ingestion.
 - `just tui`: launch the terminal UI.
 - `just web-dev`: launch the React web frontend.
 - `just web-build`: build the React web frontend.
+- `just web-unit` and `just web-test`: run frontend unit and browser tests.
+- `just audit` and `just doctor`: check dependency health and local prerequisites.
 
 ## Setup
 
@@ -42,6 +49,17 @@ Manual setup is:
 ./bin/mise exec -- npm --prefix web install
 ```
 
+## Choose Your Path
+
+- Web novice path: `just serve` plus `just web-dev`, then choose **Run example**
+  or **Start template**.
+- CLI no-key path: `pitgpt demo analyze` or `pitgpt trial init`.
+- API demo path: `GET /templates`, `POST /schedule`, and `GET /analyze/example`.
+- Research ingestion path: set `OPENROUTER_API_KEY`, then use `pitgpt ingest` or
+  the web question flow.
+
+See `docs/quickstart.md` for exact commands.
+
 ## Analyze The Example Trial
 
 This path works without network access or an API key:
@@ -51,6 +69,12 @@ uv run --python 3.12 pitgpt analyze \
   --protocol examples/protocol.json \
   --observations examples/observations.csv \
   --format json
+```
+
+Or use the shorter demo command:
+
+```sh
+uv run --python 3.12 pitgpt demo analyze --format json
 ```
 
 Expected result: JSON containing a `quality_grade`, `mean_a`, `mean_b`,
@@ -124,7 +148,7 @@ just web-build
 Run deterministic analysis cases:
 
 ```sh
-uv run --python 3.12 pitgpt benchmark run --track analysis --format json
+just bench-analysis
 ```
 
 Run all benchmark cases, including LLM ingestion cases:
@@ -142,6 +166,10 @@ just test        # pytest
 just lint        # non-mutating pre-commit checks
 just typecheck   # mypy on src/pitgpt
 just check       # lint + GitHub Actions checks
+just web-unit    # Vitest unit tests
+just web-test    # Playwright browser tests
+just audit       # uv pip check + npm audit
+just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
 just fmt         # mutating ruff format and fix
 ```
@@ -158,6 +186,7 @@ command also needs `GITHUB_TOKEN` for the `zizmor` step.
 ## More Docs
 
 - `docs/operator-guide.md`: step-by-step user workflows
+- `docs/quickstart.md`: choose CLI, web, TUI, or API path
 - `docs/project-purpose.md`: current purpose and safety contract
 - `docs/architecture.md`: module map and data flow
 - `docs/scope.md`: prototype scope versus PRD and post-MVP ideas

@@ -49,6 +49,43 @@ Common failures:
 - Invalid observation values such as condition `C`, adherence `sometimes`, or
   primary score outside `0` through `10`: exits with `Invalid input`
 
+Shortcut:
+
+```sh
+pitgpt demo analyze
+```
+
+## Start A Local Trial From Files
+
+Create a template folder:
+
+```sh
+pitgpt trial init --template skincare --output-dir my-trial
+```
+
+Generate or inspect a deterministic schedule:
+
+```sh
+pitgpt trial randomize --protocol my-trial/protocol.json --seed 123
+```
+
+Append a daily check-in:
+
+```sh
+pitgpt checkin add \
+  --observations my-trial/observations.csv \
+  --day 1 \
+  --date 2026-01-01 \
+  --condition A \
+  --score 7
+```
+
+Validate files before analysis:
+
+```sh
+pitgpt validate --protocol my-trial/protocol.json --observations my-trial/observations.csv
+```
+
 ## Run Research Ingestion
 
 Ingestion sends the query and document text to an OpenRouter-compatible model.
@@ -66,7 +103,8 @@ Expected behavior with a valid key:
 
 - Exit code `0`
 - JSON output with `decision`, `safety_tier`, `evidence_quality`,
-  `evidence_conflict`, `protocol`, `block_reason`, and `user_message`
+  `evidence_conflict`, `protocol`, `block_reason`, `policy_version`, `model`,
+  `source_summaries`, `claimed_outcomes`, and `user_message`
 
 Expected behavior without a key:
 
@@ -95,6 +133,16 @@ Expected body:
 {"status":"ok"}
 ```
 
+No-key demo endpoints:
+
+```sh
+curl http://127.0.0.1:8000/templates
+curl http://127.0.0.1:8000/analyze/example
+curl -s http://127.0.0.1:8000/schedule \
+  -H 'content-type: application/json' \
+  -d '{"duration_weeks":6,"block_length_days":14,"seed":123}'
+```
+
 Analyze through the API:
 
 ```sh
@@ -110,7 +158,8 @@ just tui
 ```
 
 Use the tabs for ingestion, analysis, and benchmarks. The same API key and
-model environment variables apply.
+model environment variables apply. The analysis tab has a **Use Example Files**
+button for the bundled protocol and observations.
 
 ## Run The Web Frontend
 
@@ -127,6 +176,8 @@ just web-dev
 ```
 
 The Vite dev server proxies `/api` requests to the local FastAPI server.
+The first screen supports three paths: run the bundled example, start from a
+local template, or ask a question that uses ingestion.
 
 Build the frontend:
 
@@ -134,18 +185,35 @@ Build the frontend:
 just web-build
 ```
 
+Run frontend checks:
+
+```sh
+just web-unit
+just web-test
+```
+
 ## Run Benchmarks
 
 Analysis-only benchmarks work without an API key:
 
 ```sh
-uv run --python 3.12 pitgpt benchmark run --track analysis --format json
+just bench-analysis
 ```
 
 All benchmarks include LLM ingestion cases and require `OPENROUTER_API_KEY`:
 
 ```sh
-OPENROUTER_API_KEY=... uv run --python 3.12 pitgpt benchmark run --format json
+OPENROUTER_API_KEY=... just bench-all
 ```
 
 Saved benchmark results are written to `benchmarks/runs/`.
+
+## Audit And Doctor
+
+```sh
+just audit
+just doctor
+```
+
+`just doctor` warns when `OPENROUTER_API_KEY` is missing because only ingestion
+requires it.

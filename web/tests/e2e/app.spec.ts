@@ -88,16 +88,16 @@ test("query and source upload flow reaches results", async ({ page }) => {
   expect(ingestBody?.query).toBe("Compare CeraVe and La Roche-Posay");
   expect(ingestBody?.documents).toEqual(["A small cosmetic study reports comfort outcomes."]);
 
-  await page.getByPlaceholder("e.g. CeraVe Moisturizing Cream").fill("CeraVe");
-  await page.getByPlaceholder("e.g. La Roche-Posay Toleriane").fill("La Roche-Posay");
+  await page.getByPlaceholder("CeraVe Moisturizing Cream").fill("CeraVe");
+  await page.getByPlaceholder("La Roche-Posay Toleriane").fill("La Roche-Posay");
   await page.getByRole("button", { name: "Lock Protocol & Start" }).click();
 
   await expect(page.getByRole("heading", { name: /CeraVe vs. La Roche-Posay/ })).toBeVisible();
   await page.getByRole("button", { name: "Submit Check-In" }).click();
   await expect(page.getByText("Today's check-in submitted!")).toBeVisible();
 
-  page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Stop Experiment Early" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Stop and Analyze" }).click();
   await expect(page.getByRole("heading", { name: /CeraVe vs. La Roche-Posay/ })).toBeVisible();
   await expect(page.getByText("Evidence Basis")).toBeVisible();
   await expect(page.getByText("Late Backfills Excluded")).toBeVisible();
@@ -185,6 +185,7 @@ test("backfill accepts only the last two days and records metadata", async ({ pa
   await page.goto("/");
   await page.getByRole("button", { name: /Custom A\/B/ }).click();
   await page.getByRole("button", { name: "Lock Protocol & Start" }).click();
+  await page.getByText("Backfill recent day").click();
 
   await page.getByLabel("Backfill date").fill(dateOffset(-3));
   await page.getByRole("button", { name: "Add Backfill" }).click();
@@ -220,8 +221,8 @@ test("settings persist reminders and delete data clears state", async ({ page },
     )
     .toMatchObject({ reminderEnabled: false, reminderTime: "00:00" });
 
-  page.on("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete All Data" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete All Data" }).click();
 
   const state = await page.evaluate(() => {
     const raw = window.localStorage.getItem("pitgpt_state");

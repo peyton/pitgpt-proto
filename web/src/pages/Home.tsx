@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
-import { ingest } from "../lib/api";
+import { analyzeExample, ingest } from "../lib/api";
 import {
+  createExampleCompletedTrial,
   templateToIngestionResult,
   trialTemplates,
   type TrialTemplate,
@@ -28,19 +29,26 @@ export function Home() {
   const [query, setQuery] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [sources, setSources] = useState<SourceDocument[]>([]);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingExample, setLoadingExample] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const { setIngestionResult, state } = useApp();
+  const { completeTrial, setIngestionResult, state } = useApp();
 
   const addSource = useCallback((name: string, content: string) => {
     const trimmed = content.trim();
     if (!trimmed) return;
+    if (trimmed.length > 12000) {
+      setError("That source is too large. Keep each source under 12,000 characters.");
+      return;
+    }
+    setSourceOpen(true);
     setSources((current) => [
       ...current,
-      { id: sourceId(), name, content: trimmed.slice(0, 12000) },
+      { id: sourceId(), name, content: trimmed },
     ]);
   }, []);
 
@@ -61,7 +69,12 @@ export function Home() {
         setIngestionResult(result);
         navigate("/protocol");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not generate a protocol.");
+        const message = e instanceof Error ? e.message : "Could not generate a protocol.";
+        setError(
+          message.includes("OPENROUTER_API_KEY")
+            ? "Protocol generation needs an API key. You can still run the example or start from a local template."
+            : message,
+        );
       } finally {
         setLoading(false);
       }
@@ -98,6 +111,20 @@ export function Home() {
     [navigate, setIngestionResult],
   );
 
+  const handleRunExample = useCallback(async () => {
+    setLoadingExample(true);
+    setError(null);
+    try {
+      const result = await analyzeExample();
+      completeTrial(createExampleCompletedTrial(result));
+      navigate("/results");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load the example analysis.");
+    } finally {
+      setLoadingExample(false);
+    }
+  }, [completeTrial, navigate]);
+
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
@@ -107,7 +134,7 @@ export function Home() {
     return (
       <div className="home-center">
         <div className="fade-up" style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-1.5px", marginBottom: 12 }}>
+          <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: 0, marginBottom: 12 }}>
             Trial in Progress
           </h1>
           <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 460, margin: "0 auto 32px" }}>
@@ -124,15 +151,39 @@ export function Home() {
   return (
     <div className="home-center">
       <div className="fade-up" style={{ textAlign: "center", marginBottom: 32 }}>
-        <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-1.5px", marginBottom: 12, lineHeight: 1.1 }}>
+        <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: 0, marginBottom: 12, lineHeight: 1.1 }}>
           What do you want to test?
         </h1>
         <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 500, margin: "0 auto" }}>
-          Ask a question, add source material, or start from a locked template.
+          Pick a safe path first. Add research only when you need it.
         </p>
       </div>
 
-      <div className="fade-up fade-up-1" style={{ width: "100%", maxWidth: 680, marginBottom: 24 }}>
+      <div className="path-grid fade-up fade-up-1">
+        <button className="path-card" type="button" onClick={handleRunExample} disabled={loadingExample}>
+          <strong>Run example</strong>
+          <span>{loadingExample ? "Loading..." : "See a completed result with bundled data."}</span>
+        </button>
+        <button
+          className="path-card"
+          type="button"
+          onClick={() => document.getElementById("template-start")?.scrollIntoView({ behavior: "smooth" })}
+        >
+          <strong>Start template</strong>
+          <span>No API key. Lock labels, then check in daily.</span>
+        </button>
+        <button className="path-card" type="button" onClick={() => textareaRef.current?.focus()}>
+          <strong>Ask question</strong>
+          <span>Generate a protocol from your exact comparison.</span>
+        </button>
+      </div>
+
+      <div className="preflight-box fade-up fade-up-2">
+        <strong>Good fit:</strong> low-risk routines, cosmetic products, habits, or preferences.
+        <span>Not a fit: prescriptions, supplements, disease management, invasive devices, or urgent symptoms.</span>
+      </div>
+
+      <div className="fade-up fade-up-3" style={{ width: "100%", maxWidth: 680, marginBottom: 24 }}>
         <div className="chat-input">
           <textarea
             ref={textareaRef}
@@ -156,7 +207,7 @@ export function Home() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.md,.pdf"
+              accept=".txt,.md,.csv,.json"
               style={{ display: "none" }}
               onChange={handleFileUpload}
             />
@@ -192,7 +243,11 @@ export function Home() {
         )}
       </div>
 
-      <div className="source-panel fade-up fade-up-2">
+      <details className="source-panel fade-up fade-up-4" open={sourceOpen} onToggle={(event) => setSourceOpen(event.currentTarget.open)}>
+        <summary className="source-panel-summary">
+          <span>Add research source</span>
+          <small>Optional text, markdown, CSV, or JSON</small>
+        </summary>
         <div className="source-panel-header">
           <div>
             <h2>Source Material</h2>
@@ -232,9 +287,9 @@ export function Home() {
             ))}
           </div>
         )}
-      </div>
+      </details>
 
-      <div className="fade-up fade-up-3" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 20, maxWidth: 680 }}>
+      <div className="fade-up fade-up-4" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 20, maxWidth: 680 }}>
         {quickPrompts.map((prompt) => (
           <button
             key={prompt}
@@ -250,7 +305,7 @@ export function Home() {
         ))}
       </div>
 
-      <div className="fade-up fade-up-4" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--gray-400)", marginTop: 30, marginBottom: 12, textAlign: "center" }}>
+      <div id="template-start" className="fade-up fade-up-5" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0, color: "var(--gray-400)", marginTop: 30, marginBottom: 12, textAlign: "center" }}>
         Or start from a local template
       </div>
       <div className="template-grid fade-up fade-up-5">
