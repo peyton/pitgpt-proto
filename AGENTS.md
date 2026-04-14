@@ -38,6 +38,7 @@ docs/            # Documentation
 | **uv**       | Python package management      | `pyproject.toml` |
 | **mise**     | Tool version management        | `mise.toml`      |
 | **hk**       | Git hooks & linting            | `hk.pkl`         |
+| **pkl**      | hk config interpreter          | `mise.toml`      |
 | **just**     | Task runner                    | `justfile`       |
 | **ruff**     | Python linter + formatter      | `pyproject.toml` |
 | **mypy**     | Type checking                  | `pyproject.toml` |
@@ -78,6 +79,9 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 - Python 3.12+, PEP 8, type hints everywhere
 - Use `uv run` to execute Python tools (not global installs)
 - Use `hk` for linting, not raw ruff/mypy commands
+- Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
+  requires the `pkl` CLI even before hooks start, so clean runners must install
+  it through mise.
 - Ruff config: line length 100, select E/F/I/UP/B/SIM
 - Tests live in `tests/`, mirror `src/pitgpt/` structure
 - Prefer early returns over nested conditionals
@@ -91,7 +95,10 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 - **test**: `uv run pytest`
 
 Tools are installed via `jdx/mise-action@v4`. Actions are pinned to SHA
-hashes per zizmor best practices.
+hashes per zizmor best practices. CI starts from a clean runner, so any tool
+needed by `hk.pkl`, hook steps, or workflow commands must be listed in
+`mise.toml`. The `check` job runs hk's `zizmor` step through the raw hook
+command, so it must export `GITHUB_TOKEN` rather than only `GH_TOKEN`.
 
 ## Environment Variables
 

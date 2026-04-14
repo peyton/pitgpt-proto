@@ -13,7 +13,8 @@ just setup
 
 This installs the mise-managed tools and syncs Python dependencies with
 Python 3.12 through `uv`. It also installs web frontend dependencies with
-Node 22.
+Node 22. The mise-managed tools include the hook runtime (`hk` and `pkl`) and
+GitHub Actions linters used by CI.
 
 If you prefer manual setup:
 
