@@ -67,10 +67,15 @@ just fix         # Auto-fix with ruff via hk (mutates files)
 just fmt         # Format with ruff (mutates files)
 just typecheck   # Run mypy
 just bench-analysis # Run deterministic analysis benchmarks
+just parity-analysis # Compare Python and Rust deterministic analysis outputs
 just bench-ingestion # Run LLM-backed ingestion benchmarks
 just bench-all    # Run all benchmark tracks
 just serve       # Start API server
 just tui         # Launch TUI
+pitgpt brief     # Print compact local trial result brief
+pitgpt power     # Estimate two-arm sample size for planning
+pitgpt doctor    # Check PitGPT CLI/API runtime settings
+pitgpt trial status/export/import/amend # Inspect, bundle, restore, or amend trial files
 just web-dev     # Start web frontend dev server
 just web-build   # Build web frontend for production
 just web-unit    # Run Vitest unit tests
@@ -82,6 +87,9 @@ just tauri-test  # Run Rust native tests
 just rust-components # Install rustfmt and clippy for the pinned Rust toolchain
 just tauri-ios-test # Build the iOS simulator target
 just ci          # Run the main local CI gate
+just ci-clean    # Bootstrap deps and run the main local CI gate
+just clean       # Remove generated build/test artifacts
+just release-preflight # Validate Apple signing env vars for release workflows
 just bootstrap   # Regenerate bin/mise bootstrap script
 ```
 
@@ -95,6 +103,20 @@ just bootstrap   # Regenerate bin/mise bootstrap script
    relevant commands plus `just check` for small, scoped fixes.
 6. **GitHub CI**: after pushing, watch the relevant GitHub Actions run to a
    terminal `success` conclusion before handing work back.
+
+## Product Surface Parity
+
+- Treat web frontend feature requests as Tauri native app feature requests too
+  unless the user explicitly scopes the work away from native. The macOS/iOS
+  Tauri app should not lag the web app when parity is practical.
+- Keep the Tauri app offline-capable at all times. Online or cloud-backed modes
+  may exist, but they must be optional/toggleable and must not break the local
+  offline path.
+- When a web feature depends on the API server or hosted services, add the
+  matching native/offline behavior or clearly document the blocker and the
+  smallest follow-up needed before handing work back.
+- Verify Tauri-impacting frontend changes with the relevant Rust/Tauri checks in
+  addition to web tests.
 
 ## Conventions
 
@@ -110,18 +132,22 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 - Use `hk` for linting, not raw ruff/mypy commands
 - Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
   requires the `pkl` CLI even before hooks start, so clean runners must install
-  it through mise.
+  it through mise. `just`, `actionlint`, `zizmor`, and `act` are pinned there
+  too so local automation does not depend on ad-hoc global versions.
 - Ruff config: line length 100, select E/F/I/UP/B/SIM
 - Tests live in `tests/`, mirror `src/pitgpt/` structure
 - Tauri Rust tests live beside Rust modules in `src-tauri/src/`
 - Shared safety policy and template data live in `shared/`; keep Python, Rust,
   and TypeScript loaders pointed at those files instead of duplicating fixtures.
+- Python analysis is the methodology source of truth. Keep Rust analysis parity
+  green with `just parity-analysis` when changing result semantics.
 - Prefer early returns over nested conditionals
 - Keep functions short and focused
 
 ## CI
 
-GitHub Actions workflow at `.github/workflows/ci.yml` runs:
+GitHub Actions workflow at `.github/workflows/ci.yml` uses pinned Ubuntu runner
+images, per-job timeouts, and concurrency cancellation for stale PR runs. It runs:
 - **lint**: `hk run pre-commit --all`
 - **check**: `hk run check --all` (includes actionlint + zizmor)
 - **test**: `uv run pytest`
@@ -142,11 +168,17 @@ builds signed macOS DMGs and updates the rolling GitHub prerelease tagged
 
 Release artifacts are built by `.github/workflows/release.yml` when a GitHub
 Release is published. That workflow rebuilds signed macOS artifacts and a
-signed iOS IPA, then attaches them to the release.
+signed iOS App Store Connect IPA with a GitHub-run build number, then attaches
+them to the release. Shared release preflight and artifact collection scripts
+live in `scripts/apple-release-preflight.sh` and
+`scripts/collect-tauri-artifacts.sh`; the operator checklist is
+`docs/release-checklist.md`.
 
 Dependency version updates are handled by Renovate using `renovate.json`.
 Renovate automerges minor, patch, digest, and lockfile-maintenance PRs only
 through GitHub auto-merge, so required status checks remain the merge gate.
+Tauri npm and Cargo packages are grouped together to avoid native build version
+skew.
 Dependabot scheduled version PRs are disabled in `.github/dependabot.yml` to
 avoid duplicate update PRs, but Dependabot security PRs still run for uv, npm,
 Cargo, and GitHub Actions. `.github/workflows/dependabot-auto-merge.yml` enables
@@ -191,11 +223,18 @@ clinical care.
 ## Environment Variables
 
 - `OPENROUTER_API_KEY` — Required for LLM calls; set it explicitly when needed
+- `PITGPT_API_TOKEN` — Optional bearer token for API endpoints except health/docs
 - `PITGPT_DEFAULT_MODEL` — Defaults to `anthropic/claude-sonnet-4`
 - `PITGPT_LLM_BASE_URL` — Defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S` — Defaults to `120`
 - `PITGPT_LLM_TEMPERATURE` — Defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS` — Defaults to `4096`
+- `PITGPT_LLM_REFERER` — Optional `HTTP-Referer` header for LLM calls
+- `PITGPT_LLM_TITLE` — Optional `X-Title` header for LLM calls
+- `PITGPT_MAX_DOCUMENT_CHARS` — Defaults to `12000`
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` — Defaults to `40000`
+- `PITGPT_LLM_CACHE` — Opt-in deterministic local LLM response cache
+- `PITGPT_LLM_CACHE_DIR` — Optional cache directory; default `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL` — Defaults to `llama3.1`
 
@@ -211,6 +250,13 @@ Signing secrets used by native CI/release workflows must live in the
 - `APPLE_API_KEY_P8_B64`
 - `APPLE_DEVELOPMENT_TEAM`
 - `IOS_PROVISIONING_PROFILE_B64`
+
+Release scripts also honor optional local override paths:
+
+- `APPLE_API_KEY_PATH` — App Store Connect API key output path; defaults to
+  `private_keys/AuthKey.p8`
+- `IOS_PROVISIONING_PROFILE_DIR` — iOS provisioning profile directory override
+- `IOS_PROVISIONING_PROFILE_PATH` — Full iOS provisioning profile output path
 
 ## Key Documents
 

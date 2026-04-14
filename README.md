@@ -20,6 +20,11 @@ clinician.
 - `pitgpt trial randomize`: generate a deterministic period schedule.
 - `pitgpt checkin add`: append one observation row with duplicate guards.
 - `pitgpt validate`: validate protocol and observation files before analysis.
+- `pitgpt brief`: print a compact result brief for a local trial.
+- `pitgpt power`: estimate two-arm sample size for planning.
+- `pitgpt doctor`: inspect local PitGPT runtime configuration.
+- `pitgpt trial status/export/import/amend`: inspect, bundle, restore, and
+  record amendments for local trial files.
 - `pitgpt ingest`: send a question and optional documents to the research
   ingestion engine. This requires `OPENROUTER_API_KEY`.
 - `pitgpt benchmark run`: run the benchmark suite against deterministic analysis
@@ -35,6 +40,8 @@ clinician.
 - `just tauri-test`: run Rust tests for native commands, storage, providers, and analysis.
 - `just tauri-ios-test`: build the iOS simulator target used by CI.
 - `just audit` and `just doctor`: check dependency health and local prerequisites.
+- `just ci-clean`: bootstrap dependencies and run the main local CI gate.
+- `just release-preflight`: verify Apple signing environment variables before release.
 
 ## Setup
 
@@ -42,7 +49,7 @@ Use Python 3.12, Node 22, and Rust 1.94. The repository pins the toolchain with
 `mise.toml` and `.python-version`; the `just` recipes run tools through
 `./bin/mise exec --`.
 The mise config is the source of truth for local and CI tools, including `hk`,
-`pkl`, `actionlint`, and `zizmor`.
+`pkl`, `just`, `actionlint`, and `zizmor`.
 
 ```sh
 just setup
@@ -54,7 +61,7 @@ Manual setup is:
 ./bin/mise install
 ./bin/mise exec -- rustup component add rustfmt clippy
 ./bin/mise exec -- uv sync --python 3.12
-./bin/mise exec -- npm --prefix web install
+./bin/mise exec -- npm --prefix web ci
 ```
 
 ## Choose Your Path
@@ -110,10 +117,17 @@ If `OPENROUTER_API_KEY` is missing, ingestion exits with
 Optional configuration:
 
 - `PITGPT_DEFAULT_MODEL`: defaults to `anthropic/claude-sonnet-4`
+- `PITGPT_API_TOKEN`: optional bearer token for API endpoints except health/docs
 - `PITGPT_LLM_BASE_URL`: defaults to `https://openrouter.ai/api/v1`
 - `PITGPT_LLM_TIMEOUT_S`: defaults to `120`
 - `PITGPT_LLM_TEMPERATURE`: defaults to `0`
 - `PITGPT_LLM_MAX_TOKENS`: defaults to `4096`
+- `PITGPT_LLM_REFERER`: optional `HTTP-Referer` header for LLM calls
+- `PITGPT_LLM_TITLE`: optional `X-Title` header for LLM calls
+- `PITGPT_MAX_DOCUMENT_CHARS`: defaults to `12000`
+- `PITGPT_MAX_TOTAL_DOCUMENT_CHARS`: defaults to `40000`
+- `PITGPT_LLM_CACHE`: set to `1`/`true` for deterministic local LLM caching
+- `PITGPT_LLM_CACHE_DIR`: optional cache directory, defaulting to `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL`: defaults to `llama3.1`
 
@@ -136,6 +150,11 @@ The expected body is:
 ```json
 {"status":"ok"}
 ```
+
+When `PITGPT_API_TOKEN` is set, send `Authorization: Bearer <token>` to API
+endpoints other than `/health`, `/docs`, `/redoc`, and `/openapi.json`.
+`POST /validate` shares the CLI validation contract and returns a structured
+validation report without running analysis.
 
 Launch the terminal UI:
 
@@ -162,7 +181,9 @@ The Tauri v2 app lives in `src-tauri/` and reuses the Vite React UI. Web mode
 continues to call FastAPI through `/api`; native mode routes templates,
 schedules, analysis, storage, export, local ingestion, and AI discovery through
 Rust commands. Tauri storage is app-local JSON, so the native app can function
-offline without a Python sidecar.
+offline without a Python sidecar. Daily reminders can opt into native
+notification permission; reminder planning is deterministic and does not require
+real OS notification delivery in tests.
 
 Run the macOS app:
 
@@ -202,11 +223,13 @@ just tauri-ios-test
 GitHub CI skips signed macOS artifact creation when Apple signing secrets are
 not configured. Release builds require Apple signing secrets in the
 `apple-signing` GitHub environment for signed/notarized macOS builds and signed
-iOS release IPAs:
+iOS App Store Connect IPAs:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_TEAM_ID`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
 `APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
 `IOS_PROVISIONING_PROFILE_B64`.
+See `docs/release-checklist.md` for the release preflight commands, secret
+definitions, build-number behavior, and current Mac App Store gaps.
 
 On `master`, changes to the native app inputs (`src-tauri/`, `web/`, `shared/`,
 or native build config) also update the rolling GitHub prerelease tagged
@@ -241,6 +264,9 @@ just tauri-test  # Rust native tests
 just tauri-build # macOS Tauri bundle
 just rust-components # install rustfmt + clippy for the pinned Rust toolchain
 just ci          # main local CI gate
+just ci-clean    # bootstrap dependencies and run the main local CI gate
+just clean       # remove generated build and test artifacts
+just release-preflight # validate Apple release signing environment
 just audit       # uv pip check + npm audit
 just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
@@ -265,6 +291,7 @@ use the job logs as the next task and keep fixing unless the blocker is external
 
 - `docs/operator-guide.md`: step-by-step user workflows
 - `docs/quickstart.md`: choose CLI, web, TUI, or API path
+- `docs/release-checklist.md`: Apple signing and release workflow checklist
 - `docs/project-purpose.md`: current purpose and safety contract
 - `docs/architecture.md`: module map and data flow
 - `docs/scope.md`: prototype scope versus PRD and post-MVP ideas

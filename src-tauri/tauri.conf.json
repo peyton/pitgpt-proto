@@ -28,6 +28,7 @@
     "targets": ["dmg", "app"],
     "category": "Lifestyle",
     "copyright": "Copyright 2026 PitGPT",
+    "resources": ["PrivacyInfo.xcprivacy"],
     "macOS": {
       "signingIdentity": null,
       "hardenedRuntime": true,

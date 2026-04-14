@@ -23,6 +23,7 @@ jobs:
   preview:
     name: Build And Publish macOS Preview
     runs-on: macos-14
+    timeout-minutes: 45
     environment: apple-signing
     env:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -43,34 +44,15 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
       - run: npm --prefix web ci
-      - name: Validate Apple signing secrets
-        run: |
-          set -euo pipefail
-          missing=0
-          for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8_B64 APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error title=Missing Apple signing secret::$name is required for the macOS preview release"
-              missing=1
-            fi
-          done
-          exit "$missing"
-      - name: Write App Store Connect API key
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "$APPLE_API_KEY_PATH")"
-          printf '%s' "$APPLE_API_KEY_P8_B64" | base64 -d > "$APPLE_API_KEY_PATH"
-          chmod 600 "$APPLE_API_KEY_PATH"
+      - name: Prepare Apple signing files
+        run: scripts/apple-release-preflight.sh macos-dmg --write-files
       - run: npm --prefix web run tauri:build
       - name: Collect macOS artifacts
         id: artifacts
         run: |
           set -euo pipefail
           artifacts_file="$RUNNER_TEMP/macos-preview-artifacts.txt"
-          find src-tauri/target/release/bundle -type f -name '*.dmg' -print | sort > "$artifacts_file"
-          if [ ! -s "$artifacts_file" ]; then
-            echo "::error title=Missing macOS artifact::No DMG was produced"
-            exit 1
-          fi
+          scripts/collect-tauri-artifacts.sh macos-dmg "$artifacts_file"
           echo "file=$artifacts_file" >> "$GITHUB_OUTPUT"
       - name: Publish preview release
         env:

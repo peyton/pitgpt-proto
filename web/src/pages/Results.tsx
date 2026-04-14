@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -196,6 +197,40 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
         </div>
       </details>
 
+      {result.secondary_outcomes?.length ? (
+        <details className="advanced-disclosure fade-up fade-up-4" open>
+          <summary>Secondary outcomes</summary>
+          <div className="advanced-grid">
+            {result.secondary_outcomes.map((outcome) => (
+              <div key={outcome.outcome_id}>
+                <span>{outcome.label}</span>
+                <strong>{outcome.difference != null ? signed(outcome.difference) : "—"}</strong>
+                <small>A={outcome.mean_a?.toFixed(1) ?? "—"} · B={outcome.mean_b?.toFixed(1) ?? "—"}</small>
+              </div>
+            ))}
+          </div>
+          <ul className="advanced-list">
+            {result.secondary_outcomes.map((outcome) => <li key={outcome.outcome_id}>{outcome.summary}</li>)}
+          </ul>
+        </details>
+      ) : null}
+
+      {(trial.adverseEvents?.length ?? 0) > 0 && (
+        <details className="advanced-disclosure fade-up fade-up-4" open>
+          <summary>Adverse event review</summary>
+          <div className="caveats-card">
+            <p>{result.adverse_event_count ?? trial.adverseEvents?.length ?? 0} discomfort log{(result.adverse_event_count ?? 0) === 1 ? "" : "s"} recorded.</p>
+            <ul className="advanced-list">
+              {trial.adverseEvents?.map((event) => (
+                <li key={event.id}>
+                  {event.date} · day {event.day_index} · {event.severity}: {event.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
+
       <details className="advanced-disclosure fade-up fade-up-4" open>
         <summary>Appointment brief</summary>
         <div className="caveats-card">
@@ -233,6 +268,10 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
             <strong>{result.analysis_method ?? "welch"}</strong>
           </div>
           <div>
+            <span>Action</span>
+            <strong>{formatActionability(result.actionability)}</strong>
+          </div>
+          <div>
             <span>Seed</span>
             <strong>{trial.seed}</strong>
           </div>
@@ -246,20 +285,40 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           </div>
           <div>
             <span>Analysis hash</span>
-            <strong>{trial.analysisPlanHash ?? "—"}</strong>
+            <strong>{result.methods_appendix?.trial_lock?.analysis_plan_hash ?? trial.analysisPlanHash ?? "—"}</strong>
           </div>
           <div>
             <span>Meaningful threshold</span>
-            <strong>{result.minimum_meaningful_difference ?? 0.5}</strong>
+            <strong>{result.equivalence_margin ?? result.minimum_meaningful_difference ?? 0.5}</strong>
+          </div>
+          <div>
+            <span>No meaningful difference</span>
+            <strong>{result.supports_no_meaningful_difference == null ? "—" : result.supports_no_meaningful_difference ? "Supported" : "Not supported"}</strong>
+          </div>
+          <div>
+            <span>Randomization p</span>
+            <strong>{result.randomization_p_value?.toFixed(4) ?? "—"}</strong>
+          </div>
+          <div>
+            <span>Rows used</span>
+            <strong>{result.dataset_snapshot ? `${result.dataset_snapshot.rows_used_primary}/${result.dataset_snapshot.rows_total}` : "—"}</strong>
           </div>
           <div>
             <span>Cohen's d</span>
             <strong>{result.cohens_d?.toFixed(2) ?? "—"}</strong>
           </div>
         </div>
+        {result.harm_benefit_summary && (
+          <p className="advanced-copy">{result.harm_benefit_summary}</p>
+        )}
         {result.paired_block?.difference != null && (
           <p className="advanced-copy">
-            Paired-block estimate: {signed(result.paired_block.difference)} across {result.paired_block.n_pairs} pair{result.paired_block.n_pairs === 1 ? "" : "s"}.
+            Paired-period estimate: {signed(result.paired_block.difference)} across {result.paired_block.n_pairs} pair{result.paired_block.n_pairs === 1 ? "" : "s"}.
+          </p>
+        )}
+        {result.welch_sensitivity?.difference != null && (
+          <p className="advanced-copy">
+            Welch sensitivity: {signed(result.welch_sensitivity.difference)}.
           </p>
         )}
         {result.sensitivity_excluding_partial?.difference != null && (
@@ -267,6 +326,9 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
             Sensitivity without partial-adherence rows: {signed(result.sensitivity_excluding_partial.difference)}.
           </p>
         )}
+        {result.reliability_warnings?.length ? (
+          <ul className="advanced-list">{result.reliability_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+        ) : null}
         {result.data_warnings?.length ? (
           <ul className="advanced-list">{result.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
         ) : null}
@@ -302,6 +364,11 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           Export Schedule
         </button>
         <button className="btn btn-s" onClick={() => {
+          downloadFile(JSON.stringify(result.methods_appendix ?? {}, null, 2), "pitgpt-methods-appendix.json", "application/json");
+        }}>
+          Methods Appendix
+        </button>
+        <button className="btn btn-s" onClick={() => {
           downloadFile(exportAppointmentBrief(completed), "pitgpt-appointment-brief.md", "text/markdown");
         }}>
           Appointment Brief
@@ -330,6 +397,18 @@ function signed(value: number): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
+function formatActionability(value: CompletedTrial["result"]["actionability"]): string {
+  const labels: Record<string, string> = {
+    switch: "Switch",
+    keep_current: "Keep current",
+    repeat_with_better_controls: "Repeat",
+    stop_for_safety: "Stop for safety",
+    inconclusive_no_action: "No change",
+    insufficient_data: "Insufficient data",
+  };
+  return value ? labels[value] ?? value : "—";
+}
+
 function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTrial["trial"]): string {
   if (result.verdict === "insufficient_data") return "Insufficient data for a conclusion.";
   if (result.verdict === "inconclusive") return "Results are inconclusive.";
@@ -341,8 +420,9 @@ function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTr
 export function Results() {
   const { state } = useApp();
   const navigate = useNavigate();
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, state.completedResults.length - 1));
 
-  const latest = state.completedResults[state.completedResults.length - 1];
+  const latest = state.completedResults[selectedIndex] ?? state.completedResults[state.completedResults.length - 1];
 
   if (!latest) {
     return (
@@ -355,5 +435,26 @@ export function Results() {
     );
   }
 
-  return <ResultView completed={latest} />;
+  return (
+    <>
+      {state.completedResults.length > 1 && (
+        <div className="page-container wide result-history">
+          <h2>Result history</h2>
+          <div className="history-list">
+            {state.completedResults.map((completed, index) => (
+              <button
+                className={`history-item${index === selectedIndex ? " selected" : ""}`}
+                key={completed.trial.id}
+                onClick={() => setSelectedIndex(index)}
+              >
+                {completed.trial.conditionALabel} vs. {completed.trial.conditionBLabel}
+                <span>{completed.result.quality_grade} · {completed.result.verdict}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <ResultView completed={latest} />
+    </>
+  );
 }

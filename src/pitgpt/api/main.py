@@ -16,11 +16,13 @@ from pitgpt.core.models import (
     Observation,
     ResultCard,
     ScheduleAssignment,
+    ValidationReport,
 )
 from pitgpt.core.providers import ProviderInfo, ProviderKind, list_providers
 from pitgpt.core.schedule import generate_schedule
 from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import templates_as_dicts
+from pitgpt.core.validation import validate_trial
 
 app = FastAPI(title="PitGPT", version="0.1.0")
 
@@ -54,9 +56,25 @@ class ScheduleRequest(BaseModel):
 async def add_request_id(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID", str(uuid4()))
     request.state.request_id = request_id
+    settings = load_settings()
+    if settings.api_token and request.url.path not in _PUBLIC_PATHS:
+        expected = f"Bearer {settings.api_token}"
+        if request.headers.get("Authorization") != expected:
+            return JSONResponse(
+                status_code=401,
+                headers={"X-Request-ID": request_id},
+                content={
+                    "detail": "Unauthorized",
+                    "request_id": request_id,
+                    "error": {"code": 401, "message": "Unauthorized"},
+                },
+            )
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+_PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 
 
 @app.exception_handler(HTTPException)
@@ -156,3 +174,8 @@ async def ingest_endpoint(req: IngestRequest):
 @app.post("/analyze", response_model=ResultCard)
 async def analyze_endpoint(req: AnalyzeRequest):
     return analyze(req.protocol, req.observations)
+
+
+@app.post("/validate", response_model=ValidationReport)
+async def validate_endpoint(req: AnalyzeRequest):
+    return validate_trial(req.protocol, req.observations)

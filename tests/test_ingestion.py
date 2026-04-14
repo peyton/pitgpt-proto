@@ -1,6 +1,7 @@
 """Test the ingestion pipeline with mocked LLM responses."""
 
 import json
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -271,6 +272,42 @@ class TestLLMErrors:
         with pytest.raises(IngestionInputError, match="too large"):
             await ingest("test", ["x" * (MAX_DOCUMENT_CHARS + 1)], client)
 
+    @patch.dict(
+        "os.environ",
+        {"PITGPT_MAX_DOCUMENT_CHARS": "3", "PITGPT_MAX_TOTAL_DOCUMENT_CHARS": "10"},
+    )
+    @pytest.mark.asyncio
+    async def test_document_limits_can_come_from_settings(self, client):
+        with pytest.raises(IngestionInputError, match="Document 1 is too large"):
+            await ingest("test", ["xxxx"], client)
+
+    @patch.dict(
+        "os.environ",
+        {"PITGPT_MAX_DOCUMENT_CHARS": "3", "PITGPT_MAX_TOTAL_DOCUMENT_CHARS": "10"},
+    )
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_document_limit_override_allows_trusted_local_input(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("test", ["xxxx"], client, max_document_chars=10)
+
+        assert result.decision == IngestionDecision.BLOCK
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_invalid_json_retries(self, client):
@@ -296,6 +333,95 @@ class TestLLMErrors:
             await ingest("test", [], client)
 
 
+class TestLLMClientOperations:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_referer_and_title_headers_are_absent_by_default(self, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        await client.complete("system", "user")
+
+        headers = route.calls[0].request.headers
+        assert "HTTP-Referer" not in headers
+        assert "X-Title" not in headers
+
+    @patch.dict(
+        "os.environ",
+        {
+            "PITGPT_LLM_REFERER": "https://pitgpt.local",
+            "PITGPT_LLM_TITLE": "PitGPT Tests",
+        },
+    )
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_referer_and_title_headers_are_configurable(self, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        await client.complete("system", "user")
+
+        headers = route.calls[0].request.headers
+        assert headers["HTTP-Referer"] == "https://pitgpt.local"
+        assert headers["X-Title"] == "PitGPT Tests"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_opt_in_cache_reuses_successful_response(self, tmp_path, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "block",
+                        "safety_tier": "RED",
+                        "evidence_quality": "weak",
+                        "protocol": None,
+                        "block_reason": "Unsafe.",
+                        "user_message": "No.",
+                    }
+                ),
+            )
+        )
+
+        with patch.dict(
+            "os.environ",
+            {"PITGPT_LLM_CACHE": "1", "PITGPT_LLM_CACHE_DIR": str(tmp_path)},
+        ):
+            first = await client.complete("system", "user")
+            second = await client.complete("system", "user")
+
+        assert first == second
+        assert route.call_count == 1
+        assert list(tmp_path.glob("*.json"))
+
+
 class TestSafetyPolicy:
     def test_policy_versioned(self):
         assert SAFETY_POLICY_VERSION
@@ -310,3 +436,55 @@ class TestSafetyPolicy:
         assert "condition-adjacent" in prompt
         assert "Acute, urgent, crisis" in prompt
         assert "skincare product comparisons" in prompt
+
+
+class TestDeterministicSafetyGates:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_red_prefilter_blocks_before_llm(self, client):
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(500, json={"detail": "should not be called"})
+        )
+
+        result = await ingest("Can I stop my prescription medication for a week?", [], client)
+
+        assert result.decision == IngestionDecision.BLOCK
+        assert result.safety_tier == SafetyTier.RED
+        assert result.response_validation_status.startswith("prefiltered:")
+        assert route.call_count == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_generated_protocol_safety_text_is_blocked(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "weak",
+                        "protocol": {
+                            "template": "Custom A/B",
+                            "duration_weeks": 2,
+                            "block_length_days": 7,
+                            "cadence": "daily",
+                            "washout": "None",
+                            "primary_outcome_question": "How did the dose affect symptoms?",
+                            "screening": "",
+                            "warnings": "",
+                            "condition_a_label": "Ozempic dose A",
+                            "condition_b_label": "Ozempic dose B",
+                        },
+                        "block_reason": None,
+                        "user_message": "Ready.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest("Compare two morning routines", [], client)
+
+        assert result.decision == IngestionDecision.BLOCK
+        assert result.safety_tier == SafetyTier.RED
+        assert result.response_validation_status == "blocked_generated_protocol_safety_text"

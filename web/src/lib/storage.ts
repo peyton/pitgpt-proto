@@ -4,12 +4,13 @@ import { stableHash } from "./trial";
 import type { AppState, Observation, Settings, Trial } from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 
 export const defaultSettings: Settings = {
   reminderEnabled: true,
   reminderTime: "21:00",
   emailReminderEnabled: false,
+  apiToken: "",
   preferredProvider: "openrouter",
   preferredModel: "",
   localAiConsentByProvider: {},
@@ -68,9 +69,12 @@ export function clearAllData(): void {
 
 export function exportCSV(observations: Observation[]): string {
   const headers = [
+    "observation_id",
     "day_index",
     "date",
     "condition",
+    "assigned_condition",
+    "actual_condition",
     "primary_score",
     "irritation",
     "adherence",
@@ -80,12 +84,26 @@ export function exportCSV(observations: Observation[]): string {
     "backfill_days",
     "adverse_event_severity",
     "adverse_event_description",
+    "secondary_scores",
+    "recorded_at",
+    "timezone",
+    "planned_checkin_time",
+    "minutes_from_planned_checkin",
+    "exposure_start_at",
+    "exposure_end_at",
+    "measurement_timing",
+    "deviation_codes",
+    "confounders",
+    "rescue_action",
   ];
   const rows = observations.map((o) =>
     [
+      o.observation_id ?? "",
       o.day_index,
       o.date,
       o.condition,
+      o.assigned_condition ?? "",
+      o.actual_condition ?? "",
       o.primary_score ?? "",
       o.irritation,
       o.adherence,
@@ -95,6 +113,17 @@ export function exportCSV(observations: Observation[]): string {
       o.backfill_days ?? "",
       o.adverse_event_severity ?? "",
       o.adverse_event_description ?? "",
+      JSON.stringify(o.secondary_scores ?? {}),
+      o.recorded_at ?? "",
+      o.timezone ?? "",
+      o.planned_checkin_time ?? "",
+      o.minutes_from_planned_checkin ?? "",
+      o.exposure_start_at ?? "",
+      o.exposure_end_at ?? "",
+      o.measurement_timing ?? "",
+      JSON.stringify(o.deviation_codes ?? []),
+      JSON.stringify(o.confounders ?? {}),
+      o.rescue_action ?? "",
     ]
       .map(csvCell)
       .join(","),
@@ -146,6 +175,7 @@ function normalizeSettings(value: unknown): Settings {
     reminderTime: typeof value.reminderTime === "string" ? value.reminderTime : "21:00",
     emailReminderEnabled:
       typeof value.emailReminderEnabled === "boolean" ? value.emailReminderEnabled : false,
+    apiToken: typeof value.apiToken === "string" ? value.apiToken : "",
     preferredProvider:
       typeof value.preferredProvider === "string"
         ? (value.preferredProvider as Settings["preferredProvider"])
@@ -161,7 +191,23 @@ function normalizeSettings(value: unknown): Settings {
 function normalizeTrial(value: unknown): Trial | null {
   if (!isRecord(value) || !isRecord(value.protocol)) return null;
   const trial = value as unknown as Trial;
+  trial.protocol.condition_a_label = trial.protocol.condition_a_label ?? trial.conditionALabel ?? "Condition A";
+  trial.protocol.condition_b_label = trial.protocol.condition_b_label ?? trial.conditionBLabel ?? "Condition B";
+  trial.protocol.secondary_outcomes = Array.isArray(trial.protocol.secondary_outcomes)
+    ? trial.protocol.secondary_outcomes
+    : [];
+  trial.protocol.amendments = Array.isArray(trial.protocol.amendments)
+    ? trial.protocol.amendments
+    : [];
   if (!Array.isArray(trial.observations)) trial.observations = [];
+  trial.observations = trial.observations.map((observation) => ({
+    ...observation,
+    assigned_condition: observation.assigned_condition ?? null,
+    actual_condition: observation.actual_condition ?? observation.condition,
+    secondary_scores: observation.secondary_scores ?? {},
+    deviation_codes: observation.deviation_codes ?? [],
+    confounders: observation.confounders ?? {},
+  }));
   if (!Array.isArray(trial.events)) trial.events = [];
   if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];
   if (!Array.isArray(trial.schedule) || needsScheduleMigration(trial)) {

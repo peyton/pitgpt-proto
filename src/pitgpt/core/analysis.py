@@ -5,14 +5,22 @@ from typing import Any
 
 from scipy import stats
 
+from pitgpt.core.methodology import build_methods_appendix
 from pitgpt.core.models import (
+    ActionabilityClass,
+    AdverseEventSeverity,
+    AnalysisDatasetSnapshot,
     AnalysisMethod,
     AnalysisProtocol,
     BlockBreakdown,
+    DenominatorPolicy,
     Observation,
     PairedBlockEstimate,
     QualityGrade,
     ResultCard,
+    RowExclusion,
+    SecondaryOutcomeResult,
+    SensitivityAnalysisResult,
     SensitivityResult,
     Verdict,
 )
@@ -58,6 +66,8 @@ def analyze(
 
     days_logged_pct = scored_not_late_backfill / denom if denom > 0 else 0.0
     adherence_rate = fully_adherent / denom if denom > 0 else 0.0
+    row_exclusions = _row_exclusions(observations)
+    reliability_warnings = _reliability_warnings(observations)
 
     if len(scores_a) < 2 or len(scores_b) < 2:
         caveats_parts = ["Too few usable observations to compute effect size."]
@@ -65,6 +75,19 @@ def analyze(
             caveats_parts.append(
                 f"planned_days missing from protocol; defaulted to {_PLANNED_DAYS_DEFAULT}."
             )
+        adverse_event_by_severity = _count_adverse_events(observations)
+        dataset_snapshot = _dataset_snapshot(
+            observations,
+            rows_used_primary=0,
+            row_exclusions=row_exclusions,
+            denominator_policy=protocol_model.analysis_plan.denominator_policy,
+        )
+        methods_appendix = build_methods_appendix(
+            protocol_model,
+            observations,
+            sensitivity_methods=[],
+            row_exclusion_reasons=[exclusion.reason for exclusion in row_exclusions],
+        )
         return ResultCard(
             quality_grade=QualityGrade.D,
             verdict="insufficient_data",
@@ -75,32 +98,131 @@ def analyze(
             days_logged_pct=_round4(days_logged_pct),
             early_stop=early_stop,
             late_backfill_excluded=late_backfill_excluded,
+            adverse_event_count=sum(adverse_event_by_severity.values()),
+            adverse_event_by_severity=adverse_event_by_severity,
+            secondary_outcomes=_compute_secondary_outcomes(filtered, protocol_model),
+            protocol_amendment_count=len(protocol_model.amendments),
             planned_days_defaulted=planned_days_defaulted,
             minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
+            actionability=ActionabilityClass.INSUFFICIENT_DATA,
+            harm_benefit_summary=_harm_benefit_summary(adverse_event_by_severity),
+            reliability_warnings=reliability_warnings,
+            dataset_snapshot=dataset_snapshot,
+            methods_appendix=methods_appendix,
             data_warnings=data_warnings,
             summary="Insufficient data for reliable inference.",
-            caveats=" ".join([*caveats_parts, *data_warnings]),
+            caveats=" ".join([*caveats_parts, *data_warnings, *reliability_warnings]),
         )
 
     mean_a = sum(scores_a) / len(scores_a)
     mean_b = sum(scores_b) / len(scores_b)
     raw_diff = mean_a - mean_b
-    difference = _round2(raw_diff)
-
-    ci_lower, ci_upper = _welch_ci(scores_a, scores_b, raw_diff)
+    welch_difference = _round2(raw_diff)
+    welch_ci_lower, welch_ci_upper = _welch_ci(scores_a, scores_b, raw_diff)
 
     cohens_d = _compute_cohens_d(scores_a, scores_b)
-    verdict = _compute_verdict(difference, ci_lower, ci_upper)
-    meets_minimum = abs(difference) >= protocol_model.minimum_meaningful_difference
+    relative_change_pct = _compute_relative_change(raw_diff, mean_b)
 
-    grade = _compute_grade(adherence_rate, days_logged_pct, early_stop, planned_days, observations)
+    grade = _compute_grade(adherence_rate, days_logged_pct, early_stop)
 
     block_breakdown = _compute_block_breakdown(filtered, protocol_model)
     paired_block = _compute_paired_block_estimate(block_breakdown)
+    use_paired_primary = (
+        paired_block is not None
+        and paired_block.n_pairs >= 2
+        and paired_block.difference is not None
+        and paired_block.ci_lower is not None
+        and paired_block.ci_upper is not None
+    )
+    if use_paired_primary:
+        assert paired_block is not None
+        assert paired_block.difference is not None
+        assert paired_block.ci_lower is not None
+        assert paired_block.ci_upper is not None
+        analysis_method = AnalysisMethod.PAIRED_BLOCKS
+        difference = paired_block.difference
+        ci_lower = paired_block.ci_lower
+        ci_upper = paired_block.ci_upper
+    else:
+        analysis_method = AnalysisMethod.WELCH
+        difference = welch_difference
+        ci_lower = welch_ci_lower
+        ci_upper = welch_ci_upper
+
+    primary_outcome = protocol_model.primary_outcome_measure()
+    verdict = _compute_directional_verdict(
+        difference,
+        ci_lower,
+        ci_upper,
+        primary_outcome.higher_is_better,
+    )
+    equivalence_margin = _equivalence_margin(protocol_model, difference)
+    supports_no_meaningful_difference = _supports_no_meaningful_difference(
+        ci_lower,
+        ci_upper,
+        equivalence_margin,
+    )
+    meets_minimum = abs(difference) >= equivalence_margin and not supports_no_meaningful_difference
+
     sensitivity = _compute_sensitivity(observations)
+    secondary_results = _compute_secondary_outcomes(filtered, protocol_model)
+    adverse_event_by_severity = _count_adverse_events(observations)
+    welch_sensitivity = SensitivityAnalysisResult(
+        name="welch_daily_mean",
+        method="Welch confidence interval on usable daily scores",
+        difference=welch_difference,
+        ci_lower=welch_ci_lower,
+        ci_upper=welch_ci_upper,
+        n_used_a=len(scores_a),
+        n_used_b=len(scores_b),
+        summary=(
+            "Daily-score Welch analysis retained as sensitivity; paired periods are primary "
+            "when complete pairs exist."
+        ),
+    )
+    sensitivity_analyses = [
+        welch_sensitivity,
+        *_extra_sensitivity_analyses(
+            observations,
+            protocol_model,
+            sensitivity,
+            block_breakdown,
+        ),
+    ]
 
     imbalance_warning = _check_imbalance(len(scores_a), len(scores_b))
     underpowered_warning = _check_underpowered(difference, ci_lower, ci_upper)
+    diagnostic_warnings = [
+        warning
+        for warning in [
+            imbalance_warning,
+            underpowered_warning,
+            *_time_trend_warnings(filtered),
+            *_carryover_warnings(filtered, protocol_model),
+            *reliability_warnings,
+        ]
+        if warning
+    ]
+    dataset_snapshot = _dataset_snapshot(
+        observations,
+        rows_used_primary=_rows_used_primary(filtered, protocol_model, analysis_method),
+        row_exclusions=row_exclusions,
+        denominator_policy=protocol_model.analysis_plan.denominator_policy,
+    )
+    methods_appendix = build_methods_appendix(
+        protocol_model,
+        observations,
+        sensitivity_methods=[analysis.name for analysis in sensitivity_analyses],
+        row_exclusion_reasons=[exclusion.reason for exclusion in row_exclusions],
+    )
+    actionability = _actionability(
+        grade,
+        verdict,
+        meets_minimum,
+        supports_no_meaningful_difference,
+        adverse_event_by_severity,
+        early_stop,
+    )
 
     summary = _generate_summary(
         mean_a,
@@ -112,43 +234,56 @@ def analyze(
         early_stop,
         cohens_d,
         verdict,
+        analysis_method,
+        supports_no_meaningful_difference,
     )
     caveats = _generate_caveats(
         early_stop,
         observations,
         late_backfill_excluded,
-        imbalance_warning,
-        underpowered_warning,
+        None,
+        None,
         planned_days_defaulted,
-        data_warnings,
+        [*data_warnings, *diagnostic_warnings],
     )
 
     return ResultCard(
         quality_grade=grade,
         verdict=verdict,
-        analysis_method=(
-            AnalysisMethod.PAIRED_BLOCKS
-            if paired_block is not None and paired_block.difference is not None
-            else AnalysisMethod.WELCH
-        ),
+        analysis_method=analysis_method,
         mean_a=_round2(mean_a),
         mean_b=_round2(mean_b),
         difference=difference,
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         cohens_d=cohens_d,
+        relative_change_pct=relative_change_pct,
         paired_block=paired_block,
+        welch_sensitivity=welch_sensitivity,
         n_used_a=len(scores_a),
         n_used_b=len(scores_b),
         adherence_rate=_round4(adherence_rate),
         days_logged_pct=_round4(days_logged_pct),
         early_stop=early_stop,
         late_backfill_excluded=late_backfill_excluded,
+        adverse_event_count=sum(adverse_event_by_severity.values()),
+        adverse_event_by_severity=adverse_event_by_severity,
         block_breakdown=block_breakdown,
         sensitivity_excluding_partial=sensitivity,
+        sensitivity_analyses=sensitivity_analyses,
+        secondary_outcomes=secondary_results,
+        protocol_amendment_count=len(protocol_model.amendments),
         planned_days_defaulted=planned_days_defaulted,
         minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
         meets_minimum_meaningful_effect=meets_minimum,
+        equivalence_margin=equivalence_margin,
+        supports_no_meaningful_difference=supports_no_meaningful_difference,
+        randomization_p_value=paired_block.randomization_p_value if paired_block else None,
+        actionability=actionability,
+        harm_benefit_summary=_harm_benefit_summary(adverse_event_by_severity),
+        reliability_warnings=reliability_warnings,
+        dataset_snapshot=dataset_snapshot,
+        methods_appendix=methods_appendix,
         data_warnings=data_warnings,
         summary=summary,
         caveats=caveats,
@@ -272,23 +407,83 @@ def validate_observations(
     return warnings
 
 
+def _row_exclusions(observations: list[Observation]) -> list[RowExclusion]:
+    exclusions: list[RowExclusion] = []
+    for observation in observations:
+        reason = ""
+        if observation.primary_score is None:
+            reason = "missing primary_score"
+        elif observation.adherence == "no":
+            reason = "adherence=no"
+        elif (
+            observation.is_backfill == "yes"
+            and observation.backfill_days is not None
+            and observation.backfill_days > 2
+        ):
+            reason = "late backfill beyond allowed window"
+        if reason:
+            exclusions.append(
+                RowExclusion(
+                    day_index=observation.day_index,
+                    date=observation.date,
+                    condition=observation.condition,
+                    reason=reason,
+                    safety_retained=True,
+                )
+            )
+    return exclusions
+
+
+def _dataset_snapshot(
+    observations: list[Observation],
+    rows_used_primary: int,
+    row_exclusions: list[RowExclusion],
+    denominator_policy: DenominatorPolicy,
+) -> AnalysisDatasetSnapshot:
+    return AnalysisDatasetSnapshot(
+        rows_total=len(observations),
+        rows_used_primary=rows_used_primary,
+        rows_used_safety=len(observations),
+        rows_excluded_primary=len(row_exclusions),
+        exclusions=row_exclusions,
+        denominator_policy=denominator_policy,
+    )
+
+
+def _rows_used_primary(
+    filtered: list[Observation],
+    protocol: AnalysisProtocol,
+    method: AnalysisMethod,
+) -> int:
+    scored = [obs for obs in filtered if obs.primary_score is not None]
+    if method != AnalysisMethod.PAIRED_BLOCKS:
+        return len(scored)
+
+    complete_pair_indexes: set[int] = set()
+    block_conditions: dict[int, set[str]] = {}
+    for obs in scored:
+        block_index = (obs.day_index - 1) // protocol.block_length_days
+        pair_index = block_index // 2
+        block_conditions.setdefault(pair_index, set()).add(obs.condition.value)
+    for pair_index, conditions in block_conditions.items():
+        if {"A", "B"}.issubset(conditions):
+            complete_pair_indexes.add(pair_index)
+    return sum(
+        1
+        for obs in scored
+        if ((obs.day_index - 1) // protocol.block_length_days) // 2 in complete_pair_indexes
+    )
+
+
 def _compute_grade(
     adherence_rate: float,
     days_logged_pct: float,
     early_stop: bool,
-    planned_days: int,
-    observations: list[Observation],
 ) -> QualityGrade:
     if adherence_rate < 0.50 or days_logged_pct < 0.50:
         return QualityGrade.D
-
     if early_stop:
-        if adherence_rate >= 0.70 and days_logged_pct >= 0.75:
-            return QualityGrade.C
-        if adherence_rate < 0.50 or days_logged_pct < 0.50:
-            return QualityGrade.D
         return QualityGrade.C
-
     if adherence_rate >= 0.85 and days_logged_pct >= 0.90:
         return QualityGrade.A
     if adherence_rate >= 0.70 and days_logged_pct >= 0.75:
@@ -315,6 +510,12 @@ def _compute_cohens_d(a: list[float], b: list[float]) -> float | None:
     return _round2((mean_a - mean_b) / pooled_sd)
 
 
+def _compute_relative_change(raw_diff: float, mean_b: float) -> float | None:
+    if mean_b == 0:
+        return None
+    return _round2((raw_diff / mean_b) * 100)
+
+
 # ---------------------------------------------------------------------------
 # Improvement #3: Explicit verdict
 # ---------------------------------------------------------------------------
@@ -326,6 +527,34 @@ def _compute_verdict(difference: float, ci_lower: float, ci_upper: float) -> Ver
     if difference > 0:
         return "favors_a"
     return "favors_b"
+
+
+def _compute_directional_verdict(
+    difference: float,
+    ci_lower: float,
+    ci_upper: float,
+    higher_is_better: bool,
+) -> Verdict:
+    if ci_lower <= 0 <= ci_upper:
+        return "inconclusive"
+    if higher_is_better:
+        return "favors_a" if difference > 0 else "favors_b"
+    return "favors_a" if difference < 0 else "favors_b"
+
+
+def _equivalence_margin(protocol: AnalysisProtocol, difference: float) -> float:
+    outcome = protocol.primary_outcome_measure()
+    if difference >= 0:
+        return outcome.minimum_meaningful_difference_positive
+    return outcome.minimum_meaningful_difference_negative
+
+
+def _supports_no_meaningful_difference(
+    ci_lower: float,
+    ci_upper: float,
+    equivalence_margin: float,
+) -> bool:
+    return ci_lower >= -equivalence_margin and ci_upper <= equivalence_margin
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +625,25 @@ def _compute_paired_block_estimate(
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         n_pairs=len(paired_diffs),
+        randomization_p_value=_exact_sign_randomization_p_value(paired_diffs),
     )
+
+
+def _exact_sign_randomization_p_value(paired_diffs: list[float]) -> float | None:
+    if not paired_diffs:
+        return None
+    observed = abs(sum(paired_diffs) / len(paired_diffs))
+    total = 2 ** len(paired_diffs)
+    if total > 1_048_576:
+        return None
+    extreme = 0
+    for mask in range(total):
+        signed_sum = 0.0
+        for index, value in enumerate(paired_diffs):
+            signed_sum += value if (mask >> index) & 1 else -value
+        if abs(signed_sum / len(paired_diffs)) >= observed - 1e-12:
+            extreme += 1
+    return _round4(extreme / total)
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +684,320 @@ def _compute_sensitivity(observations: list[Observation]) -> SensitivityResult |
         n_used_a=len(sa),
         n_used_b=len(sb),
     )
+
+
+def _extra_sensitivity_analyses(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+    partial_sensitivity: SensitivityResult | None,
+    block_breakdown: list[BlockBreakdown],
+) -> list[SensitivityAnalysisResult]:
+    results: list[SensitivityAnalysisResult] = []
+    if partial_sensitivity is not None:
+        results.append(
+            SensitivityAnalysisResult(
+                name="exclude_partial_adherence",
+                method="Welch confidence interval after excluding partial-adherence rows",
+                difference=partial_sensitivity.difference,
+                ci_lower=partial_sensitivity.ci_lower,
+                ci_upper=partial_sensitivity.ci_upper,
+                n_used_a=partial_sensitivity.n_used_a,
+                n_used_b=partial_sensitivity.n_used_b,
+                summary="Checks whether partial-adherence rows drive the result.",
+            )
+        )
+    missing = _missing_data_bounds(observations, protocol)
+    if missing is not None:
+        results.append(missing)
+    leave_one_pair = _leave_one_pair_out(block_breakdown)
+    if leave_one_pair is not None:
+        results.append(leave_one_pair)
+    return results
+
+
+def _missing_data_bounds(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+) -> SensitivityAnalysisResult | None:
+    observed_days = {obs.day_index for obs in observations if obs.primary_score is not None}
+    missing_days = [day for day in range(1, protocol.planned_days + 1) if day not in observed_days]
+    if not missing_days:
+        return None
+
+    scores_a = [
+        obs.primary_score
+        for obs in observations
+        if obs.condition == "A" and obs.primary_score is not None
+    ]
+    scores_b = [
+        obs.primary_score
+        for obs in observations
+        if obs.condition == "B" and obs.primary_score is not None
+    ]
+    if not scores_a or not scores_b:
+        return SensitivityAnalysisResult(
+            name="missing_data_bounds",
+            method="Conservative 0-10 missing-data bounds",
+            n_used_a=len(scores_a),
+            n_used_b=len(scores_b),
+            summary="Missing-data bounds require at least one observed score in each condition.",
+        )
+
+    missing_by_condition = _infer_missing_conditions(observations, protocol, missing_days)
+    miss_a = missing_by_condition.get("A", 0)
+    miss_b = missing_by_condition.get("B", 0)
+    lower = _round2(
+        (sum(scores_a) + 0 * miss_a) / (len(scores_a) + miss_a)
+        - (sum(scores_b) + 10 * miss_b) / (len(scores_b) + miss_b)
+    )
+    upper = _round2(
+        (sum(scores_a) + 10 * miss_a) / (len(scores_a) + miss_a)
+        - (sum(scores_b) + 0 * miss_b) / (len(scores_b) + miss_b)
+    )
+    return SensitivityAnalysisResult(
+        name="missing_data_bounds",
+        method="Conservative 0-10 missing-data bounds",
+        ci_lower=lower,
+        ci_upper=upper,
+        n_used_a=len(scores_a),
+        n_used_b=len(scores_b),
+        summary=(
+            "If missing days took the most unfavorable plausible 0-10 values by inferred "
+            f"condition, the A-minus-B difference could range from {lower:+.2f} to {upper:+.2f}."
+        ),
+    )
+
+
+def _infer_missing_conditions(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+    missing_days: list[int],
+) -> dict[str, int]:
+    block_conditions: dict[int, str] = {}
+    for obs in observations:
+        block_index = (obs.day_index - 1) // protocol.block_length_days
+        block_conditions.setdefault(block_index, obs.condition.value)
+    counts = {"A": 0, "B": 0}
+    for day in missing_days:
+        block_index = (day - 1) // protocol.block_length_days
+        condition = block_conditions.get(block_index)
+        if condition in counts:
+            counts[condition] += 1
+    return counts
+
+
+def _leave_one_pair_out(
+    block_breakdown: list[BlockBreakdown],
+) -> SensitivityAnalysisResult | None:
+    by_pair: dict[int, dict[str, float]] = {}
+    for block in block_breakdown:
+        by_pair.setdefault(block.block_index // 2, {})[block.condition] = block.mean
+    diffs = [pair["A"] - pair["B"] for pair in by_pair.values() if "A" in pair and "B" in pair]
+    if len(diffs) < 3:
+        return None
+    leave_one_estimates = [
+        _round2(sum(diff for idx, diff in enumerate(diffs) if idx != omitted) / (len(diffs) - 1))
+        for omitted in range(len(diffs))
+    ]
+    return SensitivityAnalysisResult(
+        name="leave_one_pair_out",
+        method="Paired-period estimate after omitting one A/B pair at a time",
+        ci_lower=min(leave_one_estimates),
+        ci_upper=max(leave_one_estimates),
+        n_used_a=len(diffs),
+        n_used_b=len(diffs),
+        summary=(
+            "Leave-one-pair estimates ranged from "
+            f"{min(leave_one_estimates):+.2f} to {max(leave_one_estimates):+.2f}."
+        ),
+    )
+
+
+def _compute_secondary_outcomes(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+) -> list[SecondaryOutcomeResult]:
+    results: list[SecondaryOutcomeResult] = []
+    for outcome in protocol.secondary_outcomes:
+        scores_a = [
+            obs.secondary_scores[outcome.id]
+            for obs in observations
+            if obs.condition == "A" and outcome.id in obs.secondary_scores
+        ]
+        scores_b = [
+            obs.secondary_scores[outcome.id]
+            for obs in observations
+            if obs.condition == "B" and outcome.id in obs.secondary_scores
+        ]
+        mean_a = sum(scores_a) / len(scores_a) if scores_a else None
+        mean_b = sum(scores_b) / len(scores_b) if scores_b else None
+        diff = mean_a - mean_b if mean_a is not None and mean_b is not None else None
+        summary = _secondary_summary(outcome.label, mean_a, mean_b, diff)
+        results.append(
+            SecondaryOutcomeResult(
+                outcome_id=outcome.id,
+                label=outcome.label,
+                mean_a=_round2(mean_a) if mean_a is not None else None,
+                mean_b=_round2(mean_b) if mean_b is not None else None,
+                difference=_round2(diff) if diff is not None else None,
+                n_used_a=len(scores_a),
+                n_used_b=len(scores_b),
+                summary=summary,
+            )
+        )
+    return results
+
+
+def _secondary_summary(
+    label: str,
+    mean_a: float | None,
+    mean_b: float | None,
+    diff: float | None,
+) -> str:
+    if mean_a is None or mean_b is None or diff is None:
+        return f"{label}: not enough secondary outcome data for both conditions."
+    direction = "higher on A" if diff > 0 else "higher on B" if diff < 0 else "similar"
+    return (
+        f"{label}: {direction} descriptively; secondary outcomes do not change the primary verdict."
+    )
+
+
+def _count_adverse_events(observations: list[Observation]) -> dict[str, int]:
+    counts = {severity.value: 0 for severity in AdverseEventSeverity}
+    for obs in observations:
+        if obs.adverse_event_severity is not None or obs.irritation == "yes":
+            severity = (
+                obs.adverse_event_severity.value
+                if obs.adverse_event_severity is not None
+                else AdverseEventSeverity.MILD.value
+            )
+            counts[severity] = counts.get(severity, 0) + 1
+    return {severity: count for severity, count in counts.items() if count > 0}
+
+
+def _harm_benefit_summary(adverse_event_by_severity: dict[str, int]) -> str:
+    if not adverse_event_by_severity:
+        return "No adverse events or discomfort were recorded."
+    parts = [f"{count} {severity}" for severity, count in sorted(adverse_event_by_severity.items())]
+    return "Adverse events or discomfort recorded: " + ", ".join(parts) + "."
+
+
+def _reliability_warnings(observations: list[Observation]) -> list[str]:
+    scores = [obs.primary_score for obs in observations if obs.primary_score is not None]
+    warnings: list[str] = []
+    if len(scores) < 4:
+        return warnings
+    distinct = len(set(scores))
+    if distinct <= 2:
+        warnings.append(
+            "Primary scores used only one or two distinct values; "
+            "range compression may hide signal."
+        )
+    if min(scores) == 0 or max(scores) == 10:
+        edge_count = sum(1 for score in scores if score in {0, 10})
+        if edge_count / len(scores) >= 0.25:
+            warnings.append(
+                "Many scores are at the 0 or 10 edge; ceiling/floor effects are possible."
+            )
+    repeated_runs = _longest_identical_run(scores)
+    if repeated_runs >= 5:
+        warnings.append(
+            f"{repeated_runs} identical scores appeared consecutively; check rating consistency."
+        )
+    return warnings
+
+
+def _longest_identical_run(values: list[float]) -> int:
+    longest = 0
+    current = 0
+    previous: float | None = None
+    for value in values:
+        if value == previous:
+            current += 1
+        else:
+            current = 1
+            previous = value
+        longest = max(longest, current)
+    return longest
+
+
+def _time_trend_warnings(observations: list[Observation]) -> list[str]:
+    scored = [obs for obs in observations if obs.primary_score is not None]
+    if len(scored) < 6:
+        return []
+    xs = [float(obs.day_index) for obs in scored]
+    ys = [float(obs.primary_score) for obs in scored if obs.primary_score is not None]
+    corr = _pearson(xs, ys)
+    if abs(corr) >= 0.55:
+        direction = "improved" if corr > 0 else "declined"
+        return [
+            f"Scores {direction} across calendar time; time trend may confound condition effects."
+        ]
+    return []
+
+
+def _pearson(xs: list[float], ys: list[float]) -> float:
+    if len(xs) != len(ys) or len(xs) < 2:
+        return 0.0
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True))
+    denom_x = math.sqrt(sum((x - mean_x) ** 2 for x in xs))
+    denom_y = math.sqrt(sum((y - mean_y) ** 2 for y in ys))
+    if denom_x == 0 or denom_y == 0:
+        return 0.0
+    return numerator / (denom_x * denom_y)
+
+
+def _carryover_warnings(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+) -> list[str]:
+    scored = [obs for obs in observations if obs.primary_score is not None]
+    if len(scored) < 8:
+        return []
+    first_after_switch: list[float] = []
+    later_in_block: list[float] = []
+    for obs in scored:
+        block_day = ((obs.day_index - 1) % protocol.block_length_days) + 1
+        assert obs.primary_score is not None
+        if block_day <= min(2, protocol.block_length_days):
+            first_after_switch.append(obs.primary_score)
+        else:
+            later_in_block.append(obs.primary_score)
+    if len(first_after_switch) < 2 or len(later_in_block) < 2:
+        return []
+    first_mean = sum(first_after_switch) / len(first_after_switch)
+    later_mean = sum(later_in_block) / len(later_in_block)
+    if abs(first_mean - later_mean) >= protocol.minimum_meaningful_difference:
+        return [
+            "Scores differ meaningfully between early-switch days and later block days; "
+            "carryover or adaptation is possible."
+        ]
+    return []
+
+
+def _actionability(
+    grade: QualityGrade,
+    verdict: Verdict,
+    meets_minimum: bool,
+    supports_no_meaningful_difference: bool,
+    adverse_event_by_severity: dict[str, int],
+    early_stop: bool,
+) -> ActionabilityClass:
+    if adverse_event_by_severity.get("severe", 0) > 0 or (
+        early_stop and sum(adverse_event_by_severity.values()) > 0
+    ):
+        return ActionabilityClass.STOP_FOR_SAFETY
+    if grade == QualityGrade.D:
+        return ActionabilityClass.INSUFFICIENT_DATA
+    if supports_no_meaningful_difference:
+        return ActionabilityClass.INCONCLUSIVE_NO_ACTION
+    if verdict == "inconclusive" or not meets_minimum:
+        return ActionabilityClass.REPEAT_WITH_BETTER_CONTROLS
+    if verdict == "favors_a":
+        return ActionabilityClass.KEEP_CURRENT
+    return ActionabilityClass.SWITCH
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +1048,8 @@ def _generate_summary(
     early_stop: bool,
     cohens_d: float | None,
     verdict: Verdict,
+    analysis_method: AnalysisMethod,
+    supports_no_meaningful_difference: bool,
 ) -> str:
     if grade == QualityGrade.D:
         return "Insufficient data for reliable inference."
@@ -504,11 +1067,19 @@ def _generate_summary(
         QualityGrade.D: "insufficient",
     }
 
+    method_text = (
+        "paired-period estimate"
+        if analysis_method == AnalysisMethod.PAIRED_BLOCKS
+        else "daily-score Welch estimate"
+    )
     parts = [
         f"Mean A: {mean_a:.2f}, Mean B: {mean_b:.2f}, difference: {difference:+.2f}.",
         f"95% CI: [{ci_lower:.2f}, {ci_upper:.2f}].",
+        f"Primary method: {method_text}.",
         f"Result {direction_text} with {grade_desc[grade]} evidence (Grade {grade.value}).",
     ]
+    if supports_no_meaningful_difference:
+        parts.append("The confidence interval fits within the meaningful-change margin.")
     if cohens_d is not None:
         size_label = _cohens_d_label(cohens_d)
         parts.append(f"Effect size: Cohen's d = {cohens_d:+.2f} ({size_label}).")

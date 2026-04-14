@@ -14,6 +14,8 @@ from pitgpt.core.models import (
     SuitabilityScore,
 )
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
+from pitgpt.core.safety import prefilter_query, validate_protocol_safety_text
+from pitgpt.core.settings import load_settings
 
 MAX_DOCUMENT_CHARS = 12_000
 MAX_TOTAL_DOCUMENT_CHARS = 40_000
@@ -34,8 +36,14 @@ async def ingest(
     documents: list[str],
     client: CompletionClient,
     model_id: str | None = None,
+    max_document_chars: int | None = None,
+    max_total_document_chars: int | None = None,
 ) -> IngestionResult:
-    _validate_inputs(query, documents)
+    _validate_inputs(query, documents, max_document_chars, max_total_document_chars)
+    prefiltered = prefilter_query(query, documents)
+    if prefiltered is not None:
+        return prefiltered
+
     user_parts = [f"User query: {query}"]
     for i, doc in enumerate(documents, 1):
         user_parts.append(f"\n--- Uploaded Document {i} ---\n{doc}")
@@ -47,6 +55,26 @@ async def ingest(
     protocol = None
     if protocol_data and isinstance(protocol_data, dict):
         protocol = Protocol.model_validate(protocol_data)
+        unsafe_reasons = validate_protocol_safety_text(protocol)
+        if unsafe_reasons:
+            reason = " ".join(dict.fromkeys(unsafe_reasons))
+            return IngestionResult(
+                decision=IngestionDecision.BLOCK,
+                safety_tier=SafetyTier.RED,
+                evidence_quality=EvidenceQuality(str(raw.get("evidence_quality", "weak"))),
+                evidence_conflict=bool(raw.get("evidence_conflict", False)),
+                risk_level=RiskLevel.HIGH,
+                risk_rationale=reason,
+                protocol=None,
+                block_reason=reason,
+                user_message=(
+                    "The generated protocol crossed PitGPT's safety boundary, so it was blocked "
+                    "before lock."
+                ),
+                policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
+                model=model_id or client.model,
+                response_validation_status="blocked_generated_protocol_safety_text",
+            )
 
     return IngestionResult(
         decision=IngestionDecision(str(raw["decision"])),
@@ -71,22 +99,30 @@ async def ingest(
     )
 
 
-def _validate_inputs(query: str, documents: list[str]) -> None:
+def _validate_inputs(
+    query: str,
+    documents: list[str],
+    max_document_chars: int | None = None,
+    max_total_document_chars: int | None = None,
+) -> None:
     if not query.strip():
         raise IngestionInputError("Query is required.")
+    settings = load_settings()
+    per_doc_limit = max_document_chars or settings.max_document_chars
+    total_limit = max_total_document_chars or settings.max_total_document_chars
     total_chars = 0
     for i, doc in enumerate(documents, 1):
         doc_len = len(doc)
         total_chars += doc_len
-        if doc_len > MAX_DOCUMENT_CHARS:
+        if doc_len > per_doc_limit:
             raise IngestionInputError(
                 f"Document {i} is too large ({doc_len:,} chars). "
-                f"Limit each source to {MAX_DOCUMENT_CHARS:,} chars."
+                f"Limit each source to {per_doc_limit:,} chars."
             )
-    if total_chars > MAX_TOTAL_DOCUMENT_CHARS:
+    if total_chars > total_limit:
         raise IngestionInputError(
             f"Sources are too large in total ({total_chars:,} chars). "
-            f"Limit all sources to {MAX_TOTAL_DOCUMENT_CHARS:,} chars."
+            f"Limit all sources to {total_limit:,} chars."
         )
 
 
