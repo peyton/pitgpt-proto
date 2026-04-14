@@ -25,7 +25,8 @@ docs/           operator, product, architecture, and scope docs
 3. `pitgpt.core.ingestion.ingest` builds the user message and sends it with
    `pitgpt.core.policy.SAFETY_POLICY_PROMPT`.
 4. `pitgpt.core.llm.LLMClient.complete` calls the provider, validates the
-   provider response shape, parses JSON, and returns a JSON object.
+   provider response shape, parses JSON, optionally writes/reads the local LLM
+   cache, and returns a JSON object.
 5. `pitgpt.core.ingestion.ingest` enforces source-size limits, validates the
    object into `IngestionResult`, and attaches policy/model metadata.
 
@@ -48,12 +49,18 @@ provider kind for later on-device model runtimes.
 
 1. CLI, API, TUI, web, tests, or benchmark code loads an `AnalysisProtocol` and a
    list of `Observation` records.
-2. `pitgpt.core.io.parse_observations_csv` centralizes CSV parsing.
-3. `pitgpt.core.models` validates conditions, adherence, backfill flags, and
-   0-10 primary scores.
+2. `pitgpt.core.io.parse_observations_csv` centralizes CSV parsing, including
+   adherence reasons, adverse-event fields, and secondary outcome score JSON.
+3. `pitgpt.core.models` validates two-condition keys, condition labels,
+   adherence, backfill flags, adverse-event fields, secondary outcomes, protocol
+   amendments, and 0-10 primary scores.
 4. `pitgpt.core.analysis.analyze` validates day/date shape, filters unusable
    rows, computes paired-period summaries plus Welch sensitivity, grades data
-   quality, and returns `ResultCard`.
+   quality, adds descriptive secondary outcome summaries, and returns
+   `ResultCard`.
+
+`pitgpt.core.validation.validate_trial` returns the shared `ValidationReport`
+used by CLI `pitgpt validate` and API `POST /validate`.
 
 ## Data Flow: Schedules And Templates
 
@@ -79,6 +86,7 @@ The Tauri command surface is:
 ```text
 get_templates
 generate_schedule
+plan_trial_reminders
 analyze
 analyze_example
 load_app_state
@@ -92,6 +100,11 @@ ingest_local
 Rust analysis mirrors Python benchmark behavior and uses `statrs` for
 Student-t quantiles. Native builds do not use a Python sidecar so the iOS app
 can run the offline core without a local Python process.
+
+Native reminder scheduling is permission-safe and opt-in. The React app uses
+the Tauri notification plugin to request permission only in Tauri runtimes; Rust
+plans deterministic reminder days through `plan_trial_reminders` so tests do not
+depend on real OS notification delivery.
 
 ## Boundaries
 

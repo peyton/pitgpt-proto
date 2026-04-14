@@ -1,0 +1,11 @@
+{
+  "quality_grade": "A",
+  "difference": 2.0,
+  "ci_lower": -1.04,
+  "ci_upper": 5.04,
+  "early_stop": false,
+  "relative_change_pct": 36.36,
+  "adverse_event_count": 1,
+  "secondary_outcome_count": 1,
+  "protocol_amendment_count": 1
+}

@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from pitgpt.core.models import (
     Adherence,
+    AdverseEventSeverity,
     AnalysisProtocol,
     Condition,
     EvidenceQuality,
@@ -12,13 +13,18 @@ from pitgpt.core.models import (
     IngestionDecision,
     IngestionResult,
     Observation,
+    OutcomeDefinition,
     Protocol,
+    ProtocolAmendment,
     QualityGrade,
     ResearchSource,
     ResultCard,
     RiskLevel,
     SafetyTier,
     SuitabilityScore,
+    TrialBundle,
+    TrialBundleManifest,
+    ValidationReport,
     YesNo,
 )
 
@@ -93,6 +99,30 @@ class TestProtocol:
         )
         assert p.outcome_anchor_mid.startswith("5 =")
         assert p.suggested_confounders == ["sleep duration", "travel"]
+
+    def test_condition_labels_secondary_outcomes_and_amendments(self):
+        p = Protocol(
+            duration_weeks=4,
+            block_length_days=7,
+            cadence="daily",
+            washout="None",
+            primary_outcome_question="Morning comfort (0-10)",
+            condition_a_label="Usual routine",
+            condition_b_label="New routine",
+            secondary_outcomes=[OutcomeDefinition(id="sleep", label="Sleep quality")],
+            amendments=[
+                ProtocolAmendment(
+                    date="2026-01-02",
+                    field="warnings",
+                    old_value="",
+                    new_value="Stop if discomfort persists.",
+                    reason="Clarified stop criteria before starting.",
+                )
+            ],
+        )
+        assert p.condition_a_label == "Usual routine"
+        assert p.secondary_outcomes[0].id == "sleep"
+        assert p.amendments[0].field == "warnings"
 
 
 class TestAnalysisProtocol:
@@ -221,12 +251,19 @@ class TestObservation:
             primary_score=7.5,
             irritation="yes",
             adherence="partial",
+            adherence_reason="Missed the evening step.",
             note="Traveled",
             is_backfill="yes",
             backfill_days=3,
+            adverse_event_severity="moderate",
+            adverse_event_description="Mild headache.",
+            secondary_scores={"sleep": 6},
         )
         assert o.primary_score == 7.5
         assert o.backfill_days == 3
+        assert o.adherence_reason.startswith("Missed")
+        assert o.adverse_event_severity == AdverseEventSeverity.MODERATE
+        assert o.secondary_scores == {"sleep": 6}
 
     def test_invalid_condition_rejected(self):
         with pytest.raises(ValidationError):
@@ -281,3 +318,49 @@ class TestResultCard:
         r2 = ResultCard(**data)
         assert r2.quality_grade == QualityGrade.B
         assert r2.ci_upper == 1.5
+
+    def test_result_card_additions_round_trip(self):
+        r = ResultCard(
+            quality_grade=QualityGrade.A,
+            relative_change_pct=20.0,
+            adverse_event_count=2,
+            adverse_event_by_severity={"mild": 1, "moderate": 1},
+            secondary_outcomes=[
+                {
+                    "outcome_id": "sleep",
+                    "label": "Sleep quality",
+                    "mean_a": 6,
+                    "mean_b": 5,
+                    "difference": 1,
+                    "n_used_a": 3,
+                    "n_used_b": 3,
+                    "summary": "Descriptive only.",
+                }
+            ],
+            protocol_amendment_count=1,
+        )
+        data = json.loads(r.model_dump_json())
+        assert data["relative_change_pct"] == 20.0
+        assert data["adverse_event_by_severity"]["moderate"] == 1
+        assert data["secondary_outcomes"][0]["outcome_id"] == "sleep"
+
+
+class TestValidationAndBundleModels:
+    def test_validation_report(self):
+        report = ValidationReport(
+            valid=True,
+            observation_count=2,
+            planned_days=14,
+            block_length_days=7,
+        )
+        assert report.valid is True
+        assert report.errors == []
+
+    def test_trial_bundle_manifest_defaults(self):
+        bundle = TrialBundle(
+            manifest=TrialBundleManifest(exported_at="2026-01-01T00:00:00Z"),
+            protocol=AnalysisProtocol(planned_days=14),
+            observations=[Observation(day_index=1, date="2026-01-01", condition=Condition.A)],
+        )
+        assert bundle.manifest.observations_file == "observations.csv"
+        assert bundle.observations[0].condition == Condition.A

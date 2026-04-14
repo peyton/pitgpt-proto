@@ -4,8 +4,9 @@ use serde_json::Value;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 
 use crate::models::{
-    Adherence, AnalysisMethod, AnalysisProtocol, BlockBreakdown, Condition, Observation,
-    PairedBlockEstimate, QualityGrade, ResultCard, SensitivityResult, Verdict, YesNo,
+    Adherence, AdverseEventSeverity, AnalysisMethod, AnalysisProtocol, BlockBreakdown, Condition,
+    Observation, PairedBlockEstimate, QualityGrade, ResultCard, SecondaryOutcomeResult,
+    SensitivityResult, Verdict, YesNo,
 };
 
 pub fn analyze_result(
@@ -69,6 +70,7 @@ pub fn analyze_result(
     };
 
     if scores_a.len() < 2 || scores_b.len() < 2 {
+        let adverse_event_by_severity = count_adverse_events(&observations);
         let mut caveats_parts =
             vec!["Too few usable observations to compute effect size.".to_string()];
         if planned_days_defaulted {
@@ -85,6 +87,7 @@ pub fn analyze_result(
             ci_lower: None,
             ci_upper: None,
             cohens_d: None,
+            relative_change_pct: None,
             paired_block: None,
             n_used_a: scores_a.len(),
             n_used_b: scores_b.len(),
@@ -92,8 +95,12 @@ pub fn analyze_result(
             days_logged_pct: round4(days_logged_pct),
             early_stop,
             late_backfill_excluded,
+            adverse_event_count: adverse_event_by_severity.values().copied().sum(),
+            adverse_event_by_severity,
             block_breakdown: vec![],
             sensitivity_excluding_partial: None,
+            secondary_outcomes: compute_secondary_outcomes(&filtered, &protocol),
+            protocol_amendment_count: protocol.amendments.len(),
             planned_days_defaulted,
             minimum_meaningful_difference: protocol.minimum_meaningful_difference,
             meets_minimum_meaningful_effect: None,
@@ -109,12 +116,15 @@ pub fn analyze_result(
     let difference = round2(raw_diff);
     let (ci_lower, ci_upper) = welch_ci(&scores_a, &scores_b, raw_diff);
     let cohens_d = compute_cohens_d(&scores_a, &scores_b);
+    let relative_change_pct = compute_relative_change(raw_diff, mean_b);
     let verdict = compute_verdict(difference, ci_lower, ci_upper);
     let meets_minimum = difference.abs() >= protocol.minimum_meaningful_difference;
     let grade = compute_grade(adherence_rate, days_logged_pct, early_stop);
     let block_breakdown = compute_block_breakdown(&filtered, &protocol);
     let paired_block = compute_paired_block_estimate(&block_breakdown);
     let sensitivity = compute_sensitivity(&observations);
+    let secondary_outcomes = compute_secondary_outcomes(&filtered, &protocol);
+    let adverse_event_by_severity = count_adverse_events(&observations);
     let imbalance_warning = check_imbalance(scores_a.len(), scores_b.len());
     let underpowered_warning = check_underpowered(difference, ci_lower, ci_upper);
     let summary = generate_summary(SummaryInputs {
@@ -156,6 +166,7 @@ pub fn analyze_result(
         ci_lower: Some(ci_lower),
         ci_upper: Some(ci_upper),
         cohens_d,
+        relative_change_pct,
         paired_block,
         n_used_a: scores_a.len(),
         n_used_b: scores_b.len(),
@@ -163,8 +174,12 @@ pub fn analyze_result(
         days_logged_pct: round4(days_logged_pct),
         early_stop,
         late_backfill_excluded,
+        adverse_event_count: adverse_event_by_severity.values().copied().sum(),
+        adverse_event_by_severity,
         block_breakdown,
         sensitivity_excluding_partial: sensitivity,
+        secondary_outcomes,
+        protocol_amendment_count: protocol.amendments.len(),
         planned_days_defaulted,
         minimum_meaningful_difference: protocol.minimum_meaningful_difference,
         meets_minimum_meaningful_effect: Some(meets_minimum),
@@ -347,6 +362,14 @@ fn compute_cohens_d(a: &[f64], b: &[f64]) -> Option<f64> {
     }
 }
 
+fn compute_relative_change(raw_diff: f64, mean_b: f64) -> Option<f64> {
+    if mean_b == 0.0 {
+        None
+    } else {
+        Some(round2(raw_diff / mean_b * 100.0))
+    }
+}
+
 fn compute_verdict(difference: f64, ci_lower: f64, ci_upper: f64) -> Verdict {
     if ci_lower <= 0.0 && ci_upper >= 0.0 {
         Verdict::Inconclusive
@@ -489,6 +512,77 @@ fn compute_sensitivity(observations: &[Observation]) -> Option<SensitivityResult
         n_used_a: scores_a.len(),
         n_used_b: scores_b.len(),
     })
+}
+
+fn compute_secondary_outcomes(
+    observations: &[Observation],
+    protocol: &AnalysisProtocol,
+) -> Vec<SecondaryOutcomeResult> {
+    protocol
+        .secondary_outcomes
+        .iter()
+        .map(|outcome| {
+            let scores_a: Vec<f64> = observations
+                .iter()
+                .filter(|obs| obs.condition == Condition::A)
+                .filter_map(|obs| obs.secondary_scores.get(&outcome.id).copied())
+                .collect();
+            let scores_b: Vec<f64> = observations
+                .iter()
+                .filter(|obs| obs.condition == Condition::B)
+                .filter_map(|obs| obs.secondary_scores.get(&outcome.id).copied())
+                .collect();
+            let mean_a = (!scores_a.is_empty()).then(|| mean(&scores_a));
+            let mean_b = (!scores_b.is_empty()).then(|| mean(&scores_b));
+            let difference = match (mean_a, mean_b) {
+                (Some(a), Some(b)) => Some(a - b),
+                _ => None,
+            };
+            SecondaryOutcomeResult {
+                outcome_id: outcome.id.clone(),
+                label: outcome.label.clone(),
+                mean_a: mean_a.map(round2),
+                mean_b: mean_b.map(round2),
+                difference: difference.map(round2),
+                n_used_a: scores_a.len(),
+                n_used_b: scores_b.len(),
+                summary: secondary_summary(&outcome.label, difference),
+            }
+        })
+        .collect()
+}
+
+fn secondary_summary(label: &str, difference: Option<f64>) -> String {
+    match difference {
+        Some(diff) if diff > 0.0 => format!(
+            "{label}: higher on A descriptively; secondary outcomes do not change the primary verdict."
+        ),
+        Some(diff) if diff < 0.0 => format!(
+            "{label}: higher on B descriptively; secondary outcomes do not change the primary verdict."
+        ),
+        Some(_) => format!(
+            "{label}: similar descriptively; secondary outcomes do not change the primary verdict."
+        ),
+        None => format!("{label}: not enough secondary outcome data for both conditions."),
+    }
+}
+
+fn count_adverse_events(observations: &[Observation]) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for obs in observations {
+        if obs.adverse_event_severity.is_some() || obs.irritation == YesNo::Yes {
+            let severity = match obs
+                .adverse_event_severity
+                .unwrap_or(AdverseEventSeverity::Mild)
+            {
+                AdverseEventSeverity::Mild => "mild",
+                AdverseEventSeverity::Moderate => "moderate",
+                AdverseEventSeverity::Severe => "severe",
+            };
+            *counts.entry(severity.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
 }
 
 fn check_imbalance(n_a: usize, n_b: usize) -> Option<String> {
@@ -724,8 +818,11 @@ mod tests {
             .map(|line| {
                 let values: Vec<&str> = line.split(',').collect();
                 let get = |name: &str| -> &str {
-                    let idx = headers.iter().position(|header| *header == name).unwrap();
-                    values.get(idx).copied().unwrap_or("")
+                    headers
+                        .iter()
+                        .position(|header| *header == name)
+                        .and_then(|idx| values.get(idx).copied())
+                        .unwrap_or("")
                 };
                 Observation {
                     day_index: get("day_index").parse().unwrap(),
@@ -746,6 +843,7 @@ mod tests {
                         "no" => Adherence::No,
                         _ => Adherence::Yes,
                     },
+                    adherence_reason: get("adherence_reason").to_string(),
                     note: get("note").to_string(),
                     is_backfill: if get("is_backfill") == "yes" {
                         YesNo::Yes
@@ -753,6 +851,14 @@ mod tests {
                         YesNo::No
                     },
                     backfill_days: get("backfill_days").parse().ok(),
+                    adverse_event_severity: match get("adverse_event_severity") {
+                        "mild" => Some(AdverseEventSeverity::Mild),
+                        "moderate" => Some(AdverseEventSeverity::Moderate),
+                        "severe" => Some(AdverseEventSeverity::Severe),
+                        _ => None,
+                    },
+                    adverse_event_description: get("adverse_event_description").to_string(),
+                    secondary_scores: BTreeMap::new(),
                 }
             })
             .collect()

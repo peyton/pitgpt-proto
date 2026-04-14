@@ -86,6 +86,18 @@ Validate files before analysis:
 pitgpt validate --protocol my-trial/protocol.json --observations my-trial/observations.csv
 ```
 
+Additional local operators:
+
+```sh
+pitgpt brief --protocol my-trial/protocol.json --observations my-trial/observations.csv
+pitgpt power --effect 0.5 --sigma 1.5
+pitgpt doctor --format json
+pitgpt trial status --protocol my-trial/protocol.json --observations my-trial/observations.csv
+pitgpt trial export --protocol my-trial/protocol.json --observations my-trial/observations.csv --output my-trial.zip
+pitgpt trial import --bundle my-trial.zip --output-dir restored-trial
+pitgpt trial amend --protocol my-trial/protocol.json --field warnings --value "Stop if discomfort persists." --reason "Clarified stop criteria before starting."
+```
+
 ## Run Research Ingestion
 
 Ingestion sends the query and document text to an OpenRouter-compatible model.
@@ -128,6 +140,16 @@ curl http://127.0.0.1:8000/providers
 discovered as local tools but may require an account or network access.
 `ios_on_device` is reserved for later on-device model runtime work.
 
+Optional LLM settings:
+
+- `PITGPT_LLM_REFERER` and `PITGPT_LLM_TITLE` add provider metadata headers.
+- `PITGPT_MAX_DOCUMENT_CHARS` and `PITGPT_MAX_TOTAL_DOCUMENT_CHARS` control
+  source-size guards. The CLI `ingest --no-limit` flag is for trusted local
+  runs only.
+- `PITGPT_LLM_CACHE=1` enables deterministic local response caching for
+  benchmark/development work. Normal API ingestion leaves caching off by
+  default.
+
 ## Start The API
 
 ```sh
@@ -155,6 +177,18 @@ curl -s http://127.0.0.1:8000/schedule \
   -H 'content-type: application/json' \
   -d '{"duration_weeks":6,"block_length_days":14,"seed":123}'
 ```
+
+Validate through the API:
+
+```sh
+curl -s http://127.0.0.1:8000/validate \
+  -H 'content-type: application/json' \
+  -d '{"protocol":{"planned_days":14,"block_length_days":7},"observations":[]}'
+```
+
+Set `PITGPT_API_TOKEN` to protect non-public API paths. `/health`, `/docs`,
+`/redoc`, and `/openapi.json` remain public; other calls need
+`Authorization: Bearer <token>`. The web Settings page stores the token locally.
 
 Analyze through the API:
 
@@ -234,6 +268,8 @@ Expected behavior without network access:
 - Persist and reload app state from app-local JSON.
 - Export JSON, CSV, and appointment brief files.
 - Analyze completed observations with deterministic Rust statistics.
+- Request native notification permission only when reminders are enabled, then
+  plan one reminder per trial day without requiring OS delivery in tests.
 
 Ollama is the only offline AI provider in this phase. If `ollama` is on `PATH`
 and `http://localhost:11434/api/tags` returns models, Settings offers those

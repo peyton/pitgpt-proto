@@ -1,10 +1,13 @@
 import asyncio
 import csv
+import io
 import json
+import math
 import sys
-from datetime import date
+import zipfile
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from pydantic import ValidationError
@@ -12,14 +15,24 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from pitgpt.core.analysis import analyze, validate_observations
+from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import IngestionInputError, ingest
 from pitgpt.core.io import load_analysis_protocol, parse_observations_csv, read_text_file
 from pitgpt.core.llm import LLMClient
-from pitgpt.core.models import Adherence, Condition, Observation, YesNo
+from pitgpt.core.models import (
+    Adherence,
+    AnalysisProtocol,
+    Condition,
+    Observation,
+    ProtocolAmendment,
+    TrialBundle,
+    TrialBundleManifest,
+    YesNo,
+)
 from pitgpt.core.schedule import generate_schedule, generate_seed
 from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import TRIAL_TEMPLATES
+from pitgpt.core.validation import validate_trial
 
 app = typer.Typer(name="pitgpt", help="PitGPT — personal clinical trial machine")
 benchmark_app = typer.Typer(name="benchmark", help="Run and report on benchmarks")
@@ -41,9 +54,13 @@ _OBSERVATION_HEADERS = [
     "primary_score",
     "irritation",
     "adherence",
+    "adherence_reason",
     "note",
     "is_backfill",
     "backfill_days",
+    "adverse_event_severity",
+    "adverse_event_description",
+    "secondary_scores",
 ]
 
 
@@ -98,6 +115,19 @@ def _protocol_duration_weeks(raw_protocol: dict) -> int:
     raise ValueError("protocol must include duration_weeks or planned_days")
 
 
+def _read_protocol_observations(
+    protocol: str | Path,
+    observations: str | Path,
+) -> tuple[AnalysisProtocol, list[Observation]]:
+    proto_data = load_analysis_protocol(protocol)
+    obs_data = parse_observations_csv(_read_file_or_exit(observations))
+    return proto_data, obs_data
+
+
+def _json_or_text(value: Any) -> str:
+    return json.dumps(value) if not isinstance(value, str) else value
+
+
 @app.command("ingest")
 def ingest_command(
     query: str = typer.Option(..., "--query", "-q", help="Natural language question"),
@@ -105,6 +135,9 @@ def ingest_command(
         [], "--doc", "-d", help="Document file paths"
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="Model identifier"),
+    no_limit: bool = typer.Option(
+        False, "--no-limit", help="Skip source character limits for trusted local runs"
+    ),
     format: str = FORMAT_OPTION,
 ):
     """Run research ingestion and produce a protocol or safety decision."""
@@ -113,7 +146,8 @@ def ingest_command(
     documents = [_read_file_or_exit(d) for d in doc]
     client = _get_client(model_id)
     try:
-        result = asyncio.run(ingest(query, documents, client, model_id))
+        limit = 10**12 if no_limit else None
+        result = asyncio.run(ingest(query, documents, client, model_id, limit, limit))
     except (IngestionInputError, KeyError, ValueError, ValidationError) as e:
         console.print(f"[red]Invalid ingestion response: {e}[/red]")
         raise typer.Exit(1) from e
@@ -169,24 +203,123 @@ def validate_command(
         console.print(f"[red]Invalid input: {e}[/red]")
         raise typer.Exit(1) from e
 
-    warnings = validate_observations(obs_data, proto_data) if observations else []
-    payload = {
-        "ok": True,
-        "planned_days": proto_data.planned_days,
-        "block_length_days": proto_data.block_length_days,
-        "observation_count": len(obs_data),
-        "warnings": warnings,
-    }
+    payload = validate_trial(proto_data, obs_data).model_dump(mode="json")
     if fmt == "json":
         console.print_json(json.dumps(payload))
         return
 
-    if warnings:
+    if payload["errors"]:
+        console.print("[red]Validation failed:[/red]")
+        for error in payload["errors"]:
+            console.print(f"  - {error}")
+        raise typer.Exit(1)
+    if payload["warnings"]:
         console.print("[yellow]Validation completed with warnings:[/yellow]")
-        for warning in warnings:
+        for warning in payload["warnings"]:
             console.print(f"  - {warning}")
     else:
         console.print("[green]Validation passed.[/green]")
+
+
+@app.command("brief")
+def brief_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
+    observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
+    format: str = FORMAT_OPTION,
+):
+    """Print a compact analysis brief for a trial."""
+    fmt = _detect_format(format)
+    proto_data, obs_data = _read_protocol_observations(protocol, observations)
+    result = analyze(proto_data, obs_data)
+    payload = {
+        "summary": result.summary,
+        "quality_grade": result.quality_grade.value,
+        "verdict": result.verdict,
+        "adherence_rate": result.adherence_rate,
+        "days_logged_pct": result.days_logged_pct,
+        "adverse_event_count": result.adverse_event_count,
+        "caveats": result.caveats,
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+    console.print(Panel(result.summary, title=f"Brief — Grade {result.quality_grade.value}"))
+    console.print(f"Verdict: {result.verdict}")
+    console.print(
+        f"Adherence: {result.adherence_rate:.1%}; days logged: {result.days_logged_pct:.1%}"
+    )
+    if result.adverse_event_count:
+        console.print(f"Discomfort logged: {result.adverse_event_count} day(s)")
+
+
+@app.command("power")
+def power_command(
+    effect: float = typer.Option(0.5, "--effect", "-e", min=0.01, help="Meaningful difference"),
+    sigma: float = typer.Option(1.5, "--sigma", "-s", min=0.01, help="Expected SD"),
+    alpha: float = typer.Option(0.05, "--alpha", min=0.001, max=0.5, help="Two-sided alpha"),
+    power: float = typer.Option(0.8, "--power", min=0.5, max=0.99, help="Target power"),
+    format: str = FORMAT_OPTION,
+):
+    """Estimate per-condition observations needed for a two-condition comparison."""
+    fmt = _detect_format(format)
+    z_alpha = _normal_quantile(1 - alpha / 2)
+    z_power = _normal_quantile(power)
+    per_condition = math.ceil(2 * ((z_alpha + z_power) * sigma / effect) ** 2)
+    payload = {
+        "effect": effect,
+        "sigma": sigma,
+        "alpha": alpha,
+        "power": power,
+        "observations_per_condition": per_condition,
+        "total_observations": per_condition * 2,
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+    console.print(
+        f"Estimated observations: {per_condition} per condition ({per_condition * 2} total)."
+    )
+
+
+@app.command("doctor")
+def doctor_command(format: str = FORMAT_OPTION):
+    """Check local PitGPT configuration and common prerequisites."""
+    fmt = _detect_format(format)
+    settings = load_settings()
+    checks = [
+        {"name": "OPENROUTER_API_KEY", "ok": bool(settings.openrouter_api_key)},
+        {
+            "name": "Default model",
+            "ok": bool(settings.default_model),
+            "detail": settings.default_model,
+        },
+        {
+            "name": "API token optional",
+            "ok": True,
+            "detail": "set" if settings.api_token else "not set",
+        },
+        {
+            "name": "LLM cache optional",
+            "ok": True,
+            "detail": "enabled" if settings.llm_cache_enabled else "disabled",
+        },
+        {
+            "name": "Document limits",
+            "ok": True,
+            "detail": f"{settings.max_document_chars}/{settings.max_total_document_chars} chars",
+        },
+    ]
+    payload = {
+        "ok": all(item["ok"] for item in checks if item["name"] != "OPENROUTER_API_KEY"),
+        "checks": checks,
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+    for item in checks:
+        marker = "[green]ok[/green]" if item["ok"] else "[yellow]missing[/yellow]"
+        detail = f" — {item.get('detail', '')}" if item.get("detail") else ""
+        console.print(f"{marker} {item['name']}{detail}")
 
 
 @demo_app.command("analyze")
@@ -296,6 +429,127 @@ def trial_randomize_command(
     console.print(table)
 
 
+@trial_app.command("status")
+def trial_status_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
+    observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
+    format: str = FORMAT_OPTION,
+):
+    """Show current day, adherence, and validation status for a local trial."""
+    fmt = _detect_format(format)
+    proto_data, obs_data = _read_protocol_observations(protocol, observations)
+    report = validate_trial(proto_data, obs_data)
+    max_day = max((item.day_index for item in obs_data), default=0)
+    adherence_yes = sum(1 for item in obs_data if item.adherence == Adherence.YES)
+    payload = {
+        "current_day": max_day,
+        "planned_days": proto_data.planned_days,
+        "observations": len(obs_data),
+        "adherence_rate_observed": adherence_yes / len(obs_data) if obs_data else 0,
+        "validation": report.model_dump(mode="json"),
+    }
+    if fmt == "json":
+        console.print_json(json.dumps(payload))
+        return
+    console.print(f"Day {max_day} of {proto_data.planned_days}; {len(obs_data)} observation(s).")
+    console.print(f"Observed adherence: {payload['adherence_rate_observed']:.1%}")
+    if report.warnings:
+        console.print("[yellow]Warnings:[/yellow]")
+        for warning in report.warnings:
+            console.print(f"  - {warning}")
+
+
+@trial_app.command("export")
+def trial_export_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
+    observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
+    output: str = typer.Option("pitgpt-trial-bundle.json", "--output", help="Output .json or .zip"),
+    include_result: bool = typer.Option(
+        True, "--include-result/--no-result", help="Include analysis result"
+    ),
+):
+    """Export protocol, observations, and optional result as one bundle."""
+    proto_data, obs_data = _read_protocol_observations(protocol, observations)
+    result = analyze(proto_data, obs_data) if include_result else None
+    exported_at = datetime.now(UTC).isoformat()
+    bundle = TrialBundle(
+        manifest=TrialBundleManifest(exported_at=exported_at),
+        protocol=proto_data,
+        observations=obs_data,
+        result=result,
+    )
+    output_path = Path(output)
+    if output_path.suffix == ".zip":
+        with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", bundle.manifest.model_dump_json(indent=2))
+            archive.writestr("protocol.json", bundle.protocol.model_dump_json(indent=2))
+            archive.writestr("observations.csv", _observations_to_csv(obs_data))
+            if result:
+                archive.writestr("result.json", result.model_dump_json(indent=2))
+    else:
+        output_path.write_text(bundle.model_dump_json(indent=2) + "\n")
+    console.print(f"[green]Bundle written to {output_path}[/green]")
+
+
+@trial_app.command("import")
+def trial_import_command(
+    bundle: str = typer.Option(..., "--bundle", "-b", help="Bundle .json or .zip"),
+    output_dir: str = typer.Option("pitgpt-trial-import", "--output-dir", "-o"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files"),
+):
+    """Import a bundle into protocol, observations, and result files."""
+    source = Path(bundle)
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    protocol_path = target / "protocol.json"
+    observations_path = target / "observations.csv"
+    result_path = target / "result.json"
+    for path in (protocol_path, observations_path, result_path):
+        if path.exists() and not force:
+            console.print(f"[red]{path} already exists. Pass --force to overwrite.[/red]")
+            raise typer.Exit(1)
+
+    if source.suffix == ".zip":
+        with zipfile.ZipFile(source) as archive:
+            protocol_path.write_text(archive.read("protocol.json").decode())
+            observations_path.write_text(archive.read("observations.csv").decode())
+            if "result.json" in archive.namelist():
+                result_path.write_text(archive.read("result.json").decode())
+    else:
+        parsed = TrialBundle.model_validate(json.loads(source.read_text()))
+        protocol_path.write_text(parsed.protocol.model_dump_json(indent=2) + "\n")
+        observations_path.write_text(_observations_to_csv(parsed.observations))
+        if parsed.result:
+            result_path.write_text(parsed.result.model_dump_json(indent=2) + "\n")
+    console.print(f"[green]Bundle imported to {target}[/green]")
+
+
+@trial_app.command("amend")
+def trial_amend_command(
+    protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file to update"),
+    field: str = typer.Option(..., "--field", help="Protocol field being amended"),
+    value: str = typer.Option(..., "--value", help="New value as text"),
+    reason: str = typer.Option(..., "--reason", help="Why the amendment was made"),
+):
+    """Append a protocol amendment record without changing analysis history."""
+    path = Path(protocol)
+    raw = json.loads(path.read_text())
+    amendments = raw.setdefault("amendments", [])
+    old_value = _json_or_text(raw.get(field, ""))
+    raw[field] = value
+    amendments.append(
+        ProtocolAmendment(
+            date=date.today().isoformat(),
+            field=field,
+            old_value=old_value,
+            new_value=value,
+            reason=reason,
+        ).model_dump(mode="json")
+    )
+    path.write_text(json.dumps(raw, indent=2) + "\n")
+    console.print(f"[green]Amendment added to {path}[/green]")
+
+
 @checkin_app.command("add")
 def checkin_add_command(
     observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
@@ -345,8 +599,71 @@ def checkin_add_command(
         writer = csv.DictWriter(f, fieldnames=_OBSERVATION_HEADERS)
         if write_header:
             writer.writeheader()
-        writer.writerow(observation.model_dump(mode="json"))
+        row = observation.model_dump(mode="json")
+        row["secondary_scores"] = json.dumps(row.get("secondary_scores", {}), sort_keys=True)
+        writer.writerow({header: row.get(header, "") for header in _OBSERVATION_HEADERS})
     console.print(f"[green]Observation appended to {path}[/green]")
+
+
+def _observations_to_csv(observations: list[Observation]) -> str:
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=_OBSERVATION_HEADERS)
+    writer.writeheader()
+    for observation in observations:
+        row = observation.model_dump(mode="json")
+        row["secondary_scores"] = json.dumps(row.get("secondary_scores", {}), sort_keys=True)
+        writer.writerow({header: row.get(header, "") for header in _OBSERVATION_HEADERS})
+    return output.getvalue()
+
+
+def _normal_quantile(p: float) -> float:
+    # Peter J. Acklam's approximation, accurate enough for planning estimates.
+    a = [
+        -3.969683028665376e01,
+        2.209460984245205e02,
+        -2.759285104469687e02,
+        1.383577518672690e02,
+        -3.066479806614716e01,
+        2.506628277459239e00,
+    ]
+    b = [
+        -5.447609879822406e01,
+        1.615858368580409e02,
+        -1.556989798598866e02,
+        6.680131188771972e01,
+        -1.328068155288572e01,
+    ]
+    c = [
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e00,
+        -2.549732539343734e00,
+        4.374664141464968e00,
+        2.938163982698783e00,
+    ]
+    d = [
+        7.784695709041462e-03,
+        3.224671290700398e-01,
+        2.445134137142996e00,
+        3.754408661907416e00,
+    ]
+    plow = 0.02425
+    phigh = 1 - plow
+    if p < plow:
+        q = math.sqrt(-2 * math.log(p))
+        numerator = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q) + c[5]
+        denominator = ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q) + 1
+        return numerator / denominator
+    if p > phigh:
+        q = math.sqrt(-2 * math.log(1 - p))
+        numerator = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q) + c[5]
+        denominator = ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q) + 1
+        return -numerator / denominator
+    q = p - 0.5
+    r = q * q
+    numerator = ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r) + a[5]) * q
+    denominator = (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r) + 1
+    return numerator / denominator
 
 
 @benchmark_app.command("run")

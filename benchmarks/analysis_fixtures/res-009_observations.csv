@@ -1,0 +1,5 @@
+day_index,date,condition,primary_score,irritation,adherence,adherence_reason,note,is_backfill,backfill_days,adverse_event_severity,adverse_event_description,secondary_scores
+1,2026-01-01,A,8,no,yes,,Baseline,no,,,,"{""fatigue"":3}"
+2,2026-01-02,A,7,no,yes,,Headache logged,no,,severe,Headache.,"{""fatigue"":4}"
+3,2026-01-03,B,5,no,yes,,Normal day,no,,,,"{""fatigue"":6}"
+4,2026-01-04,B,6,no,yes,,Normal day,no,,,,"{""fatigue"":5}"

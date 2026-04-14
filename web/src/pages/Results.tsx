@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -196,6 +197,40 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
         </div>
       </details>
 
+      {result.secondary_outcomes?.length ? (
+        <details className="advanced-disclosure fade-up fade-up-4" open>
+          <summary>Secondary outcomes</summary>
+          <div className="advanced-grid">
+            {result.secondary_outcomes.map((outcome) => (
+              <div key={outcome.outcome_id}>
+                <span>{outcome.label}</span>
+                <strong>{outcome.difference != null ? signed(outcome.difference) : "—"}</strong>
+                <small>A={outcome.mean_a?.toFixed(1) ?? "—"} · B={outcome.mean_b?.toFixed(1) ?? "—"}</small>
+              </div>
+            ))}
+          </div>
+          <ul className="advanced-list">
+            {result.secondary_outcomes.map((outcome) => <li key={outcome.outcome_id}>{outcome.summary}</li>)}
+          </ul>
+        </details>
+      ) : null}
+
+      {(trial.adverseEvents?.length ?? 0) > 0 && (
+        <details className="advanced-disclosure fade-up fade-up-4" open>
+          <summary>Adverse event review</summary>
+          <div className="caveats-card">
+            <p>{result.adverse_event_count ?? trial.adverseEvents?.length ?? 0} discomfort log{(result.adverse_event_count ?? 0) === 1 ? "" : "s"} recorded.</p>
+            <ul className="advanced-list">
+              {trial.adverseEvents?.map((event) => (
+                <li key={event.id}>
+                  {event.date} · day {event.day_index} · {event.severity}: {event.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
+
       <details className="advanced-disclosure fade-up fade-up-4" open>
         <summary>Appointment brief</summary>
         <div className="caveats-card">
@@ -341,8 +376,9 @@ function getVerdictHeadline(result: CompletedTrial["result"], trial: CompletedTr
 export function Results() {
   const { state } = useApp();
   const navigate = useNavigate();
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, state.completedResults.length - 1));
 
-  const latest = state.completedResults[state.completedResults.length - 1];
+  const latest = state.completedResults[selectedIndex] ?? state.completedResults[state.completedResults.length - 1];
 
   if (!latest) {
     return (
@@ -355,5 +391,26 @@ export function Results() {
     );
   }
 
-  return <ResultView completed={latest} />;
+  return (
+    <>
+      {state.completedResults.length > 1 && (
+        <div className="page-container wide result-history">
+          <h2>Result history</h2>
+          <div className="history-list">
+            {state.completedResults.map((completed, index) => (
+              <button
+                className={`history-item${index === selectedIndex ? " selected" : ""}`}
+                key={completed.trial.id}
+                onClick={() => setSelectedIndex(index)}
+              >
+                {completed.trial.conditionALabel} vs. {completed.trial.conditionBLabel}
+                <span>{completed.result.quality_grade} · {completed.result.verdict}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <ResultView completed={latest} />
+    </>
+  );
 }

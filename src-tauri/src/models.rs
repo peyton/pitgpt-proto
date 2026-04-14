@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Condition {
@@ -22,6 +23,47 @@ pub enum Adherence {
     No,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AdverseEventSeverity {
+    Mild,
+    Moderate,
+    Severe,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OutcomeDefinition {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub scale_min: f64,
+    #[serde(default = "default_scale_max")]
+    pub scale_max: f64,
+    #[serde(default = "default_true")]
+    pub higher_is_better: bool,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_scale_max() -> f64 {
+    10.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProtocolAmendment {
+    pub date: String,
+    pub field: String,
+    #[serde(default)]
+    pub old_value: String,
+    #[serde(default)]
+    pub new_value: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Protocol {
     pub template: Option<String>,
@@ -41,9 +83,17 @@ pub struct Protocol {
     #[serde(default)]
     pub outcome_anchor_high: String,
     #[serde(default)]
+    pub condition_a_label: String,
+    #[serde(default)]
+    pub condition_b_label: String,
+    #[serde(default)]
     pub condition_a_instructions: String,
     #[serde(default)]
     pub condition_b_instructions: String,
+    #[serde(default)]
+    pub secondary_outcomes: Vec<OutcomeDefinition>,
+    #[serde(default)]
+    pub amendments: Vec<ProtocolAmendment>,
     #[serde(default)]
     pub suggested_confounders: Vec<String>,
     #[serde(default)]
@@ -83,6 +133,14 @@ pub struct AnalysisProtocol {
     pub block_length_days: u32,
     #[serde(default = "default_minimum_meaningful_difference")]
     pub minimum_meaningful_difference: f64,
+    #[serde(default)]
+    pub condition_a_label: String,
+    #[serde(default)]
+    pub condition_b_label: String,
+    #[serde(default)]
+    pub secondary_outcomes: Vec<OutcomeDefinition>,
+    #[serde(default)]
+    pub amendments: Vec<ProtocolAmendment>,
 }
 
 impl AnalysisProtocol {
@@ -117,11 +175,19 @@ pub struct Observation {
     #[serde(default = "default_adherence_yes")]
     pub adherence: Adherence,
     #[serde(default)]
+    pub adherence_reason: String,
+    #[serde(default)]
     pub note: String,
     #[serde(default = "default_yes_no_no")]
     pub is_backfill: YesNo,
     #[serde(default)]
     pub backfill_days: Option<f64>,
+    #[serde(default)]
+    pub adverse_event_severity: Option<AdverseEventSeverity>,
+    #[serde(default)]
+    pub adverse_event_description: String,
+    #[serde(default)]
+    pub secondary_scores: BTreeMap<String, f64>,
 }
 
 fn default_yes_no_no() -> YesNo {
@@ -155,6 +221,18 @@ pub struct SensitivityResult {
     pub ci_upper: Option<f64>,
     pub n_used_a: usize,
     pub n_used_b: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecondaryOutcomeResult {
+    pub outcome_id: String,
+    pub label: String,
+    pub mean_a: Option<f64>,
+    pub mean_b: Option<f64>,
+    pub difference: Option<f64>,
+    pub n_used_a: usize,
+    pub n_used_b: usize,
+    pub summary: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +271,7 @@ pub struct ResultCard {
     pub ci_lower: Option<f64>,
     pub ci_upper: Option<f64>,
     pub cohens_d: Option<f64>,
+    pub relative_change_pct: Option<f64>,
     pub paired_block: Option<PairedBlockEstimate>,
     pub n_used_a: usize,
     pub n_used_b: usize,
@@ -200,8 +279,12 @@ pub struct ResultCard {
     pub days_logged_pct: f64,
     pub early_stop: bool,
     pub late_backfill_excluded: usize,
+    pub adverse_event_count: usize,
+    pub adverse_event_by_severity: BTreeMap<String, usize>,
     pub block_breakdown: Vec<BlockBreakdown>,
     pub sensitivity_excluding_partial: Option<SensitivityResult>,
+    pub secondary_outcomes: Vec<SecondaryOutcomeResult>,
+    pub protocol_amendment_count: usize,
     pub planned_days_defaulted: bool,
     pub minimum_meaningful_difference: f64,
     pub meets_minimum_meaningful_effect: Option<bool>,

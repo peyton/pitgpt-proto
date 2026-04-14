@@ -20,16 +20,34 @@ from textual.widgets import (
 from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import ingest
 from pitgpt.core.io import load_analysis_protocol, parse_observations_csv
-from pitgpt.core.llm import LLMClient
+from pitgpt.core.llm import LLMClient, OllamaClient
+from pitgpt.core.providers import ProviderKind, ProviderStatus, list_providers
 from pitgpt.core.settings import load_settings
 
-MODELS = [
-    ("Claude Sonnet 4", "anthropic/claude-sonnet-4"),
-    ("GPT-4o", "openai/gpt-4o"),
-    ("Gemini 2.5 Pro", "google/gemini-2.5-pro-preview-03-25"),
-    ("Llama 4 Maverick", "meta-llama/llama-4-maverick"),
-    ("DeepSeek V3", "deepseek/deepseek-chat-v3-0324"),
-]
+
+def model_options() -> list[tuple[str, str]]:
+    options: list[tuple[str, str]] = []
+    for provider in list_providers():
+        if provider.status != ProviderStatus.AVAILABLE:
+            continue
+        for model in provider.models:
+            options.append((f"{provider.label}: {model}", f"{provider.kind.value}:{model}"))
+    if options:
+        return options
+    settings = load_settings()
+    return [
+        (
+            "OpenRouter: configured default",
+            f"{ProviderKind.OPENROUTER.value}:{settings.default_model}",
+        )
+    ]
+
+
+def split_provider_model(value: object) -> tuple[ProviderKind, str]:
+    text = str(value)
+    provider_text, _, model = text.partition(":")
+    provider = ProviderKind(provider_text or ProviderKind.OPENROUTER.value)
+    return provider, model or load_settings().default_model
 
 
 class IngestPane(Vertical):
@@ -42,7 +60,8 @@ class IngestPane(Vertical):
         yield Label("Optional source text paths (one per line):", classes="field-label")
         yield TextArea(id="ingest-docs")
         yield Label("Model:", classes="field-label")
-        yield Select(MODELS, value=MODELS[0][1], id="ingest-model")
+        options = model_options()
+        yield Select(options, value=options[0][1], id="ingest-model")
         yield Button("Run Ingestion", variant="primary", id="ingest-run")
         yield Label("Result:", classes="field-label")
         yield VerticalScroll(
@@ -70,7 +89,8 @@ class AnalyzePane(Vertical):
 class BenchmarkPane(Vertical):
     def compose(self) -> ComposeResult:
         yield Label("Model:", classes="field-label")
-        yield Select(MODELS, value=MODELS[0][1], id="bench-model")
+        options = model_options()
+        yield Select(options, value=options[0][1], id="bench-model")
         with Horizontal(classes="bench-row"):
             with Vertical(classes="bench-field"):
                 yield Label("Track:", classes="field-label")
@@ -157,15 +177,14 @@ class PitGPTApp(App):
 
         query = self.query_one("#ingest-query", Input).value
         docs_text = self.query_one("#ingest-docs", TextArea).text
-        model = self.query_one("#ingest-model", Select).value
+        provider, model = split_provider_model(self.query_one("#ingest-model", Select).value)
 
         if not query.strip():
             result_widget.update("[red]Please enter a query[/red]")
             return
 
         settings = load_settings()
-        api_key = settings.openrouter_api_key
-        if not api_key:
+        if provider == ProviderKind.OPENROUTER and not settings.openrouter_api_key:
             result_widget.update(
                 "[red]OPENROUTER_API_KEY not set. Export it in your shell or mise.toml.[/red]"
             )
@@ -182,14 +201,22 @@ class PitGPTApp(App):
                     result_widget.update(f"[red]File not found: {line}[/red]")
                     return
 
-        client = LLMClient(
-            model=str(model),
-            api_key=api_key,
-            base_url=settings.llm_base_url,
-            temperature=settings.llm_temperature,
-            max_tokens=settings.llm_max_tokens,
-            timeout_s=settings.llm_timeout_s,
-        )
+        if provider == ProviderKind.OLLAMA:
+            client = OllamaClient(
+                model=str(model),
+                base_url=settings.ollama_base_url,
+                temperature=settings.llm_temperature,
+                timeout_s=settings.llm_timeout_s,
+            )
+        else:
+            client = LLMClient(
+                model=str(model),
+                api_key=settings.openrouter_api_key,
+                base_url=settings.llm_base_url,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+                timeout_s=settings.llm_timeout_s,
+            )
         try:
             r = asyncio.run(ingest(query, documents, client))
             result_widget.update(_format_ingestion(r))
@@ -240,7 +267,7 @@ class PitGPTApp(App):
         result_widget = self.query_one("#bench-result", Static)
         result_widget.update("[bold]Running benchmark...[/bold]")
 
-        model = self.query_one("#bench-model", Select).value
+        _provider, model = split_provider_model(self.query_one("#bench-model", Select).value)
         track = self.query_one("#bench-track", Select).value
         cases_text = self.query_one("#bench-cases", Input).value
 

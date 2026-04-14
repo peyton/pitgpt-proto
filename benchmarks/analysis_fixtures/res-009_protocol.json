@@ -1,0 +1,26 @@
+{
+  "planned_days": 4,
+  "block_length_days": 2,
+  "minimum_meaningful_difference": 0.5,
+  "condition_a_label": "Morning routine",
+  "condition_b_label": "Evening routine",
+  "secondary_outcomes": [
+    {
+      "id": "fatigue",
+      "label": "Fatigue",
+      "scale_min": 0,
+      "scale_max": 10,
+      "higher_is_better": false,
+      "description": "End-of-day fatigue rating"
+    }
+  ],
+  "amendments": [
+    {
+      "date": "2026-01-03",
+      "field": "minimum_meaningful_difference",
+      "old_value": "0.5",
+      "new_value": "0.5",
+      "reason": "Recorded locked analysis threshold before looking at results."
+    }
+  ]
+}

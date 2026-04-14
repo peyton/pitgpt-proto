@@ -6,6 +6,7 @@ from typing import Any
 from scipy import stats
 
 from pitgpt.core.models import (
+    AdverseEventSeverity,
     AnalysisMethod,
     AnalysisProtocol,
     BlockBreakdown,
@@ -13,6 +14,7 @@ from pitgpt.core.models import (
     PairedBlockEstimate,
     QualityGrade,
     ResultCard,
+    SecondaryOutcomeResult,
     SensitivityResult,
     Verdict,
 )
@@ -65,6 +67,7 @@ def analyze(
             caveats_parts.append(
                 f"planned_days missing from protocol; defaulted to {_PLANNED_DAYS_DEFAULT}."
             )
+        adverse_event_by_severity = _count_adverse_events(observations)
         return ResultCard(
             quality_grade=QualityGrade.D,
             verdict="insufficient_data",
@@ -75,6 +78,10 @@ def analyze(
             days_logged_pct=_round4(days_logged_pct),
             early_stop=early_stop,
             late_backfill_excluded=late_backfill_excluded,
+            adverse_event_count=sum(adverse_event_by_severity.values()),
+            adverse_event_by_severity=adverse_event_by_severity,
+            secondary_outcomes=_compute_secondary_outcomes(filtered, protocol_model),
+            protocol_amendment_count=len(protocol_model.amendments),
             planned_days_defaulted=planned_days_defaulted,
             minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
             data_warnings=data_warnings,
@@ -90,14 +97,17 @@ def analyze(
     ci_lower, ci_upper = _welch_ci(scores_a, scores_b, raw_diff)
 
     cohens_d = _compute_cohens_d(scores_a, scores_b)
+    relative_change_pct = _compute_relative_change(raw_diff, mean_b)
     verdict = _compute_verdict(difference, ci_lower, ci_upper)
     meets_minimum = abs(difference) >= protocol_model.minimum_meaningful_difference
 
-    grade = _compute_grade(adherence_rate, days_logged_pct, early_stop, planned_days, observations)
+    grade = _compute_grade(adherence_rate, days_logged_pct, early_stop)
 
     block_breakdown = _compute_block_breakdown(filtered, protocol_model)
     paired_block = _compute_paired_block_estimate(block_breakdown)
     sensitivity = _compute_sensitivity(observations)
+    secondary_results = _compute_secondary_outcomes(filtered, protocol_model)
+    adverse_event_by_severity = _count_adverse_events(observations)
 
     imbalance_warning = _check_imbalance(len(scores_a), len(scores_b))
     underpowered_warning = _check_underpowered(difference, ci_lower, ci_upper)
@@ -137,6 +147,7 @@ def analyze(
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         cohens_d=cohens_d,
+        relative_change_pct=relative_change_pct,
         paired_block=paired_block,
         n_used_a=len(scores_a),
         n_used_b=len(scores_b),
@@ -144,8 +155,12 @@ def analyze(
         days_logged_pct=_round4(days_logged_pct),
         early_stop=early_stop,
         late_backfill_excluded=late_backfill_excluded,
+        adverse_event_count=sum(adverse_event_by_severity.values()),
+        adverse_event_by_severity=adverse_event_by_severity,
         block_breakdown=block_breakdown,
         sensitivity_excluding_partial=sensitivity,
+        secondary_outcomes=secondary_results,
+        protocol_amendment_count=len(protocol_model.amendments),
         planned_days_defaulted=planned_days_defaulted,
         minimum_meaningful_difference=protocol_model.minimum_meaningful_difference,
         meets_minimum_meaningful_effect=meets_minimum,
@@ -276,19 +291,11 @@ def _compute_grade(
     adherence_rate: float,
     days_logged_pct: float,
     early_stop: bool,
-    planned_days: int,
-    observations: list[Observation],
 ) -> QualityGrade:
     if adherence_rate < 0.50 or days_logged_pct < 0.50:
         return QualityGrade.D
-
     if early_stop:
-        if adherence_rate >= 0.70 and days_logged_pct >= 0.75:
-            return QualityGrade.C
-        if adherence_rate < 0.50 or days_logged_pct < 0.50:
-            return QualityGrade.D
         return QualityGrade.C
-
     if adherence_rate >= 0.85 and days_logged_pct >= 0.90:
         return QualityGrade.A
     if adherence_rate >= 0.70 and days_logged_pct >= 0.75:
@@ -313,6 +320,12 @@ def _compute_cohens_d(a: list[float], b: list[float]) -> float | None:
     if pooled_sd == 0:
         return 0.0
     return _round2((mean_a - mean_b) / pooled_sd)
+
+
+def _compute_relative_change(raw_diff: float, mean_b: float) -> float | None:
+    if mean_b == 0:
+        return None
+    return _round2((raw_diff / mean_b) * 100)
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +450,68 @@ def _compute_sensitivity(observations: list[Observation]) -> SensitivityResult |
         n_used_a=len(sa),
         n_used_b=len(sb),
     )
+
+
+def _compute_secondary_outcomes(
+    observations: list[Observation],
+    protocol: AnalysisProtocol,
+) -> list[SecondaryOutcomeResult]:
+    results: list[SecondaryOutcomeResult] = []
+    for outcome in protocol.secondary_outcomes:
+        scores_a = [
+            obs.secondary_scores[outcome.id]
+            for obs in observations
+            if obs.condition == "A" and outcome.id in obs.secondary_scores
+        ]
+        scores_b = [
+            obs.secondary_scores[outcome.id]
+            for obs in observations
+            if obs.condition == "B" and outcome.id in obs.secondary_scores
+        ]
+        mean_a = sum(scores_a) / len(scores_a) if scores_a else None
+        mean_b = sum(scores_b) / len(scores_b) if scores_b else None
+        diff = mean_a - mean_b if mean_a is not None and mean_b is not None else None
+        summary = _secondary_summary(outcome.label, mean_a, mean_b, diff)
+        results.append(
+            SecondaryOutcomeResult(
+                outcome_id=outcome.id,
+                label=outcome.label,
+                mean_a=_round2(mean_a) if mean_a is not None else None,
+                mean_b=_round2(mean_b) if mean_b is not None else None,
+                difference=_round2(diff) if diff is not None else None,
+                n_used_a=len(scores_a),
+                n_used_b=len(scores_b),
+                summary=summary,
+            )
+        )
+    return results
+
+
+def _secondary_summary(
+    label: str,
+    mean_a: float | None,
+    mean_b: float | None,
+    diff: float | None,
+) -> str:
+    if mean_a is None or mean_b is None or diff is None:
+        return f"{label}: not enough secondary outcome data for both conditions."
+    direction = "higher on A" if diff > 0 else "higher on B" if diff < 0 else "similar"
+    return (
+        f"{label}: {direction} descriptively; secondary outcomes do not change the primary verdict."
+    )
+
+
+def _count_adverse_events(observations: list[Observation]) -> dict[str, int]:
+    counts = {severity.value: 0 for severity in AdverseEventSeverity}
+    for obs in observations:
+        if obs.adverse_event_severity is not None or obs.irritation == "yes":
+            severity = (
+                obs.adverse_event_severity.value
+                if obs.adverse_event_severity is not None
+                else AdverseEventSeverity.MILD.value
+            )
+            counts[severity] = counts.get(severity, 0) + 1
+    return {severity: count for severity, count in counts.items() if count > 0}
 
 
 # ---------------------------------------------------------------------------

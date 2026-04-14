@@ -11,7 +11,14 @@ from pathlib import Path
 
 from pitgpt.core.analysis import analyze, validate_observations
 from pitgpt.core.io import parse_observations_csv
-from pitgpt.core.models import AnalysisMethod, AnalysisProtocol, Observation, QualityGrade
+from pitgpt.core.models import (
+    AnalysisMethod,
+    AnalysisProtocol,
+    Observation,
+    OutcomeDefinition,
+    ProtocolAmendment,
+    QualityGrade,
+)
 
 FIXTURES_DIR = Path(__file__).parent.parent / "benchmarks" / "analysis_fixtures"
 EXPECTED_DIR = Path(__file__).parent.parent / "benchmarks" / "expected_outputs"
@@ -347,3 +354,71 @@ class TestProgressiveDisclosureAuditFixes:
         assert result.paired_block.n_pairs > 0
         assert result.minimum_meaningful_difference == proto.minimum_meaningful_difference
         assert result.meets_minimum_meaningful_effect is True
+
+
+class TestClaudeRankedContractAdditions:
+    def test_secondary_outcomes_adverse_events_and_relative_change_are_reported(self):
+        protocol = AnalysisProtocol(
+            planned_days=4,
+            block_length_days=2,
+            condition_a_label="Morning routine",
+            condition_b_label="Evening routine",
+            secondary_outcomes=[
+                OutcomeDefinition(id="fatigue", label="Fatigue", higher_is_better=False)
+            ],
+            amendments=[
+                ProtocolAmendment(
+                    date="2026-01-03",
+                    field="minimum_meaningful_difference",
+                    old_value="0.5",
+                    new_value="0.7",
+                    reason="Raised before looking at results.",
+                )
+            ],
+        )
+        observations = [
+            Observation(
+                day_index=1,
+                date="2026-01-01",
+                condition="A",
+                primary_score=8,
+                secondary_scores={"fatigue": 3},
+            ),
+            Observation(
+                day_index=2,
+                date="2026-01-02",
+                condition="A",
+                primary_score=7,
+                secondary_scores={"fatigue": 4},
+                adverse_event_severity="severe",
+                adverse_event_description="Headache.",
+            ),
+            Observation(
+                day_index=3,
+                date="2026-01-03",
+                condition="B",
+                primary_score=5,
+                secondary_scores={"fatigue": 6},
+            ),
+            Observation(
+                day_index=4,
+                date="2026-01-04",
+                condition="B",
+                primary_score=6,
+                secondary_scores={"fatigue": 5},
+            ),
+        ]
+
+        result = analyze(protocol, observations)
+
+        assert result.relative_change_pct == 36.36
+        assert result.adverse_event_count == 1
+        assert result.adverse_event_by_severity == {"severe": 1}
+        assert result.protocol_amendment_count == 1
+        assert len(result.secondary_outcomes) == 1
+        secondary = result.secondary_outcomes[0]
+        assert secondary.outcome_id == "fatigue"
+        assert secondary.mean_a == 3.5
+        assert secondary.mean_b == 5.5
+        assert secondary.difference == -2.0
+        assert "do not change the primary verdict" in secondary.summary

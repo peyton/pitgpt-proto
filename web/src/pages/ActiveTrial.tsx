@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyze } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { sendDueNativeReminder } from "../lib/nativeNotifications";
 import type { Trial } from "../lib/types";
 import {
   buildObservation,
@@ -31,6 +32,7 @@ export function ActiveTrial() {
   const [adherenceReason, setAdherenceReason] = useState("");
   const [adverseSeverity, setAdverseSeverity] = useState<"mild" | "moderate" | "severe">("mild");
   const [adverseDescription, setAdverseDescription] = useState("");
+  const [secondaryScores, setSecondaryScores] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillScore, setBackfillScore] = useState(5);
@@ -46,6 +48,11 @@ export function ActiveTrial() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+
+  useEffect(() => {
+    if (!trial || trial.status !== "active") return;
+    void sendDueNativeReminder(trial, state.settings.reminderEnabled, state.settings.reminderTime);
+  }, [trial, state.settings.reminderEnabled, state.settings.reminderTime]);
 
   if (!trial || trial.status !== "active") {
     return (
@@ -77,6 +84,7 @@ export function ActiveTrial() {
       adherenceReason,
       adverseEventSeverity: adverseSeverity,
       adverseEventDescription: adverseDescription,
+      secondaryScores,
     });
     addObservation(obs);
     setSubmitted(true);
@@ -84,6 +92,7 @@ export function ActiveTrial() {
     setNote("");
     setAdherenceReason("");
     setAdverseDescription("");
+    setSecondaryScores({});
   };
 
   const handleBackfill = () => {
@@ -331,6 +340,34 @@ export function ActiveTrial() {
                     aria-label="Discomfort description"
                   />
                 </div>
+              )}
+
+              {(trial.protocol.secondary_outcomes?.length ?? 0) > 0 && (
+                <details className="inline-disclosure">
+                  <summary>Secondary outcomes</summary>
+                  <div className="secondary-score-list">
+                    {trial.protocol.secondary_outcomes?.map((outcome) => (
+                      <label key={outcome.id} className="secondary-score-row">
+                        <span>{outcome.label}</span>
+                        <input
+                          type="number"
+                          className="time-input"
+                          min={outcome.scale_min}
+                          max={outcome.scale_max}
+                          value={secondaryScores[outcome.id] ?? ""}
+                          onChange={(event) => {
+                            const next = Number(event.target.value);
+                            setSecondaryScores((current) => ({
+                              ...current,
+                              [outcome.id]: Number.isFinite(next) ? next : 0,
+                            }));
+                          }}
+                          aria-label={`Secondary outcome ${outcome.label}`}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </details>
               )}
 
               <details className="inline-disclosure" open={noteOpen} onToggle={(event) => setNoteOpen(event.currentTarget.open)}>
