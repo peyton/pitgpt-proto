@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pitgpt.api.main import app
+from pitgpt.core.llm import LLMError
 from pitgpt.core.models import (
     EvidenceQuality,
     IngestionDecision,
@@ -66,6 +67,29 @@ class TestAnalyzeEndpoint:
         assert resp.status_code == 200
         assert resp.json()["quality_grade"] == "D"
 
+    def test_invalid_protocol_rejected(self, api_client):
+        resp = api_client.post(
+            "/analyze", json={"protocol": {"planned_days": 0}, "observations": []}
+        )
+        assert resp.status_code == 422
+
+    def test_invalid_observation_rejected(self, api_client):
+        resp = api_client.post(
+            "/analyze",
+            json={
+                "protocol": {"planned_days": 14},
+                "observations": [
+                    {
+                        "day_index": 1,
+                        "date": "2026-01-01",
+                        "condition": "C",
+                        "primary_score": 11,
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 422
+
 
 class TestIngestEndpoint:
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
@@ -92,3 +116,10 @@ class TestIngestEndpoint:
     def test_ingest_no_api_key(self, api_client):
         resp = api_client.post("/ingest", json={"query": "Test"})
         assert resp.status_code == 500
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest", side_effect=LLMError("malformed provider response"))
+    def test_ingest_llm_error(self, mock_ingest, api_client):
+        resp = api_client.post("/ingest", json={"query": "Test"})
+        assert resp.status_code == 502
+        assert "malformed provider response" in resp.json()["detail"]

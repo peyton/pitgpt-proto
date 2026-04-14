@@ -1,18 +1,19 @@
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import ingest
+from pitgpt.core.io import load_analysis_protocol, parse_observations_csv, read_text_file
 from pitgpt.core.llm import LLMClient
-from pitgpt.core.models import Observation
+from pitgpt.core.settings import load_settings
 
 app = typer.Typer(name="pitgpt", help="PitGPT — personal clinical trial machine")
 benchmark_app = typer.Typer(name="benchmark", help="Run and report on benchmarks")
@@ -31,30 +32,38 @@ def _detect_format(fmt: str) -> str:
     return "pretty"
 
 
-def _read_file(path: str) -> str:
-    p = Path(path)
-    if not p.exists():
+def _read_file_or_exit(path: str) -> str:
+    try:
+        return read_text_file(path)
+    except FileNotFoundError as e:
         console.print(f"[red]File not found: {path}[/red]")
-        raise typer.Exit(1)
-    return p.read_text()
+        raise typer.Exit(1) from e
 
 
 def _get_model(model: str | None) -> str:
     if model:
         return model
-    return os.environ.get("PITGPT_DEFAULT_MODEL", "anthropic/claude-sonnet-4")
+    return load_settings().default_model
 
 
-def _get_api_key() -> str:
-    key = os.environ.get("OPENROUTER_API_KEY", "")
+def _get_client(model_id: str) -> LLMClient:
+    settings = load_settings()
+    key = settings.openrouter_api_key
     if not key:
         console.print("[red]OPENROUTER_API_KEY not set[/red]")
         raise typer.Exit(1)
-    return key
+    return LLMClient(
+        model=model_id,
+        api_key=key,
+        base_url=settings.llm_base_url,
+        temperature=settings.llm_temperature,
+        max_tokens=settings.llm_max_tokens,
+        timeout_s=settings.llm_timeout_s,
+    )
 
 
-@app.command()
-def ingest_cmd(
+@app.command("ingest")
+def ingest_command(
     query: str = typer.Option(..., "--query", "-q", help="Natural language question"),
     doc: list[str] = typer.Option(  # noqa: B008
         [], "--doc", "-d", help="Document file paths"
@@ -65,9 +74,8 @@ def ingest_cmd(
     """Run research ingestion and produce a protocol or safety decision."""
     fmt = _detect_format(format)
     model_id = _get_model(model)
-    api_key = _get_api_key()
-    documents = [_read_file(d) for d in doc]
-    client = LLMClient(model=model_id, api_key=api_key)
+    documents = [_read_file_or_exit(d) for d in doc]
+    client = _get_client(model_id)
     result = asyncio.run(ingest(query, documents, client))
 
     if fmt == "json":
@@ -76,16 +84,23 @@ def ingest_cmd(
         _print_ingestion_result(result)
 
 
-@app.command()
-def analyze_cmd(
+@app.command("analyze")
+def analyze_command(
     protocol: str = typer.Option(..., "--protocol", "-p", help="Protocol JSON file"),
     observations: str = typer.Option(..., "--observations", "-o", help="Observations CSV file"),
     format: str = FORMAT_OPTION,
 ):
     """Analyze a completed trial and produce a result card."""
     fmt = _detect_format(format)
-    proto_data = json.loads(_read_file(protocol))
-    obs_data = _parse_observations_csv(_read_file(observations))
+    try:
+        proto_data = load_analysis_protocol(protocol)
+        obs_data = parse_observations_csv(_read_file_or_exit(observations))
+    except FileNotFoundError as e:
+        console.print(f"[red]File not found: {e.filename}[/red]")
+        raise typer.Exit(1) from e
+    except (json.JSONDecodeError, ValidationError) as e:
+        console.print(f"[red]Invalid input: {e}[/red]")
+        raise typer.Exit(1) from e
     result = analyze(proto_data, obs_data)
 
     if fmt == "json":
@@ -102,7 +117,7 @@ def benchmark_run(
     format: str = FORMAT_OPTION,
 ):
     """Run benchmark suite against a model."""
-    from benchmarks.runner import run_benchmark
+    from pitgpt.benchmarks.runner import run_benchmark
 
     fmt = _detect_format(format)
     case_filter = [c.strip() for c in cases.split(",")] if cases else None
@@ -120,7 +135,7 @@ def benchmark_report(
     output: str | None = typer.Option(None, "--output", "-o"),
 ):
     """Compare benchmark runs across models."""
-    from benchmarks.report import generate_report
+    from pitgpt.benchmarks.report import generate_report
 
     report = generate_report()
     if output:
@@ -128,32 +143,6 @@ def benchmark_report(
         console.print(f"[green]Report written to {output}[/green]")
     else:
         _print_benchmark_report(report)
-
-
-def _parse_observations_csv(content: str) -> list[Observation]:
-    lines = content.strip().split("\n")
-    if not lines:
-        return []
-    header = [h.strip() for h in lines[0].split(",")]
-    observations = []
-    for line in lines[1:]:
-        if not line.strip():
-            continue
-        values = [v.strip() for v in line.split(",")]
-        row = dict(zip(header, values, strict=False))
-        obs = Observation(
-            day_index=int(row.get("day_index", 0)),
-            date=row.get("date", ""),
-            condition=row.get("condition", ""),
-            primary_score=float(row["primary_score"]) if row.get("primary_score") else None,
-            irritation=row.get("irritation", "no"),
-            adherence=row.get("adherence", "yes"),
-            note=row.get("note", ""),
-            is_backfill=row.get("is_backfill", "no"),
-            backfill_days=float(row["backfill_days"]) if row.get("backfill_days") else None,
-        )
-        observations.append(obs)
-    return observations
 
 
 def _print_ingestion_result(result):

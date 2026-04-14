@@ -1,9 +1,12 @@
 import math
+from collections.abc import Mapping
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from scipy import stats
 
 from pitgpt.core.models import (
+    AnalysisProtocol,
     BlockBreakdown,
     Observation,
     QualityGrade,
@@ -15,9 +18,13 @@ from pitgpt.core.models import (
 _PLANNED_DAYS_DEFAULT = 42
 
 
-def analyze(protocol: dict, observations: list[Observation]) -> ResultCard:
-    planned_days_defaulted = "planned_days" not in protocol
-    planned_days = protocol.get("planned_days", _PLANNED_DAYS_DEFAULT)
+def analyze(
+    protocol: AnalysisProtocol | Mapping[str, Any],
+    observations: list[Observation],
+) -> ResultCard:
+    protocol_model = _coerce_protocol(protocol)
+    planned_days_defaulted = "planned_days" not in protocol_model.model_fields_set
+    planned_days = protocol_model.planned_days
 
     early_stop = _detect_early_stop(observations, planned_days)
     denom = (
@@ -87,7 +94,7 @@ def analyze(protocol: dict, observations: list[Observation]) -> ResultCard:
 
     grade = _compute_grade(adherence_rate, days_logged_pct, early_stop, planned_days, observations)
 
-    block_breakdown = _compute_block_breakdown(filtered, protocol)
+    block_breakdown = _compute_block_breakdown(filtered, protocol_model)
     sensitivity = _compute_sensitivity(observations)
 
     imbalance_warning = _check_imbalance(len(scores_a), len(scores_b))
@@ -134,6 +141,12 @@ def analyze(protocol: dict, observations: list[Observation]) -> ResultCard:
         summary=summary,
         caveats=caveats,
     )
+
+
+def _coerce_protocol(protocol: AnalysisProtocol | Mapping[str, Any]) -> AnalysisProtocol:
+    if isinstance(protocol, AnalysisProtocol):
+        return protocol
+    return AnalysisProtocol.model_validate(protocol)
 
 
 # ---------------------------------------------------------------------------
@@ -248,9 +261,9 @@ def _compute_verdict(difference: float, ci_lower: float, ci_upper: float) -> Ver
 
 def _compute_block_breakdown(
     filtered: list[Observation],
-    protocol: dict,
+    protocol: AnalysisProtocol,
 ) -> list[BlockBreakdown]:
-    block_length = protocol.get("block_length_days", 7)
+    block_length = protocol.block_length_days
     if block_length <= 0:
         return []
 
@@ -259,7 +272,7 @@ def _compute_block_breakdown(
         if o.primary_score is None:
             continue
         block_idx = (o.day_index - 1) // block_length
-        key = (block_idx, o.condition)
+        key = (block_idx, o.condition.value)
         blocks.setdefault(key, []).append(o.primary_score)
 
     result = []

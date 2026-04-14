@@ -1,16 +1,18 @@
 import json
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from benchmarks.scoring import score_analysis, score_ingestion
+from pitgpt.benchmarks.scoring import score_analysis, score_ingestion
 from pitgpt.core.analysis import analyze
 from pitgpt.core.ingestion import ingest
+from pitgpt.core.io import load_analysis_protocol, parse_observations_csv_file, read_text_file
 from pitgpt.core.llm import LLMClient
-from pitgpt.core.models import Observation
+from pitgpt.core.settings import load_settings
 
-BENCHMARKS_DIR = Path(__file__).parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BENCHMARKS_DIR = REPO_ROOT / "benchmarks"
 CASES_FILE = BENCHMARKS_DIR / "cases.jsonl"
 RUNS_DIR = BENCHMARKS_DIR / "runs"
 
@@ -41,50 +43,25 @@ def _load_documents(doc_string: str) -> list[str]:
             continue
         path = BENCHMARKS_DIR / part
         if path.exists():
-            docs.append(path.read_text())
+            docs.append(read_text_file(path))
         else:
             txt_path = Path(str(path) + ".txt")
             if txt_path.exists():
-                docs.append(txt_path.read_text())
+                docs.append(read_text_file(txt_path))
     return docs
 
 
-def _load_expected(case: dict) -> dict:
+def _load_expected(case: dict[str, Any]) -> dict[str, Any]:
     output_file = case.get("expected_output_file", "")
     if not output_file:
         return {}
     path = BENCHMARKS_DIR / output_file
     if not path.exists():
         return {}
-    return json.loads(path.read_text())
-
-
-def _parse_observations_csv(path: Path) -> list[Observation]:
-    content = path.read_text()
-    lines = content.strip().split("\n")
-    if not lines:
-        return []
-    header = [h.strip() for h in lines[0].split(",")]
-    observations = []
-    for line in lines[1:]:
-        if not line.strip():
-            continue
-        values = [v.strip() for v in line.split(",")]
-        row = dict(zip(header, values, strict=False))
-        observations.append(
-            Observation(
-                day_index=int(row.get("day_index", 0)),
-                date=row.get("date", ""),
-                condition=row.get("condition", ""),
-                primary_score=float(row["primary_score"]) if row.get("primary_score") else None,
-                irritation=row.get("irritation", "no"),
-                adherence=row.get("adherence", "yes"),
-                note=row.get("note", ""),
-                is_backfill=row.get("is_backfill", "no"),
-                backfill_days=float(row["backfill_days"]) if row.get("backfill_days") else None,
-            )
-        )
-    return observations
+    loaded = json.loads(read_text_file(path))
+    if not isinstance(loaded, dict):
+        return {}
+    return loaded
 
 
 async def _run_ingestion_case(case: dict, client: LLMClient) -> dict:
@@ -150,8 +127,8 @@ def _run_analysis_case(case: dict) -> dict:
             "details": "Missing files",
         }
 
-    protocol = json.loads(protocol_path.read_text())
-    observations = _parse_observations_csv(observations_path)
+    protocol = load_analysis_protocol(protocol_path)
+    observations = parse_observations_csv_file(observations_path)
 
     start = time.monotonic()
     result = analyze(protocol, observations)
@@ -198,8 +175,20 @@ async def run_benchmark(
     case_filter: list[str] | None = None,
 ) -> dict:
     cases = _load_cases(track, case_filter)
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    client = LLMClient(model=model, api_key=api_key) if api_key else None
+    settings = load_settings()
+    api_key = settings.openrouter_api_key
+    client = (
+        LLMClient(
+            model=model,
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+            timeout_s=settings.llm_timeout_s,
+        )
+        if api_key
+        else None
+    )
 
     results = []
     for case in cases:
