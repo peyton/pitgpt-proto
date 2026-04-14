@@ -1,4 +1,5 @@
 import type { CompletedTrial, IngestionResult, Observation, Protocol, ResultCard } from "./types";
+import { stableHash } from "./trial";
 
 export interface TrialTemplate {
   id: string;
@@ -29,6 +30,10 @@ export const trialTemplates: TrialTemplate[] = [
       primary_outcome_question: "Skin satisfaction (0-10)",
       screening: "",
       warnings: "",
+      outcome_anchor_low: "0 = lowest skin satisfaction you would normally log",
+      outcome_anchor_mid: "5 = typical skin satisfaction",
+      outcome_anchor_high: "10 = highest skin satisfaction you would normally log",
+      suggested_confounders: ["sleep", "stress", "weather", "cycle", "new products"],
     },
   },
   {
@@ -48,6 +53,10 @@ export const trialTemplates: TrialTemplate[] = [
       primary_outcome_question: "Midday appearance (0-10)",
       screening: "",
       warnings: "",
+      outcome_anchor_low: "0 = lowest midday appearance rating you would normally log",
+      outcome_anchor_mid: "5 = typical midday appearance",
+      outcome_anchor_high: "10 = best midday appearance",
+      suggested_confounders: ["sleep", "stress", "weather", "schedule changes"],
     },
   },
   {
@@ -67,6 +76,10 @@ export const trialTemplates: TrialTemplate[] = [
       primary_outcome_question: "Sleep quality (0-10)",
       screening: "",
       warnings: "Keep timing and environment as consistent as practical.",
+      outcome_anchor_low: "0 = worst sleep quality you would normally log",
+      outcome_anchor_mid: "5 = typical sleep quality",
+      outcome_anchor_high: "10 = best sleep quality you would normally log",
+      suggested_confounders: ["caffeine", "stress", "travel", "exercise timing", "room temperature"],
     },
   },
   {
@@ -86,6 +99,10 @@ export const trialTemplates: TrialTemplate[] = [
       primary_outcome_question: "Hair quality (0-10)",
       screening: "",
       warnings: "",
+      outcome_anchor_low: "0 = lowest hair quality rating you would normally log",
+      outcome_anchor_mid: "5 = typical hair quality",
+      outcome_anchor_high: "10 = best hair quality you would normally log",
+      suggested_confounders: ["wash timing", "weather", "heat styling", "new products"],
     },
   },
   {
@@ -105,6 +122,10 @@ export const trialTemplates: TrialTemplate[] = [
       primary_outcome_question: "Morning skin feel (0-10)",
       screening: "",
       warnings: "",
+      outcome_anchor_low: "0 = lowest morning skin feel you would normally log",
+      outcome_anchor_mid: "5 = typical morning skin feel",
+      outcome_anchor_high: "10 = best morning skin feel you would normally log",
+      suggested_confounders: ["sleep", "stress", "room humidity", "new products"],
     },
   },
   {
@@ -122,9 +143,13 @@ export const trialTemplates: TrialTemplate[] = [
       cadence: "daily",
       washout: "None",
       primary_outcome_question: "Personal outcome rating (0-10)",
-      screening: "Use this only for everyday routines or products.",
+      screening: "Use this for routines you can keep consistent and stop on your own.",
       warnings:
-        "This tool is for comparing everyday routines and products. Do not use it for medications, supplements, or medical-condition experiments.",
+        "Medication or supplement changes, urgent symptoms, invasive interventions, and diagnosis questions need a different path.",
+      outcome_anchor_low: "0 = lowest rating you would normally log",
+      outcome_anchor_mid: "5 = typical day for this outcome",
+      outcome_anchor_high: "10 = best rating you would normally log",
+      suggested_confounders: ["sleep", "stress", "travel", "schedule changes"],
     },
   },
 ];
@@ -135,6 +160,9 @@ export function templateToIngestionResult(template: TrialTemplate): IngestionRes
     safety_tier: "GREEN",
     evidence_quality: "novel",
     evidence_conflict: false,
+    risk_level: "low",
+    risk_rationale: "Low-risk routine template.",
+    clinician_note: "",
     protocol: template.protocol,
     block_reason: null,
     policy_version: "local-template",
@@ -142,6 +170,17 @@ export function templateToIngestionResult(template: TrialTemplate): IngestionRes
     response_validation_status: "template",
     source_summaries: [],
     claimed_outcomes: [],
+    sources: [],
+    extracted_claims: [],
+    suitability_scores: [
+      { dimension: "risk", score: 5, rationale: "Template is limited to reversible routines." },
+      { dimension: "reversibility", score: 5, rationale: "The routine can be stopped." },
+      { dimension: "urgency", score: 5, rationale: "Not intended for urgent symptoms." },
+      { dimension: "medication_interaction", score: 5, rationale: "No medication changes." },
+      { dimension: "measurability", score: 4, rationale: "Uses a daily 0-10 rating." },
+      { dimension: "burden", score: 4, rationale: "Designed for short daily check-ins." },
+    ],
+    next_steps: ["Edit condition labels, check the routine instructions, then lock the protocol."],
     user_message:
       "Template protocol ready. Edit the condition labels, then lock the protocol before collecting data.",
   };
@@ -170,6 +209,9 @@ export function createExampleCompletedTrial(result: ResultCard): CompletedTrial 
         safety_tier: "GREEN",
         evidence_quality: "moderate",
         evidence_conflict: false,
+        risk_level: "low",
+        risk_rationale: "Bundled example uses a low-risk routine comparison.",
+        clinician_note: "",
         protocol,
         block_reason: null,
         policy_version: "example",
@@ -180,6 +222,28 @@ export function createExampleCompletedTrial(result: ResultCard): CompletedTrial 
         user_message: "Example trial loaded from bundled data.",
       },
       seed: 101,
+      protocolHash: stableHash({ protocol, conditionALabel: "Routine A", conditionBLabel: "Routine B" }),
+      analysisPlanHash: stableHash({
+        planned_days: protocol.duration_weeks * 7,
+        block_length_days: protocol.block_length_days,
+        method: "paired_periods_plus_welch_sensitivity",
+        minimum_meaningful_difference: 0.5,
+      }),
+      events: [
+        {
+          id: "evt-example-lock",
+          type: "protocol_locked",
+          timestamp: "2026-01-01T08:00:00.000Z",
+          detail: "Locked bundled example protocol.",
+        },
+        {
+          id: "evt-example-analyzed",
+          type: "trial_analyzed",
+          timestamp: "2026-01-14T20:00:00.000Z",
+          detail: "Analyzed bundled example trial.",
+        },
+      ],
+      adverseEvents: [],
       schedule: [
         { period_index: 0, pair_index: 0, condition: "A", start_day: 1, end_day: 7, week: 0 },
         { period_index: 1, pair_index: 0, condition: "B", start_day: 8, end_day: 14, week: 1 },

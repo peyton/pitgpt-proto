@@ -18,7 +18,14 @@ Open the Vite URL and choose:
 - **Ask question**: needs `OPENROUTER_API_KEY` to generate a protocol.
 
 The web app stores trials in browser localStorage. Use Settings to export or
-restore JSON.
+restore JSON. Completed trials can also export an appointment brief Markdown
+file with protocol details, timeline notes, adverse events, uncertainty, and
+questions to bring to a clinician.
+
+PitGPT can frame low-risk routines that touch a condition when the plan is
+reversible, non-urgent, and does not change medications or replace care.
+Medication changes, urgent symptoms, invasive interventions, and diagnosis
+questions are blocked or routed away from self-serve protocol generation.
 
 ## CLI
 

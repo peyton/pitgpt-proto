@@ -14,13 +14,19 @@ The prototype exists to answer four practical questions:
 
 ## Safety Contract
 
-PitGPT does not diagnose, treat, cure, or recommend medical actions. It blocks
-prescription medication experiments, supplement or ingestible experiments,
-disease-management claims, invasive devices, medication stopping experiments,
-and anything requiring medical supervision.
+PitGPT does not diagnose, prescribe, cure, or replace clinical care. It can help
+structure low-risk routines that touch a condition when the routine is
+reversible, non-urgent, does not change medications or supplements, and is meant
+to help the user learn patterns they can discuss with a clinician.
 
-The current safe wedge is cosmetic, reversible, non-disease experimentation such
-as moisturizer comparisons, haircare routines, and low-risk routine timing.
+PitGPT blocks prescription medication dose/timing/start/stop/switch changes,
+urgent or rapidly worsening symptoms, diagnosis requests, invasive devices,
+high-risk supplement or ingestible changes, and anything requiring medical
+supervision.
+
+The current safe wedge is low-risk, reversible personal experimentation such as
+cosmetic product comparisons, haircare routines, sleep timing, movement timing,
+tracking routines, environmental adjustments, and similar routines.
 
 ## Relationship To The PRD
 

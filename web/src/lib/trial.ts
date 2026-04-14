@@ -1,4 +1,4 @@
-import type { Assignment, IngestionResult, Observation, Protocol, Trial } from "./types";
+import type { AdverseEvent, Assignment, IngestionResult, Observation, Protocol, Trial, TrialEvent } from "./types";
 import { generateSchedule, generateSeed } from "./randomize";
 
 export function createTrial(
@@ -13,6 +13,13 @@ export function createTrial(
     protocol.block_length_days,
     seed,
   );
+  const protocolHash = stableHash({ protocol, conditionALabel, conditionBLabel });
+  const analysisPlanHash = stableHash({
+    planned_days: protocol.duration_weeks * 7,
+    block_length_days: protocol.block_length_days,
+    method: "paired_periods_plus_welch_sensitivity",
+    minimum_meaningful_difference: 0.5,
+  });
 
   return {
     id: crypto.randomUUID(),
@@ -23,6 +30,13 @@ export function createTrial(
     ingestion,
     schedule,
     seed,
+    protocolHash,
+    analysisPlanHash,
+    events: [
+      event("protocol_locked", `Locked ${protocol.template ?? "custom"} protocol.`),
+      ...sourceEvents(ingestion),
+    ],
+    adverseEvents: [],
     observations: [],
     status: "active",
   };
@@ -133,9 +147,14 @@ export function buildObservation(
   irritation: "yes" | "no",
   adherence: "yes" | "no" | "partial",
   note: string,
+  options: {
+    adherenceReason?: string;
+    adverseEventSeverity?: "mild" | "moderate" | "severe";
+    adverseEventDescription?: string;
+  } = {},
 ): Observation {
   const today = toLocalDateInput(new Date());
-  return buildObservationForDate(trial, today, score, irritation, adherence, note);
+  return buildObservationForDate(trial, today, score, irritation, adherence, note, options);
 }
 
 export function buildObservationForDate(
@@ -145,6 +164,11 @@ export function buildObservationForDate(
   irritation: "yes" | "no",
   adherence: "yes" | "no" | "partial",
   note: string,
+  options: {
+    adherenceReason?: string;
+    adverseEventSeverity?: "mild" | "moderate" | "severe";
+    adverseEventDescription?: string;
+  } = {},
 ): Observation {
   const date = parseDateInput(dateStr);
   const dayIndex = getTrialDayIndexForDate(trial, date);
@@ -158,9 +182,13 @@ export function buildObservationForDate(
     primary_score: score,
     irritation,
     adherence,
+    adherence_reason: options.adherenceReason?.trim() || undefined,
     note,
     is_backfill: backfillDays > 0 ? "yes" : "no",
     backfill_days: backfillDays > 0 ? backfillDays : null,
+    adverse_event_severity: irritation === "yes" ? (options.adverseEventSeverity ?? "mild") : undefined,
+    adverse_event_description:
+      irritation === "yes" ? (options.adverseEventDescription?.trim() || note || "Logged during check-in.") : undefined,
   };
 }
 
@@ -169,7 +197,32 @@ export function appendObservationIfNew(trial: Trial, observation: Observation): 
     (item) => item.day_index === observation.day_index || item.date === observation.date,
   );
   if (duplicate) return trial;
-  return { ...trial, observations: [...trial.observations, observation] };
+  const nextEvents = [
+    ...(trial.events ?? []),
+    event(
+      observation.is_backfill === "yes" ? "backfill_submitted" : "checkin_submitted",
+      `Logged day ${observation.day_index} for Condition ${observation.condition}.`,
+    ),
+  ];
+  const adverseEvent = observationToAdverseEvent(observation);
+  if (adverseEvent) {
+    nextEvents.push(
+      event(
+        "adverse_event_logged",
+        `Logged ${adverseEvent.severity} adverse event on day ${adverseEvent.day_index}.`,
+      ),
+    );
+  }
+  return {
+    ...trial,
+    observations: [...trial.observations, observation],
+    adverseEvents: adverseEvent ? [...(trial.adverseEvents ?? []), adverseEvent] : (trial.adverseEvents ?? []),
+    events: nextEvents,
+  };
+}
+
+export function addTrialEvent(trial: Trial, type: TrialEvent["type"], detail: string): Trial {
+  return { ...trial, events: [...(trial.events ?? []), event(type, detail)] };
 }
 
 function parseDateInput(dateStr: string): Date {
@@ -210,7 +263,46 @@ export function computeTrialAuditHash(trial: Trial): string {
     seed: trial.seed,
     conditionALabel: trial.conditionALabel,
     conditionBLabel: trial.conditionBLabel,
+    protocolHash: trial.protocolHash,
+    analysisPlanHash: trial.analysisPlanHash,
   });
+  return stableHash(payload);
+}
+
+function sourceEvents(ingestion: IngestionResult): TrialEvent[] {
+  const sources = ingestion.sources ?? [];
+  return sources.map((source) =>
+    event("source_added", `Attached ${source.title || source.source_id || "source"}.`),
+  );
+}
+
+function observationToAdverseEvent(observation: Observation): AdverseEvent | null {
+  if (observation.irritation !== "yes") return null;
+  return {
+    id: id("ae"),
+    date: observation.date,
+    day_index: observation.day_index,
+    condition: observation.condition,
+    severity: observation.adverse_event_severity ?? "mild",
+    description: observation.adverse_event_description?.trim() || "Logged during check-in.",
+  };
+}
+
+function event(type: TrialEvent["type"], detail: string): TrialEvent {
+  return {
+    id: id("evt"),
+    type,
+    timestamp: new Date().toISOString(),
+    detail,
+  };
+}
+
+function id(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`;
+}
+
+export function stableHash(value: unknown): string {
+  const payload = typeof value === "string" ? value : JSON.stringify(value);
   let hash = 2166136261;
   for (let index = 0; index < payload.length; index++) {
     hash ^= payload.charCodeAt(index);

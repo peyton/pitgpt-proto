@@ -111,6 +111,16 @@ needed by `hk.pkl`, hook steps, or workflow commands must be listed in
 `mise.toml`. The `check` job runs hk's `zizmor` step through the raw hook
 command, so it must export `GITHUB_TOKEN` rather than only `GH_TOKEN`.
 
+## Product Safety Direction
+
+PitGPT uses risk-stratified personal experimentation. Low-risk routines that
+touch a condition can be allowed when the routine is reversible, non-urgent,
+does not change medications or supplements, and helps the user organize
+observations for a clinician conversation. Keep doctor language concise and
+respectful. Block medication changes, urgent symptoms, diagnosis requests,
+invasive interventions, high-risk ingestible changes, and anything that replaces
+clinical care.
+
 ## Environment Variables
 
 - `OPENROUTER_API_KEY` — Required for LLM calls (prompted interactively if missing)

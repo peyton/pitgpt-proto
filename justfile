@@ -121,20 +121,24 @@ doctor:
 web-install:
     {{mise}} npm --prefix web ci
 
+_web-deps:
+    #!/usr/bin/env bash
+    test -d web/node_modules || (echo "web/node_modules missing; run just setup or just web-install" >&2; exit 1)
+
 # Start web frontend dev server
-web-dev:
+web-dev: _web-deps
     {{mise}} npm --prefix web run dev
 
 # Build web frontend for production
-web-build:
+web-build: _web-deps
     {{mise}} npm --prefix web run build
 
 # Run web unit tests
-web-unit:
+web-unit: _web-deps
     {{mise}} npm --prefix web run test:unit
 
 # Run web browser integration tests
-web-test:
+web-test: _web-deps
     {{mise}} npm --prefix web run test:e2e
 
 # Regenerate bin/mise bootstrap script

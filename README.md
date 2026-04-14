@@ -4,9 +4,12 @@ PitGPT is a data-only personal clinical trial engine prototype. It turns a
 question plus optional research notes into a structured personal A/B experiment,
 then analyzes completed observations with deterministic statistics.
 
-PitGPT is not a doctor, diagnosis tool, treatment recommender, symptom tracker,
-or product ranking engine. The current prototype is built for low-risk personal
-experiments and safety-gated research ingestion.
+PitGPT is not a doctor, diagnosis tool, medication planner, or product ranking
+engine. The current prototype is built for low-risk personal experiments and
+safety-gated research ingestion. Low-risk routines that touch a condition can be
+framed when they are reversible, non-urgent, and do not change medications or
+replace care, with concise language for bringing the plan or result to a
+clinician.
 
 ## What You Can Run
 

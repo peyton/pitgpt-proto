@@ -103,10 +103,13 @@ TRIAL_TEMPLATES: tuple[TrialTemplate, ...] = (
             cadence="daily",
             washout="None",
             primary_outcome_question="Personal outcome rating (0-10)",
-            screening="Use this only for everyday routines or products.",
+            screening=(
+                "Use this for low-risk routines, tracking, environmental changes, or products."
+            ),
             warnings=(
-                "This tool is for comparing everyday routines and products. Do not use it for "
-                "medications, supplements, or medical-condition experiments."
+                "Medication or supplement changes, urgent symptoms, invasive interventions, and "
+                "diagnosis questions need a different path. Do not change medications or replace "
+                "care."
             ),
         ),
     ),
