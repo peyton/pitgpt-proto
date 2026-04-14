@@ -8,6 +8,7 @@ uv_sync := "./bin/mise exec -- uv sync --python 3.12"
 # Bootstrap mise and install all tools + dependencies
 setup:
     ./bin/mise install
+    just rust-components
     {{uv_sync}}
     {{mise}} npm --prefix web ci
     {{mise}} npm --prefix web run test:e2e:install
@@ -95,9 +96,20 @@ ingest query model="":
 analyze protocol observations:
     {{uv_run}} pitgpt analyze --protocol {{protocol}} --observations {{observations}}
 
-# Run CI checks locally via act
+# Install Rust components needed by the Tauri lint checks
+rust-components:
+    {{mise}} rustup component add rustfmt clippy
+
+# Run the main CI checks locally without requiring Docker or GitHub-hosted macOS runners
 ci:
-    {{mise}} act -j ci
+    just lint
+    just check
+    just test
+    just web-build
+    just web-unit
+    just web-test
+    just tauri-test
+    just audit
 
 # Audit Python environment and web dependencies
 audit:
@@ -112,6 +124,7 @@ doctor:
     ./bin/mise exec -- uv --version
     ./bin/mise exec -- npm --prefix web --version
     ./bin/mise exec -- cargo --version
+    ./bin/mise exec -- rustup component list --installed | grep -E '^(rustfmt|clippy)-'
     ./bin/mise exec -- npm --prefix web exec tauri -- --version
     test -d web/node_modules || (echo "web/node_modules missing; run just web-install" >&2; exit 1)
     if command -v xcodebuild >/dev/null 2>&1; then
@@ -179,19 +192,24 @@ tauri-build: _web-deps
 
 # Start the iOS Tauri app on a simulator
 tauri-ios-dev: _web-deps _ios-deps
+    if [ ! -d src-tauri/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
+    scripts/tauri-ios-npm-shim.sh
     {{mise}} npm --prefix web run tauri:ios:dev
 
 # Build the iOS Tauri app
 tauri-ios-build: _web-deps _ios-deps
+    if [ ! -d src-tauri/gen/apple ]; then ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci; fi
+    scripts/tauri-ios-npm-shim.sh
     {{mise}} npm --prefix web run tauri:ios:build
 
 # Run the iOS simulator build path used by CI.
 tauri-ios-test: _web-deps _ios-deps
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ ! -d src-tauri/gen/ios ]; then
+    if [ ! -d src-tauri/gen/apple ]; then
       ./bin/mise exec -- npm --prefix web run tauri -- ios init --ci
     fi
+    scripts/tauri-ios-npm-shim.sh
     ./bin/mise exec -- npm --prefix web run tauri -- ios build --debug --target aarch64-sim --ci
 
 # Regenerate bin/mise bootstrap script

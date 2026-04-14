@@ -52,6 +52,7 @@ Manual setup is:
 
 ```sh
 ./bin/mise install
+./bin/mise exec -- rustup component add rustfmt clippy
 ./bin/mise exec -- uv sync --python 3.12
 ./bin/mise exec -- npm --prefix web install
 ```
@@ -190,14 +191,18 @@ model runtime work and is not selectable yet.
 iOS currently supports the offline app core: templates, local JSON storage,
 trial tracking, schedule generation, exports, and deterministic analysis. It
 does not discover Mac-installed CLIs. iOS Tauri generation/builds require Xcode
-and CocoaPods:
+and CocoaPods. The `just` recipes run `scripts/tauri-ios-npm-shim.sh` after
+Tauri project generation so Xcode can find the repo's web package from the
+generated `src-tauri/gen/apple` project:
 
 ```sh
 just tauri-ios-test
 ```
 
-CI expects Apple signing secrets in the `apple-signing` GitHub environment for
-signed/notarized macOS builds and signed iOS release IPAs:
+GitHub CI skips signed macOS artifact creation when Apple signing secrets are
+not configured. Release builds require Apple signing secrets in the
+`apple-signing` GitHub environment for signed/notarized macOS builds and signed
+iOS release IPAs:
 `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
 `APPLE_TEAM_ID`, `APPLE_API_KEY`, `APPLE_API_ISSUER`,
 `APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
@@ -230,6 +235,8 @@ just web-unit    # Vitest unit tests
 just web-test    # Playwright browser tests
 just tauri-test  # Rust native tests
 just tauri-build # macOS Tauri bundle
+just rust-components # install rustfmt + clippy for the pinned Rust toolchain
+just ci          # main local CI gate
 just audit       # uv pip check + npm audit
 just doctor      # toolchain and prerequisite checks
 just fix         # mutating ruff fixes through hk
@@ -244,6 +251,11 @@ When adding or changing hook and CI tools, declare them in `mise.toml`. GitHub
 Actions installs only the mise-managed toolchain on a clean runner, and `hk.pkl`
 requires the `pkl` CLI before any hook step can run. CI's raw `hk run check`
 command also needs `GITHUB_TOKEN` for the `zizmor` step.
+
+Before handing off code changes, run `just ci` for substantive work or the
+smallest relevant local gate plus `just check` for narrow fixes. After pushing,
+watch the matching GitHub Actions run until it reaches `success`; if it fails,
+use the job logs as the next task and keep fixing unless the blocker is external.
 
 ## More Docs
 

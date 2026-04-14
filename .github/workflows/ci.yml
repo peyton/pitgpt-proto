@@ -67,6 +67,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: rustup component add rustfmt clippy
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets
@@ -91,26 +92,35 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-      - run: npm --prefix web ci
-      - name: Validate Apple signing secrets
+      - name: Check Apple signing secrets
+        id: signing
         run: |
           set -euo pipefail
-          missing=0
+          missing=()
           for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8_B64 APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
             if [ -z "${!name:-}" ]; then
-              echo "::error title=Missing Apple signing secret::$name is required for signed macOS artifacts"
-              missing=1
+              missing+=("$name")
             fi
           done
-          exit "$missing"
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::notice title=Skipping signed macOS artifact::Missing Apple signing secrets: %s\n' "${missing[*]}"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.signing.outputs.available == 'true'
+        run: npm --prefix web ci
       - name: Write App Store Connect API key
+        if: steps.signing.outputs.available == 'true'
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$APPLE_API_KEY_PATH")"
           printf '%s' "$APPLE_API_KEY_P8_B64" | base64 -d > "$APPLE_API_KEY_PATH"
           chmod 600 "$APPLE_API_KEY_PATH"
-      - run: npm --prefix web run tauri:build
+      - if: steps.signing.outputs.available == 'true'
+        run: npm --prefix web run tauri:build
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.signing.outputs.available == 'true'
         with:
           name: pitgpt-macos-${{ github.sha }}
           path: |
@@ -120,7 +130,7 @@ jobs:
 
   ios-simulator:
     name: iOS Simulator Build
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -130,6 +140,7 @@ jobs:
       - run: npm --prefix web ci
       - run: rustup target add aarch64-apple-ios-sim
       - run: npm --prefix web run tauri -- ios init --ci
+      - run: scripts/tauri-ios-npm-shim.sh
       - run: npm --prefix web run tauri -- ios build --debug --target aarch64-sim --ci
 
   audit:

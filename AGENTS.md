@@ -78,8 +78,9 @@ just web-install # Install web frontend dependencies
 just tauri-dev   # Start the macOS Tauri app
 just tauri-build # Build the macOS Tauri app
 just tauri-test  # Run Rust native tests
+just rust-components # Install rustfmt and clippy for the pinned Rust toolchain
 just tauri-ios-test # Build the iOS simulator target
-just ci          # Run CI locally with act
+just ci          # Run the main local CI gate
 just bootstrap   # Regenerate bin/mise bootstrap script
 ```
 
@@ -89,12 +90,21 @@ just bootstrap   # Regenerate bin/mise bootstrap script
 2. **Code**: Make changes in `src/pitgpt/`
 3. **Test**: `just test`
 4. **Lint**: `just lint` (runs automatically on commit via hk)
-5. **CI**: `just ci` to test GitHub Actions locally
+5. **Local gate**: run `just ci` for substantive changes, or the narrower
+   relevant commands plus `just check` for small, scoped fixes.
+6. **GitHub CI**: after pushing, watch the relevant GitHub Actions run to a
+   terminal `success` conclusion before handing work back.
 
 ## Conventions
 
 - Python 3.12+, PEP 8, type hints everywhere
 - Rust 1.94 for Tauri; run through mise-managed `cargo`
+- Rust formatting and clippy require toolchain components; `just setup` installs
+  them, and `just rust-components` refreshes them if a clean runner lacks them.
+- Tauri iOS builds must run `scripts/tauri-ios-npm-shim.sh` after `tauri ios
+  init`. The generated Xcode project runs its Rust build phase from
+  `src-tauri/gen/apple`, and the shim lets that phase resolve the repo's web
+  package on clean runners.
 - Use `uv run` to execute Python tools (not global installs)
 - Use `hk` for linting, not raw ruff/mypy commands
 - Keep every hook and CI runtime CLI declared in `mise.toml`. `hk.pkl`
@@ -116,8 +126,12 @@ GitHub Actions workflow at `.github/workflows/ci.yml` runs:
 - **test**: `uv run pytest`
 - **web**: npm install, build, Vitest, Playwright, npm audit
 - **rust**: cargo fmt, clippy, and cargo test for `src-tauri`
-- **tauri-macos-build**: signed/notarized macOS artifacts on `master` and manual runs
-- **ios-simulator**: Tauri iOS simulator build on PRs and `master`
+- **tauri-macos-build**: signed/notarized macOS artifacts on `master` and manual
+  runs when the `apple-signing` environment secrets are configured; otherwise it
+  emits a notice and skips artifact creation without failing CI
+- **ios-simulator**: Tauri iOS simulator build on PRs and `master` using
+  `macos-15` so generated Xcode projects match the available Xcode format; the
+  workflow runs the Tauri iOS npm shim after project generation
 - **audit**: `uv pip check` and npm audit
 
 Release artifacts are built by `.github/workflows/release.yml` when a GitHub
@@ -129,6 +143,25 @@ hashes per zizmor best practices. CI starts from a clean runner, so any tool
 needed by `hk.pkl`, hook steps, or workflow commands must be listed in
 `mise.toml`. The `check` job runs hk's `zizmor` step through the raw hook
 command, so it must export `GITHUB_TOKEN` rather than only `GH_TOKEN`.
+
+## CI Handoff Rule
+
+Do not hand off completed code changes while GitHub CI is failing for the branch
+you touched. After pushing a branch or updating `master`, use `gh run list` and
+`gh run watch` (or `gh run view --log-failed`) to follow the relevant Actions run
+until it succeeds. If CI fails, inspect the failing job logs, fix the underlying
+repo or workflow issue, push the fix, and watch the next run. Only hand back with
+a failing or unrun GitHub CI state when the blocker is genuinely external, such
+as a GitHub outage, unavailable paid macOS runner capacity, or missing production
+secrets for a release-only job; include the exact run URL, failing job, and
+blocker in the handoff.
+
+For local verification, prefer `just ci` before pushing substantial changes. For
+smaller changes, run the narrowest meaningful subset plus `just check`; examples:
+Python behavior changes need `just test` and `just typecheck`, web changes need
+`just web-build`, `just web-unit`, and relevant Playwright coverage, and Tauri
+Rust changes need `just tauri-lint` and `just tauri-test`. GitHub CI remains the
+source of truth before handoff.
 
 ## Product Safety Direction
 

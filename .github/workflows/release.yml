@@ -64,7 +64,7 @@ jobs:
 
   ios:
     name: Signed iOS IPA
-    runs-on: macos-14
+    runs-on: macos-15
     environment: apple-signing
     permissions:
       contents: write
@@ -109,6 +109,7 @@ jobs:
           mkdir -p "$profile_dir"
           printf '%s' "$IOS_PROVISIONING_PROFILE_B64" | base64 -d > "$profile_dir/PitGPT.mobileprovision"
       - run: npm --prefix web run tauri -- ios init --ci
+      - run: scripts/tauri-ios-npm-shim.sh
       - run: npm --prefix web run tauri -- ios build --target aarch64 --export-method release-testing --ci
       - name: Attach iOS IPA
         run: |
