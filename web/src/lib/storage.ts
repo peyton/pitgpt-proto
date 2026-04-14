@@ -1,4 +1,5 @@
 import { generateSchedule } from "./randomize";
+import { stableHash } from "./trial";
 import type { AppState, Observation, Settings, Trial } from "./types";
 
 const STORAGE_KEY = "pitgpt_state";
@@ -48,9 +49,12 @@ export function exportCSV(observations: Observation[]): string {
     "primary_score",
     "irritation",
     "adherence",
+    "adherence_reason",
     "note",
     "is_backfill",
     "backfill_days",
+    "adverse_event_severity",
+    "adverse_event_description",
   ];
   const rows = observations.map((o) =>
     [
@@ -60,9 +64,12 @@ export function exportCSV(observations: Observation[]): string {
       o.primary_score ?? "",
       o.irritation,
       o.adherence,
+      o.adherence_reason ?? "",
       o.note,
       o.is_backfill,
       o.backfill_days ?? "",
+      o.adverse_event_severity ?? "",
+      o.adverse_event_description ?? "",
     ]
       .map(csvCell)
       .join(","),
@@ -117,12 +124,29 @@ function normalizeTrial(value: unknown): Trial | null {
   if (!isRecord(value) || !isRecord(value.protocol)) return null;
   const trial = value as unknown as Trial;
   if (!Array.isArray(trial.observations)) trial.observations = [];
+  if (!Array.isArray(trial.events)) trial.events = [];
+  if (!Array.isArray(trial.adverseEvents)) trial.adverseEvents = [];
   if (!Array.isArray(trial.schedule) || needsScheduleMigration(trial)) {
     trial.schedule = generateSchedule(
       trial.protocol.duration_weeks,
       trial.protocol.block_length_days,
       Number.isFinite(trial.seed) ? trial.seed : 0,
     );
+  }
+  if (!trial.protocolHash) {
+    trial.protocolHash = stableHash({
+      protocol: trial.protocol,
+      conditionALabel: trial.conditionALabel,
+      conditionBLabel: trial.conditionBLabel,
+    });
+  }
+  if (!trial.analysisPlanHash) {
+    trial.analysisPlanHash = stableHash({
+      planned_days: trial.protocol.duration_weeks * 7,
+      block_length_days: trial.protocol.block_length_days,
+      method: "paired_periods_plus_welch_sensitivity",
+      minimum_meaningful_difference: 0.5,
+    });
   }
   return trial;
 }

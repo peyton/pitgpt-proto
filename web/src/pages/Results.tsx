@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { doctorQuestions, exportAppointmentBrief } from "../lib/brief";
 import { downloadFile, exportCSV } from "../lib/storage";
 import { computeTrialAuditHash } from "../lib/trial";
 import type { CompletedTrial, Observation } from "../lib/types";
@@ -190,8 +191,37 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
         <div className="caveats-card">
           <p><strong>Expectancy effect:</strong> This experiment was not blinded. You knew which product you were using, which can unconsciously influence your satisfaction ratings.</p>
           <p><strong>Regression to the mean:</strong> If you started the trial during a particularly good or bad skin period, some change may simply be a return to your baseline.</p>
-          <p><strong>Personal evidence only:</strong> This result applies to you, under these conditions, with this protocol. It is not generalizable and does not constitute medical advice.</p>
+          <p><strong>Personal evidence:</strong> This result applies to you, under these conditions, with this protocol. It is a useful record for conversations, not a diagnosis or care plan.</p>
           {result.caveats && <p>{result.caveats}</p>}
+        </div>
+      </details>
+
+      <details className="advanced-disclosure fade-up fade-up-4" open>
+        <summary>Appointment brief</summary>
+        <div className="caveats-card">
+          <p>
+            A concise visit summary can help you remember what changed, what you tracked, and what
+            you want to ask next.
+          </p>
+          {trial.ingestion.clinician_note || trial.protocol.clinician_note ? (
+            <p>{trial.ingestion.clinician_note || trial.protocol.clinician_note}</p>
+          ) : null}
+          <h3 style={{ marginTop: 14 }}>Questions to bring</h3>
+          <ul className="advanced-list">
+            {doctorQuestions(trial, result).map((question) => <li key={question}>{question}</li>)}
+          </ul>
+          {(trial.adverseEvents?.length ?? 0) > 0 && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Discomfort logged</h3>
+              <ul className="advanced-list">
+                {trial.adverseEvents?.map((event) => (
+                  <li key={event.id}>
+                    {event.date}: {event.severity} · {event.description}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       </details>
 
@@ -209,6 +239,14 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           <div>
             <span>Audit hash</span>
             <strong>{computeTrialAuditHash(trial)}</strong>
+          </div>
+          <div>
+            <span>Protocol hash</span>
+            <strong>{trial.protocolHash ?? "—"}</strong>
+          </div>
+          <div>
+            <span>Analysis hash</span>
+            <strong>{trial.analysisPlanHash ?? "—"}</strong>
           </div>
           <div>
             <span>Meaningful threshold</span>
@@ -262,6 +300,11 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           downloadFile(JSON.stringify({ seed: trial.seed, schedule: trial.schedule }, null, 2), "pitgpt-schedule.json", "application/json");
         }}>
           Export Schedule
+        </button>
+        <button className="btn btn-s" onClick={() => {
+          downloadFile(exportAppointmentBrief(completed), "pitgpt-appointment-brief.md", "text/markdown");
+        }}>
+          Appointment Brief
         </button>
         <button className="btn btn-p" onClick={() => navigate("/")}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

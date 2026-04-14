@@ -97,6 +97,86 @@ class TestIngestionYellow:
         assert result.safety_tier == SafetyTier.YELLOW
         assert result.protocol.screening != ""
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_low_risk_condition_adjacent_routine_allowed_with_restrictions(self, client):
+        respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol_with_restrictions",
+                        "safety_tier": "YELLOW",
+                        "evidence_quality": "weak",
+                        "evidence_conflict": False,
+                        "risk_level": "condition_adjacent_low",
+                        "risk_rationale": "Low-risk sleep routine; no medication changes.",
+                        "clinician_note": (
+                            "Consider bringing this plan to your clinician if it affects symptoms."
+                        ),
+                        "protocol": {
+                            "template": "Sleep Routine",
+                            "duration_weeks": 4,
+                            "block_length_days": 7,
+                            "cadence": "daily AM",
+                            "washout": "None",
+                            "primary_outcome_question": "Morning restfulness (0-10)",
+                            "screening": "Do not change medications or replace care.",
+                            "warnings": "Stop if symptoms worsen.",
+                            "outcome_anchor_low": "0 = worst morning restfulness you would log",
+                            "outcome_anchor_mid": "5 = typical morning restfulness",
+                            "outcome_anchor_high": "10 = best morning restfulness you would log",
+                            "suggested_confounders": ["sleep duration", "travel"],
+                            "clinician_note": (
+                                "Consider bringing this plan to your clinician if it affects symptoms."
+                            ),
+                        },
+                        "block_reason": None,
+                        "sources": [
+                            {
+                                "source_id": "source-1",
+                                "source_type": "text",
+                                "title": "Uploaded note",
+                                "evidence_quality": "weak",
+                                "summary": "Routine timing note.",
+                                "rationale": "User-provided note, not a controlled trial.",
+                            }
+                        ],
+                        "extracted_claims": [
+                            {
+                                "intervention": "morning light",
+                                "comparator": "usual routine",
+                                "routine": "sleep",
+                                "outcome": "morning restfulness",
+                                "source_refs": ["source-1"],
+                            }
+                        ],
+                        "suitability_scores": [
+                            {
+                                "dimension": "risk",
+                                "score": 5,
+                                "rationale": "Reversible routine.",
+                            }
+                        ],
+                        "next_steps": ["Lock the protocol if the plan matches what you can do."],
+                        "user_message": "This can be tested as a low-risk routine with restrictions.",
+                    }
+                ),
+            )
+        )
+
+        result = await ingest(
+            "Track a low-risk sleep routine for migraine patterns", ["Note"], client
+        )
+
+        assert result.decision == IngestionDecision.GENERATE_PROTOCOL_WITH_RESTRICTIONS
+        assert result.safety_tier == SafetyTier.YELLOW
+        assert result.risk_level == "condition_adjacent_low"
+        assert result.clinician_note.startswith("Consider bringing")
+        assert result.sources[0].source_id == "source-1"
+        assert result.extracted_claims[0].outcome == "morning restfulness"
+        assert result.suitability_scores[0].dimension == "risk"
+
 
 class TestIngestionRed:
     @respx.mock
@@ -225,7 +305,8 @@ class TestSafetyPolicy:
         assert "GREEN" in prompt
         assert "YELLOW" in prompt
         assert "RED" in prompt
-        assert "ANY prescription medication" in prompt
-        assert "ANY supplement or ingestible" in prompt
-        assert "ANY disease management claim" in prompt
+        assert "prescription medication dose/timing/start/stop/switch change" in prompt
+        assert "supplement or ingestible change" in prompt
+        assert "condition-adjacent" in prompt
+        assert "Acute, urgent, crisis" in prompt
         assert "skincare product comparisons" in prompt

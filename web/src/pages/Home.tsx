@@ -8,6 +8,7 @@ import {
   trialTemplates,
   type TrialTemplate,
 } from "../lib/templates";
+import type { IngestionResult } from "../lib/types";
 
 interface SourceDocument {
   id: string;
@@ -66,7 +67,7 @@ export function Home() {
           trimmed,
           sources.map((source) => source.content),
         );
-        setIngestionResult(result);
+        setIngestionResult(enrichIngestionResult(result, sources));
         navigate("/protocol");
       } catch (e) {
         const message = e instanceof Error ? e.message : "Could not generate a protocol.";
@@ -155,7 +156,7 @@ export function Home() {
           What do you want to test?
         </h1>
         <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 500, margin: "0 auto" }}>
-          Pick a safe path first. Add research only when you need it.
+          Compare a routine, product, or pattern you can keep consistent. Add research when it helps.
         </p>
       </div>
 
@@ -179,8 +180,8 @@ export function Home() {
       </div>
 
       <div className="preflight-box fade-up fade-up-2">
-        <strong>Good fit:</strong> low-risk routines, cosmetic products, habits, or preferences.
-        <span>Not a fit: prescriptions, supplements, disease management, invasive devices, or urgent symptoms.</span>
+        <strong>Good fit:</strong> low-risk routines, cosmetic products, habits, tracking, or environmental changes.
+        <span>Medication changes, urgent symptoms, invasive interventions, and diagnosis questions need a different path. If a plan touches a condition, medication, or symptoms, bring it to your clinician.</span>
       </div>
 
       <div className="fade-up fade-up-3" style={{ width: "100%", maxWidth: 680, marginBottom: 24 }}>
@@ -324,4 +325,20 @@ export function Home() {
       </div>
     </div>
   );
+}
+
+function enrichIngestionResult(result: IngestionResult, sources: SourceDocument[]): IngestionResult {
+  if (sources.length === 0 || (result.sources?.length ?? 0) > 0) return result;
+  return {
+    ...result,
+    sources: sources.map((source, index) => ({
+      source_id: `source-${index + 1}`,
+      source_type: "text",
+      title: source.name,
+      locator: source.name,
+      evidence_quality: result.evidence_quality,
+      summary: result.source_summaries?.[index] ?? "User-provided source.",
+      rationale: "Attached by the user before protocol generation.",
+    })),
+  };
 }

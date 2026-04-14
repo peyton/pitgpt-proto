@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyze } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
+import type { Trial } from "../lib/types";
 import {
   buildObservation,
   buildObservationForDate,
   canBackfill,
   checkAdverseEventStreak,
+  addTrialEvent,
   getConditionLabel,
   getCurrentAssignment,
   getDaysLeft,
@@ -26,6 +28,9 @@ export function ActiveTrial() {
   const [score, setScore] = useState(5);
   const [irritation, setIrritation] = useState<"yes" | "no">("no");
   const [adherence, setAdherence] = useState<"yes" | "no" | "partial">("yes");
+  const [adherenceReason, setAdherenceReason] = useState("");
+  const [adverseSeverity, setAdverseSeverity] = useState<"mild" | "moderate" | "severe">("mild");
+  const [adverseDescription, setAdverseDescription] = useState("");
   const [note, setNote] = useState("");
   const [backfillDate, setBackfillDate] = useState("");
   const [backfillScore, setBackfillScore] = useState(5);
@@ -60,6 +65,7 @@ export function ActiveTrial() {
   const aeStreak = checkAdverseEventStreak(trial);
   const daysLeft = getDaysLeft(trial);
   const nextCheckIn = getNextCheckInCopy(trial);
+  const minimumDataWarning = getMinimumDataWarning(trial);
   const showReminder = shouldShowReminder(state.settings.reminderEnabled, state.settings.reminderTime, todayDone, trialComplete);
   const today = toLocalDateInput(new Date());
   const twoDaysAgo = toLocalDateInput(offsetDate(-2));
@@ -67,11 +73,17 @@ export function ActiveTrial() {
   const handleCheckin = () => {
     if (todayDone) return;
     setSubmitting(true);
-    const obs = buildObservation(trial, score, irritation, adherence, note);
+    const obs = buildObservation(trial, score, irritation, adherence, note, {
+      adherenceReason,
+      adverseEventSeverity: adverseSeverity,
+      adverseEventDescription: adverseDescription,
+    });
     addObservation(obs);
     setSubmitted(true);
     setSubmitting(false);
     setNote("");
+    setAdherenceReason("");
+    setAdverseDescription("");
   };
 
   const handleBackfill = () => {
@@ -109,7 +121,12 @@ export function ActiveTrial() {
     setAnalysisError(null);
     try {
       const result = await analyze(protocolToDict(trial.protocol), trial.observations);
-      const completedTrial = { ...trial, status: "completed" as const, completedAt: new Date().toISOString() };
+      const stopped = trialComplete ? trial : addTrialEvent(trial, "trial_stopped", "Stopped before the planned end.");
+      const completedTrial = {
+        ...addTrialEvent(stopped, "trial_analyzed", "Generated result card."),
+        status: "completed" as const,
+        completedAt: new Date().toISOString(),
+      };
       completeTrial({ trial: completedTrial, result });
       navigate("/results");
     } catch (error) {
@@ -280,6 +297,42 @@ export function ActiveTrial() {
                 </div>
               </div>
 
+              {adherence !== "yes" && (
+                <div className="form-group">
+                  <label className="form-label" htmlFor="adherence-reason">What got in the way?</label>
+                  <input
+                    id="adherence-reason"
+                    className="text-input"
+                    value={adherenceReason}
+                    onChange={(e) => setAdherenceReason(e.target.value)}
+                    placeholder="Forgot, ran out, travel, timing did not work..."
+                  />
+                </div>
+              )}
+
+              {irritation === "yes" && (
+                <div className="adverse-event-box">
+                  <div className="form-label">Discomfort details</div>
+                  <select
+                    className="time-input select-input"
+                    value={adverseSeverity}
+                    onChange={(e) => setAdverseSeverity(e.target.value as "mild" | "moderate" | "severe")}
+                    aria-label="Discomfort severity"
+                  >
+                    <option value="mild">Mild</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="severe">Severe</option>
+                  </select>
+                  <textarea
+                    className="optional-note"
+                    placeholder="What happened?"
+                    value={adverseDescription}
+                    onChange={(e) => setAdverseDescription(e.target.value)}
+                    aria-label="Discomfort description"
+                  />
+                </div>
+              )}
+
               <details className="inline-disclosure" open={noteOpen} onToggle={(event) => setNoteOpen(event.currentTarget.open)}>
                 <summary>
                   Optional note
@@ -401,6 +454,9 @@ export function ActiveTrial() {
             <p>
               Your existing check-ins stay saved. PitGPT will analyze the data as an early stop and label the caveats clearly.
             </p>
+            {minimumDataWarning && (
+              <p style={{ color: "var(--caution)" }}>{minimumDataWarning}</p>
+            )}
             <div className="modal-actions">
               <button className="btn btn-s" onClick={() => setShowStopConfirm(false)} disabled={analyzing}>
                 Keep Going
@@ -414,6 +470,15 @@ export function ActiveTrial() {
       )}
     </div>
   );
+}
+
+function getMinimumDataWarning(trial: Trial): string | null {
+  const scoredA = trial.observations.filter((obs) => obs.condition === "A" && obs.primary_score != null).length;
+  const scoredB = trial.observations.filter((obs) => obs.condition === "B" && obs.primary_score != null).length;
+  if (scoredA < 2 || scoredB < 2) {
+    return "There is not enough data from both conditions for a reliable comparison yet. The result will be marked as insufficient if you stop now.";
+  }
+  return null;
 }
 
 function offsetDate(offsetDays: number): Date {

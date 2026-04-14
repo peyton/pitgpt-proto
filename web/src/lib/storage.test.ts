@@ -52,6 +52,7 @@ describe("storage", () => {
         primary_score: 7,
         irritation: "no",
         adherence: "yes",
+        adherence_reason: "",
         note: 'sleep, "travel"',
         is_backfill: "no",
         backfill_days: null,
@@ -60,7 +61,7 @@ describe("storage", () => {
 
     expect(csv).toContain('"sleep, ""travel"""');
     expect(csv.split("\n")[0]).toBe(
-      '"day_index","date","condition","primary_score","irritation","adherence","note","is_backfill","backfill_days"',
+      '"day_index","date","condition","primary_score","irritation","adherence","adherence_reason","note","is_backfill","backfill_days","adverse_event_severity","adverse_event_description"',
     );
   });
 });

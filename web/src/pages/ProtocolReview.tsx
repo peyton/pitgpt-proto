@@ -14,8 +14,8 @@ const safetyBadgeClass: Record<string, string> = {
 
 const safetyLabel: Record<string, string> = {
   GREEN: "Green — Safe to Run",
-  YELLOW: "Yellow — Review Carefully",
-  RED: "Red — Not Recommended",
+  YELLOW: "Yellow — Restrictions Apply",
+  RED: "Red — Blocked",
 };
 
 const evidenceClass: Record<string, string> = {
@@ -43,7 +43,17 @@ export function ProtocolReview() {
     );
   }
 
-  const { decision, safety_tier, evidence_quality, protocol, block_reason, user_message } = ingestionResult;
+  const {
+    decision,
+    safety_tier,
+    evidence_quality,
+    protocol,
+    block_reason,
+    user_message,
+    risk_level,
+    risk_rationale,
+    clinician_note,
+  } = ingestionResult;
 
   if (decision === "block") {
     return (
@@ -131,15 +141,26 @@ export function ProtocolReview() {
         </div>
         <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 8 }}>Generated Protocol</h1>
         <p style={{ color: "var(--gray-500)", fontSize: 15 }}>
-          Review the experiment design below. You can edit condition labels, but the scientific parameters are locked for validity.
+          Review the design below. You can edit condition labels, then lock the protocol so the result stays interpretable.
         </p>
       </div>
 
       <div className="fade-up fade-up-1" style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         <span className={safetyBadgeClass[safety_tier]}>{safetyLabel[safety_tier]}</span>
         <span className={evidenceClass[evidence_quality]}>{evidence_quality} Evidence</span>
+        {risk_level && <span className="badge badge-info">{risk_level.replaceAll("_", " ")}</span>}
         {protocol.template && <span className="badge badge-neutral">{protocol.template}</span>}
       </div>
+
+      {(risk_rationale || clinician_note || protocol.clinician_note) && (
+        <div className="caveats-card fade-up fade-up-1" style={{ marginBottom: 20 }}>
+          <h3>Risk review</h3>
+          {risk_rationale && <p>{risk_rationale}</p>}
+          {(clinician_note || protocol.clinician_note) && (
+            <p>{clinician_note || protocol.clinician_note}</p>
+          )}
+        </div>
+      )}
 
       {/* Conditions */}
       <div className="protocol-card fade-up fade-up-2">
@@ -191,6 +212,14 @@ export function ProtocolReview() {
               <label>Primary Outcome <InfoTooltip text="The single measurement that determines which condition wins. Locked to prevent unconscious bias from changing goals mid-trial." /></label>
               <div className="value">{protocol.primary_outcome_question || "Satisfaction (0–10)"}</div>
             </div>
+            {(protocol.outcome_anchor_low || protocol.outcome_anchor_mid || protocol.outcome_anchor_high) && (
+              <div className="protocol-detail-item">
+                <label>Outcome Anchors</label>
+                <div className="value" style={{ fontSize: 14, lineHeight: 1.5 }}>
+                  {[protocol.outcome_anchor_low, protocol.outcome_anchor_mid, protocol.outcome_anchor_high].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+            )}
             <div className="protocol-detail-item">
               <label>Duration</label>
               <div className="value">{protocol.duration_weeks} weeks ({totalDays} days)</div>
@@ -215,6 +244,14 @@ export function ProtocolReview() {
               <label>Random Seed</label>
               <div className="value mono">generated when locked</div>
             </div>
+            {protocol.suggested_confounders?.length ? (
+              <div className="protocol-detail-item">
+                <label>Optional Context To Note</label>
+                <div className="value" style={{ fontSize: 14 }}>
+                  {protocol.suggested_confounders.join(", ")}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div style={{ marginTop: 20 }}>
@@ -255,7 +292,7 @@ export function ProtocolReview() {
         <h4>Before you start</h4>
         <ul>
           <li>This experiment is not blinded — you'll know which product you're using, which can influence ratings.</li>
-          <li>Results reflect your personal experience under this specific protocol, not a general medical claim.</li>
+          <li>Results reflect your personal experience under this specific protocol, not a diagnosis or care plan.</li>
           <li>Once locked, the primary outcome and analysis method cannot be changed.</li>
           {protocol.warnings && <li>{protocol.warnings}</li>}
         </ul>
@@ -275,7 +312,7 @@ export function ProtocolReview() {
             onChange={(e) => setRestrictedAcknowledged(e.target.checked)}
           />
           <span>
-            I reviewed the restrictions and will only compare routines or products that fit this protocol.
+            I reviewed the restrictions and can keep this routine consistent without changing medications or replacing care.
           </span>
         </label>
       )}
