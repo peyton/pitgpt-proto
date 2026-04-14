@@ -1,13 +1,23 @@
 amends "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v1.40.0/hk@1.40.0#/Builtins.pkl"
 
+local uvRuffFormat = (Builtins.ruff_format) {
+  check_diff = "uv run --python 3.12 ruff format --quiet --force-exclude --diff {{ files }}"
+  fix = "uv run --python 3.12 ruff format --quiet --force-exclude {{ files }}"
+}
+
+local uvRuff = (Builtins.ruff) {
+  check = "uv run --python 3.12 ruff check --force-exclude {{ files }}"
+  fix = "uv run --python 3.12 ruff check --force-exclude --fix {{ files }}"
+}
+
 hooks {
   ["pre-commit"] {
     fix = false
     stash = "none"
     steps {
-      ["ruff-format"] = Builtins.ruff_format
-      ["ruff"] = Builtins.ruff
+      ["ruff-format"] = uvRuffFormat
+      ["ruff"] = uvRuff
       ["mypy"] = (Builtins.mypy) {
         check = "uv run --python 3.12 mypy src/pitgpt/"
       }
@@ -18,8 +28,8 @@ hooks {
   }
   ["pre-push"] {
     steps {
-      ["ruff-format"] = Builtins.ruff_format
-      ["ruff"] = Builtins.ruff
+      ["ruff-format"] = uvRuffFormat
+      ["ruff"] = uvRuff
       ["mypy"] = (Builtins.mypy) {
         check = "uv run --python 3.12 mypy src/pitgpt/"
       }
@@ -28,14 +38,14 @@ hooks {
   ["fix"] {
     fix = true
     steps {
-      ["ruff-format"] = Builtins.ruff_format
-      ["ruff"] = Builtins.ruff
+      ["ruff-format"] = uvRuffFormat
+      ["ruff"] = uvRuff
     }
   }
   ["check"] {
     steps {
-      ["ruff-format"] = Builtins.ruff_format
-      ["ruff"] = Builtins.ruff
+      ["ruff-format"] = uvRuffFormat
+      ["ruff"] = uvRuff
       ["mypy"] = (Builtins.mypy) {
         check = "uv run --python 3.12 mypy src/pitgpt/"
       }

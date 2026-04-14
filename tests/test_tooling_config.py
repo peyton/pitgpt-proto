@@ -21,3 +21,13 @@ def test_ci_check_job_exports_zizmor_token_name() -> None:
 
     assert "GITHUB_TOKEN: ${{ github.token }}" in ci_workflow
     assert "GH_TOKEN: ${{ github.token }}" not in ci_workflow
+
+
+def test_hk_ruff_steps_use_project_environment() -> None:
+    """Clean CI runners need Ruff from the uv-managed project environment."""
+    hk_config = (ROOT / "hk.pkl").read_text(encoding="utf-8")
+
+    assert 'check_diff = "uv run --python 3.12 ruff format' in hk_config
+    assert 'fix = "uv run --python 3.12 ruff format' in hk_config
+    assert 'check = "uv run --python 3.12 ruff check' in hk_config
+    assert 'fix = "uv run --python 3.12 ruff check' in hk_config
