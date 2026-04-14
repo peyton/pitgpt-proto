@@ -208,6 +208,10 @@ iOS release IPAs:
 `APPLE_API_KEY_P8_B64`, `APPLE_DEVELOPMENT_TEAM`, and
 `IOS_PROVISIONING_PROFILE_B64`.
 
+On `master`, changes to the native app inputs (`src-tauri/`, `web/`, `shared/`,
+or native build config) also update the rolling GitHub prerelease tagged
+`macos-preview` with the latest signed macOS DMG.
+
 ## Benchmarks
 
 Run deterministic analysis cases:
