@@ -12,6 +12,8 @@ benchmarks/runs/
 hk.local.pkl
 web/node_modules/
 web/dist/
+web/test-results/
+web/playwright-report/
 
 # Override global ignore for mise bootstrap
 !bin/

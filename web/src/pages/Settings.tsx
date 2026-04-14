@@ -1,11 +1,25 @@
+import { useEffect, useState } from "react";
 import { useApp } from "../lib/AppContext";
+import { healthCheck } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
-import { clearAllData, downloadFile, exportCSV, exportJSON } from "../lib/storage";
-import { loadState } from "../lib/storage";
+import { clearAllData, downloadFile, exportCSV, exportJSON, loadState } from "../lib/storage";
+
+type ApiStatus = "checking" | "online" | "offline";
 
 export function Settings() {
   const { state, updateSettings, clearAll } = useApp();
   const { settings } = state;
+  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+
+  useEffect(() => {
+    let active = true;
+    void healthCheck().then((ok) => {
+      if (active) setApiStatus(ok ? "online" : "offline");
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleExportCSV = () => {
     const all = state.completedResults.flatMap((r) => r.trial.observations);
@@ -93,6 +107,13 @@ export function Settings() {
         <h2>About</h2>
         <div className="setting-row">
           <div className="setting-label">
+            <h3>API Status <InfoTooltip text="Protocol generation and analysis use the local API when available." /></h3>
+            <p>{getApiStatusCopy(apiStatus)}</p>
+          </div>
+          <span className={getApiStatusClass(apiStatus)}>{apiStatus}</span>
+        </div>
+        <div className="setting-row">
+          <div className="setting-label">
             <h3>Version</h3>
             <p>PitGPT v1.0 — Personal Experiment Engine</p>
           </div>
@@ -114,4 +135,16 @@ export function Settings() {
       </div>
     </div>
   );
+}
+
+function getApiStatusCopy(status: ApiStatus): string {
+  if (status === "checking") return "Checking local API connection";
+  if (status === "online") return "Local API is reachable";
+  return "Local API is not reachable";
+}
+
+function getApiStatusClass(status: ApiStatus): string {
+  if (status === "online") return "badge badge-safe";
+  if (status === "offline") return "badge badge-caution";
+  return "badge badge-neutral";
 }

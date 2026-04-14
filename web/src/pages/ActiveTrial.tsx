@@ -5,6 +5,8 @@ import { analyze } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
 import {
   buildObservation,
+  buildObservationForDate,
+  canBackfill,
   checkAdverseEventStreak,
   getConditionLabel,
   getCurrentAssignment,
@@ -23,6 +25,13 @@ export function ActiveTrial() {
   const [irritation, setIrritation] = useState<"yes" | "no">("no");
   const [adherence, setAdherence] = useState<"yes" | "no" | "partial">("yes");
   const [note, setNote] = useState("");
+  const [backfillDate, setBackfillDate] = useState("");
+  const [backfillScore, setBackfillScore] = useState(5);
+  const [backfillIrritation, setBackfillIrritation] = useState<"yes" | "no">("no");
+  const [backfillAdherence, setBackfillAdherence] = useState<"yes" | "no" | "partial">("yes");
+  const [backfillNote, setBackfillNote] = useState("");
+  const [backfillError, setBackfillError] = useState<string | null>(null);
+  const [backfillSaved, setBackfillSaved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -43,6 +52,9 @@ export function ActiveTrial() {
   const todayDone = hasCheckedInToday(trial) || submitted;
   const trialComplete = isTrialComplete(trial);
   const aeStreak = checkAdverseEventStreak(trial);
+  const showReminder = shouldShowReminder(state.settings.reminderEnabled, state.settings.reminderTime, todayDone, trialComplete);
+  const today = toLocalDateInput(new Date());
+  const twoDaysAgo = toLocalDateInput(offsetDate(-2));
 
   const handleCheckin = () => {
     if (todayDone) return;
@@ -52,6 +64,36 @@ export function ActiveTrial() {
     setSubmitted(true);
     setSubmitting(false);
     setNote("");
+  };
+
+  const handleBackfill = () => {
+    setBackfillError(null);
+    setBackfillSaved(false);
+    if (!backfillDate) {
+      setBackfillError("Choose a date from the last 2 days.");
+      return;
+    }
+    if (!canBackfill(trial, backfillDate)) {
+      setBackfillError("Backfill is limited to the last 2 days.");
+      return;
+    }
+    if (trial.observations.some((obs) => obs.date === backfillDate)) {
+      setBackfillError("That date already has a check-in.");
+      return;
+    }
+    addObservation(
+      buildObservationForDate(
+        trial,
+        backfillDate,
+        backfillScore,
+        backfillIrritation,
+        backfillAdherence,
+        backfillNote,
+      ),
+    );
+    setBackfillDate("");
+    setBackfillNote("");
+    setBackfillSaved(true);
   };
 
   const handleComplete = async () => {
@@ -126,7 +168,13 @@ export function ActiveTrial() {
       {/* AE Streak Warning */}
       {aeStreak && (
         <div style={{ background: "var(--danger-bg)", border: "1px solid #FECACA", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 13, color: "var(--danger)", marginBottom: 24 }} className="fade-up fade-up-1">
-          You've reported irritation for 3+ consecutive days. We recommend stopping this experiment for your safety.
+          Irritation has been logged for 3+ consecutive days. Consider stopping this experiment for safety.
+        </div>
+      )}
+
+      {showReminder && (
+        <div className="reminder-banner fade-up fade-up-1">
+          Daily reminder is due. Log today's check-in when you have a consistent moment.
         </div>
       )}
 
@@ -243,12 +291,120 @@ export function ActiveTrial() {
       )}
 
       {!trialComplete && (
-        <div style={{ textAlign: "center", marginTop: 8 }}>
+        <div className="trial-stop-actions">
           <button className="btn btn-d btn-sm" onClick={handleStop} disabled={analyzing}>
             Stop Experiment Early
           </button>
         </div>
       )}
+
+      {!trialComplete && (
+        <div className="backfill-card fade-up fade-up-4">
+          <div className="backfill-card-header">
+            <div>
+              <h3>Backfill Recent Day</h3>
+              <p>Use only for a missed check-in from the last 2 days.</p>
+            </div>
+            <div className="backfill-header-actions">
+              <input
+                type="date"
+                className="time-input date-input"
+                min={twoDaysAgo}
+                max={today}
+                value={backfillDate}
+                onChange={(e) => {
+                  setBackfillDate(e.target.value);
+                  setBackfillError(null);
+                  setBackfillSaved(false);
+                  e.currentTarget.blur();
+                }}
+                aria-label="Backfill date"
+              />
+              <button className="btn btn-s btn-sm" onClick={handleBackfill}>
+                Add Backfill
+              </button>
+            </div>
+          </div>
+          <div className="backfill-grid">
+            <label>
+              Score
+              <input
+                type="range"
+                className="slider-input"
+                min="0"
+                max="10"
+                value={backfillScore}
+                onChange={(e) => setBackfillScore(Number(e.target.value))}
+                aria-label="Backfill score"
+              />
+              <span className="backfill-score">{backfillScore}</span>
+            </label>
+            <div>
+              <div className="form-label">Irritation?</div>
+              <select
+                className="time-input select-input"
+                value={backfillIrritation}
+                onChange={(e) => setBackfillIrritation(e.target.value as "yes" | "no")}
+                aria-label="Backfill irritation"
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </div>
+            <div>
+              <div className="form-label">Adherence</div>
+              <select
+                className="time-input select-input"
+                value={backfillAdherence}
+                onChange={(e) => setBackfillAdherence(e.target.value as "yes" | "no" | "partial")}
+                aria-label="Backfill adherence"
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="partial">Partial</option>
+              </select>
+            </div>
+          </div>
+          <textarea
+            className="optional-note"
+            placeholder="Optional backfill note..."
+            value={backfillNote}
+            onChange={(e) => setBackfillNote(e.target.value)}
+            aria-label="Backfill note"
+          />
+          {backfillError && <p className="form-error" role="alert">{backfillError}</p>}
+          {backfillSaved && <p className="form-success" role="status">Backfill saved.</p>}
+        </div>
+      )}
     </div>
   );
+}
+
+function offsetDate(offsetDays: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return date;
+}
+
+function toLocalDateInput(date: Date): string {
+  const local = new Date(date);
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+  return local.toISOString().slice(0, 10);
+}
+
+function shouldShowReminder(
+  enabled: boolean,
+  reminderTime: string,
+  todayDone: boolean,
+  trialComplete: boolean,
+): boolean {
+  if (!enabled || todayDone || trialComplete) return false;
+  const [hourText, minuteText] = reminderTime.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return false;
+  const now = new Date();
+  const due = new Date();
+  due.setHours(hour, minute, 0, 0);
+  return now >= due;
 }

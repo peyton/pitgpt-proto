@@ -26,49 +26,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(loadState);
   const [ingestionResult, setIngestionResult] = useState<IngestionResult | null>(null);
 
-  const persist = useCallback((next: AppState) => {
-    setState(next);
-    saveState(next);
+  const persist = useCallback((next: AppState | ((current: AppState) => AppState)) => {
+    setState((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      saveState(resolved);
+      return resolved;
+    });
   }, []);
 
   const setTrial = useCallback(
     (trial: Trial | null) => {
-      persist({ ...state, trial });
+      persist((current) => ({ ...current, trial }));
     },
-    [state, persist],
+    [persist],
   );
 
   const addObservation = useCallback(
     (obs: Observation) => {
-      if (!state.trial) return;
-      const updated = {
-        ...state.trial,
-        observations: [...state.trial.observations, obs],
-      };
-      persist({ ...state, trial: updated });
+      persist((current) => {
+        if (!current.trial) return current;
+        const updated = {
+          ...current.trial,
+          observations: [...current.trial.observations, obs],
+        };
+        return { ...current, trial: updated };
+      });
     },
-    [state, persist],
+    [persist],
   );
 
   const completeTrial = useCallback(
     (completed: CompletedTrial) => {
-      persist({
-        ...state,
+      persist((current) => ({
+        ...current,
         trial: null,
-        completedResults: [...state.completedResults, completed],
-      });
+        completedResults: [...current.completedResults, completed],
+      }));
     },
-    [state, persist],
+    [persist],
   );
 
   const updateSettings = useCallback(
     (partial: Partial<Settings>) => {
-      persist({
-        ...state,
-        settings: { ...state.settings, ...partial },
-      });
+      persist((current) => ({
+        ...current,
+        settings: { ...current.settings, ...partial },
+      }));
     },
-    [state, persist],
+    [persist],
   );
 
   const clearAll = useCallback(() => {

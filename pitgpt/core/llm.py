@@ -60,7 +60,10 @@ class LLMClient:
                     resp.raise_for_status()
                     data = resp.json()
                     content = data["choices"][0]["message"]["content"]
-                    return json.loads(content)
+                    parsed: object = json.loads(content)
+                    if not isinstance(parsed, dict):
+                        raise json.JSONDecodeError("Expected JSON object", content, 0)
+                    return parsed
                 except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError) as e:
                     last_error = e
                     if attempt < MAX_RETRIES - 1:

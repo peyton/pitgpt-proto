@@ -5,7 +5,8 @@ default:
 setup:
     ./bin/mise install
     uv sync
-    cd web && npm install
+    cd web && npm ci
+    cd web && npm run test:e2e:install
 
 # Install Python dependencies
 install:
@@ -17,7 +18,7 @@ test *args:
 
 # Run linters via hk (pre-commit checks)
 lint:
-    hk run pre-commit --all
+    hk run pre-commit --all --stash none
 
 # Run all checks (lint + GHA linting)
 check:
@@ -77,7 +78,7 @@ ci:
 
 # Install web frontend dependencies
 web-install:
-    cd web && npm install
+    cd web && npm ci
 
 # Start web frontend dev server
 web-dev:
@@ -86,6 +87,10 @@ web-dev:
 # Build web frontend for production
 web-build:
     cd web && npm run build
+
+# Run web browser integration tests
+web-test:
+    cd web && npm run test:e2e
 
 # Regenerate bin/mise bootstrap script
 bootstrap:

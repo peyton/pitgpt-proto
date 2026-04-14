@@ -1,25 +1,33 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { ingest } from "../lib/api";
+import {
+  templateToIngestionResult,
+  trialTemplates,
+  type TrialTemplate,
+} from "../lib/templates";
 
-const templates = [
-  { icon: "🧴", name: "Skincare A/B", desc: "Compare two products over 6 weeks", query: "Compare two skincare products" },
-  { icon: "🌅", name: "Morning Routine", desc: "Test which routine works better", query: "Compare two morning routines" },
-  { icon: "💤", name: "Sleep Routine", desc: "Compare sleep habits over 4 weeks", query: "Compare two sleep routines" },
-  { icon: "💇", name: "Haircare", desc: "Which product gives better results?", query: "Compare two haircare products" },
-  { icon: "🌙", name: "Evening Routine", desc: "A/B test your night routine", query: "Compare two evening routines" },
-  { icon: "⚗️", name: "Custom A/B", desc: "Design your own experiment", query: "Custom A/B experiment" },
-];
+interface SourceDocument {
+  id: string;
+  name: string;
+  content: string;
+}
 
 const quickPrompts = [
-  '"Does retinol actually help?"',
+  '"CeraVe vs La Roche-Posay for dry skin"',
   '"Vitamin C serum vs niacinamide"',
-  '"Is my morning routine worth it?"',
+  '"Current morning routine vs simpler routine"',
 ];
+
+function sourceId(): string {
+  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
 
 export function Home() {
   const [query, setQuery] = useState("");
+  const [sourceText, setSourceText] = useState("");
+  const [sources, setSources] = useState<SourceDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -27,45 +35,74 @@ export function Home() {
   const navigate = useNavigate();
   const { setIngestionResult, state } = useApp();
 
+  const addSource = useCallback((name: string, content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    setSources((current) => [
+      ...current,
+      { id: sourceId(), name, content: trimmed.slice(0, 12000) },
+    ]);
+  }, []);
+
   const handleSubmit = useCallback(
     async (q: string) => {
       const trimmed = q.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        setError("Add a question to frame the experiment.");
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
-        const result = await ingest(trimmed);
+        const result = await ingest(
+          trimmed,
+          sources.map((source) => source.content),
+        );
         setIngestionResult(result);
         navigate("/protocol");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Something went wrong");
+        setError(e instanceof Error ? e.message : "Could not generate a protocol.");
       } finally {
         setLoading(false);
       }
     },
-    [navigate, setIngestionResult],
+    [navigate, setIngestionResult, sources],
   );
 
   const handleFileUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        const text = reader.result as string;
-        setQuery(text.slice(0, 2000));
+        addSource(file.name, String(reader.result ?? ""));
+        event.target.value = "";
       };
+      reader.onerror = () => setError("Could not read that source file.");
       reader.readAsText(file);
     },
-    [],
+    [addSource],
+  );
+
+  const handleAddPastedSource = useCallback(() => {
+    addSource("Pasted source", sourceText);
+    setSourceText("");
+  }, [addSource, sourceText]);
+
+  const handleTemplateStart = useCallback(
+    (template: TrialTemplate) => {
+      setError(null);
+      setIngestionResult(templateToIngestionResult(template));
+      navigate("/protocol");
+    },
+    [navigate, setIngestionResult],
   );
 
   const autoResize = (el: HTMLTextAreaElement) => {
     el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
+    el.style.height = `${el.scrollHeight}px`;
   };
 
-  // If there's an active trial, show a link to it
   if (state.trial?.status === "active") {
     return (
       <div className="home-center">
@@ -74,7 +111,7 @@ export function Home() {
             Trial in Progress
           </h1>
           <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 460, margin: "0 auto 32px" }}>
-            You have an active trial: <strong>{state.trial.conditionALabel} vs. {state.trial.conditionBLabel}</strong>
+            Active trial: <strong>{state.trial.conditionALabel} vs. {state.trial.conditionBLabel}</strong>
           </p>
           <button className="btn btn-p" onClick={() => navigate("/trial")}>
             Go to Active Trial
@@ -86,16 +123,16 @@ export function Home() {
 
   return (
     <div className="home-center">
-      <div className="fade-up" style={{ textAlign: "center", marginBottom: 40 }}>
+      <div className="fade-up" style={{ textAlign: "center", marginBottom: 32 }}>
         <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-1.5px", marginBottom: 12, lineHeight: 1.1 }}>
           What do you want to test?
         </h1>
-        <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 460, margin: "0 auto" }}>
-          Ask a question, paste a link, or upload a study — and get a structured personal experiment in minutes.
+        <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 500, margin: "0 auto" }}>
+          Ask a question, add source material, or start from a locked template.
         </p>
       </div>
 
-      <div className="fade-up fade-up-1" style={{ width: "100%", maxWidth: 620, marginBottom: 32 }}>
+      <div className="fade-up fade-up-1" style={{ width: "100%", maxWidth: 680, marginBottom: 24 }}>
         <div className="chat-input">
           <textarea
             ref={textareaRef}
@@ -113,18 +150,19 @@ export function Home() {
               }
             }}
             disabled={loading}
+            aria-label="Experiment question"
           />
           <div className="chat-actions">
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.pdf,.md"
+              accept=".txt,.md,.pdf"
               style={{ display: "none" }}
               onChange={handleFileUpload}
             />
             <button
               className="chat-action-btn"
-              aria-label="Upload file"
+              aria-label="Upload source file"
               onClick={() => fileInputRef.current?.click()}
               disabled={loading}
             >
@@ -150,31 +188,82 @@ export function Home() {
           </div>
         </div>
         {error && (
-          <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 8, textAlign: "center" }}>{error}</p>
+          <p className="form-error" role="alert">{error}</p>
         )}
       </div>
 
-      <div className="fade-up fade-up-2" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".08em", color: "var(--gray-400)", marginBottom: 12, textAlign: "center" }}>
-        Or start from a template
-      </div>
-      <div className="template-grid fade-up fade-up-3">
-        {templates.map((t) => (
-          <div key={t.name} className="template-card" onClick={() => { setQuery(t.query); handleSubmit(t.query); }}>
-            <div className="template-icon">{t.icon}</div>
-            <h3>{t.name}</h3>
-            <p>{t.desc}</p>
+      <div className="source-panel fade-up fade-up-2">
+        <div className="source-panel-header">
+          <div>
+            <h2>Source Material</h2>
+            <p>Paste abstracts, notes, claims, or product details. Sources stay separate from your question.</p>
           </div>
-        ))}
+          <button
+            className="btn btn-s btn-sm"
+            onClick={handleAddPastedSource}
+            disabled={!sourceText.trim() || loading}
+          >
+            Add Source
+          </button>
+        </div>
+        <textarea
+          className="source-textarea"
+          placeholder="Paste source text here..."
+          value={sourceText}
+          onChange={(e) => setSourceText(e.target.value)}
+          disabled={loading}
+          aria-label="Source material"
+        />
+        {sources.length > 0 && (
+          <div className="source-list" aria-label="Attached sources">
+            {sources.map((source) => (
+              <div className="source-chip" key={source.id}>
+                <span>{source.name}</span>
+                <small>{source.content.length.toLocaleString()} chars</small>
+                <button
+                  type="button"
+                  aria-label={`Remove ${source.name}`}
+                  onClick={() => setSources((current) => current.filter((item) => item.id !== source.id))}
+                  disabled={loading}
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      <div className="fade-up fade-up-4" style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, justifyContent: "center", marginTop: 24, maxWidth: 620 }}>
+
+      <div className="fade-up fade-up-3" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 20, maxWidth: 680 }}>
         {quickPrompts.map((prompt) => (
           <button
             key={prompt}
             className="radio-pill"
             style={{ fontSize: 13 }}
-            onClick={() => { setQuery(prompt); handleSubmit(prompt); }}
+            onClick={() => {
+              setQuery(prompt.replaceAll('"', ""));
+              textareaRef.current?.focus();
+            }}
           >
             {prompt}
+          </button>
+        ))}
+      </div>
+
+      <div className="fade-up fade-up-4" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--gray-400)", marginTop: 30, marginBottom: 12, textAlign: "center" }}>
+        Or start from a local template
+      </div>
+      <div className="template-grid fade-up fade-up-5">
+        {trialTemplates.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            className="template-card"
+            onClick={() => handleTemplateStart(template)}
+          >
+            <div className="template-icon">{template.icon}</div>
+            <h3>{template.name}</h3>
+            <p>{template.description}</p>
           </button>
         ))}
       </div>

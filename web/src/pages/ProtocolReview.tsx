@@ -28,6 +28,7 @@ export function ProtocolReview() {
   const navigate = useNavigate();
   const [condA, setCondA] = useState("");
   const [condB, setCondB] = useState("");
+  const [restrictedAcknowledged, setRestrictedAcknowledged] = useState(false);
 
   if (!ingestionResult) {
     return (
@@ -64,6 +65,35 @@ export function ProtocolReview() {
     );
   }
 
+  if (decision === "manual_review_before_protocol") {
+    return (
+      <div className="page-container">
+        <div className="fade-up" style={{ marginBottom: 32 }}>
+          <div
+            className="back-link"
+            onClick={() => navigate("/")}
+            style={{ fontSize: 13, color: "var(--gray-400)", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer" }}
+          >
+            ← Back to new experiment
+          </div>
+          <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 8 }}>Manual Review Needed</h1>
+          <span className={safetyBadgeClass[safety_tier]}>{safetyLabel[safety_tier]}</span>
+        </div>
+        <div className="caveats-card fade-up fade-up-1">
+          <h3>Protocol not ready to lock</h3>
+          <p>{user_message}</p>
+          {block_reason && <p style={{ marginTop: 12 }}>{block_reason}</p>}
+          <p style={{ marginTop: 12 }}>
+            Try narrowing the comparison to two everyday routines or products with a single 0-10 outcome.
+          </p>
+        </div>
+        <div style={{ marginTop: 24 }}>
+          <button className="btn btn-p" onClick={() => navigate("/")}>Revise Question</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!protocol) {
     return (
       <div className="page-container">
@@ -73,15 +103,18 @@ export function ProtocolReview() {
     );
   }
 
+  const totalWeeks = protocol.duration_weeks;
+  const requiresAcknowledgment =
+    decision === "generate_protocol_with_restrictions" || safety_tier === "YELLOW";
+
   const handleLock = () => {
+    if (requiresAcknowledgment && !restrictedAcknowledged) return;
     const labelA = condA.trim() || "Condition A";
     const labelB = condB.trim() || "Condition B";
     const trial = createTrial(ingestionResult, labelA, labelB);
     setTrial(trial);
     navigate("/trial");
   };
-
-  const totalWeeks = protocol.duration_weeks;
 
   return (
     <div className="page-container">
@@ -206,11 +239,24 @@ export function ProtocolReview() {
         </div>
       )}
 
+      {requiresAcknowledgment && (
+        <label className="acknowledgment-box fade-up fade-up-5">
+          <input
+            type="checkbox"
+            checked={restrictedAcknowledged}
+            onChange={(e) => setRestrictedAcknowledged(e.target.checked)}
+          />
+          <span>
+            I reviewed the restrictions and will only compare routines or products that fit this protocol.
+          </span>
+        </label>
+      )}
+
       <p style={{ fontSize: 14, color: "var(--gray-500)", marginTop: 16 }}>{user_message}</p>
 
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--gray-200)" }} className="fade-up fade-up-5">
         <button className="btn btn-s" onClick={() => navigate("/")}>Edit Conditions</button>
-        <button className="btn btn-p" onClick={handleLock}>
+        <button className="btn btn-p" onClick={handleLock} disabled={requiresAcknowledgment && !restrictedAcknowledged}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <path d="M2 8h12M10 4l4 4-4 4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
