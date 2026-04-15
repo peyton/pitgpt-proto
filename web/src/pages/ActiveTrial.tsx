@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { analyze } from "../lib/api";
@@ -54,11 +54,21 @@ export function ActiveTrial() {
     void sendDueNativeReminder(trial, state.settings.reminderEnabled, state.settings.reminderTime);
   }, [trial, state.settings.reminderEnabled, state.settings.reminderTime]);
 
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    if (event.key === "Escape") setShowStopConfirm(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showStopConfirm) return;
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showStopConfirm, handleEscape]);
+
   if (!trial || trial.status !== "active") {
     return (
-      <div className="page-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ color: "var(--gray-500)", marginBottom: 16 }}>No active trial.</p>
+      <div className="page-container empty-state-center">
+        <div className="empty-state">
+          <p>No active trial.</p>
           <button className="btn btn-p" onClick={() => navigate("/")}>Start a New Experiment</button>
         </div>
       </div>
@@ -89,6 +99,7 @@ export function ActiveTrial() {
     addObservation(obs);
     setSubmitted(true);
     setSubmitting(false);
+    setScore(5);
     setNote("");
     setIrritation("no");
     setAdherence("yes");
@@ -162,22 +173,19 @@ export function ActiveTrial() {
       <div className="trial-hero fade-up">
         <div className="trial-hero-top">
           <div>
-            <span className="badge badge-safe badge-dot" style={{ marginBottom: 8 }}>Active</span>
-            <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: 0 }}>
+            <span className="badge badge-safe badge-dot trial-hero-badge">Active</span>
+            <h2 className="trial-hero-title">
               {trial.conditionALabel} vs. {trial.conditionBLabel}
             </h2>
-            <p style={{ color: "var(--gray-500)", fontSize: 14, marginTop: 4 }}>
-              {trial.protocol.template ?? "Custom"} · {trial.protocol.duration_weeks}-week trial
-            </p>
-            <p style={{ color: "var(--gray-500)", fontSize: 13, marginTop: 4 }}>
-              {daysLeft} day{daysLeft === 1 ? "" : "s"} left · {nextCheckIn}
+            <p className="trial-hero-meta">
+              {trial.protocol.template ?? "Custom"} · {trial.protocol.duration_weeks}w · {daysLeft}d left · {nextCheckIn}
             </p>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 28, fontWeight: 700, color: "var(--pink-500)", lineHeight: 1 }}>
+          <div className="trial-hero-counter">
+            <div className="trial-hero-count">
               {Math.min(progress.dayIndex, progress.totalDays)}
             </div>
-            <div style={{ fontSize: 12, color: "var(--gray-400)" }}>of {progress.totalDays} days</div>
+            <div className="trial-hero-count-label">of {progress.totalDays}</div>
           </div>
         </div>
         <div className="progress-bar">
@@ -201,10 +209,10 @@ export function ActiveTrial() {
 
       {/* Trial complete banner */}
       {trialComplete && (
-        <div style={{ background: "var(--safe-bg)", border: "1px solid #BBF7D0", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 14, color: "var(--safe)", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }} className="fade-up fade-up-1">
+        <div className="trial-complete-banner fade-up fade-up-1">
           <span>Trial complete! Ready to see your results.</span>
           <button className="btn btn-p btn-sm" onClick={handleComplete} disabled={analyzing}>
-            {analyzing ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : "View Results"}
+            {analyzing ? <div className="spinner spinner-sm" /> : "View Results"}
           </button>
         </div>
       )}
@@ -257,10 +265,10 @@ export function ActiveTrial() {
           <h3>Daily Check-In <span className="time-est">&lt; 20 seconds</span></h3>
 
           {todayDone ? (
-            <div style={{ textAlign: "center", padding: 24 }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
-              <p style={{ color: "var(--safe)", fontWeight: 600 }}>Today's check-in submitted!</p>
-              <p style={{ color: "var(--gray-400)", fontSize: 13, marginTop: 4 }}>Come back tomorrow for your next check-in.</p>
+            <div className="checkin-done">
+              <div className="checkin-done-icon">✓</div>
+              <p className="checkin-done-title">Today's check-in submitted!</p>
+              <p className="checkin-done-sub">Come back tomorrow.</p>
             </div>
           ) : (
             <>
@@ -269,10 +277,10 @@ export function ActiveTrial() {
                   {trial.protocol.primary_outcome_question || "Satisfaction"}
                   <InfoTooltip text="Rate how your skin looks and feels right now. 0 = worst it's ever been, 10 = best it's ever been." />
                 </div>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: "var(--gray-400)" }}>Poor</span>
-                    <span style={{ fontSize: 12, color: "var(--gray-400)" }}>Excellent</span>
+                <div className="slider-wrap">
+                  <div className="slider-anchors">
+                    <span>Poor</span>
+                    <span>Excellent</span>
                   </div>
                   <input
                     type="range"
@@ -281,13 +289,14 @@ export function ActiveTrial() {
                     max="10"
                     value={score}
                     onChange={(e) => setScore(Number(e.target.value))}
+                    aria-label={`Score: ${score}`}
                   />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                  <div className="slider-ticks">
                     {Array.from({ length: 11 }, (_, i) => (
-                      <span key={i} style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--gray-400)", width: 22, textAlign: "center" }}>{i}</span>
+                      <span key={i}>{i}</span>
                     ))}
                   </div>
-                  <div style={{ textAlign: "center", marginTop: 8, fontFamily: "var(--mono)", fontSize: 24, fontWeight: 700, color: "var(--pink-500)" }}>
+                  <div className="slider-value" aria-live="polite">
                     {score}
                   </div>
                 </div>
@@ -390,7 +399,7 @@ export function ActiveTrial() {
                 />
               </details>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <div className="checkin-submit-row">
                 <button className="btn btn-p" onClick={handleCheckin} disabled={submitting}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M2 8l4 4 8-8" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -499,14 +508,14 @@ export function ActiveTrial() {
               Your existing check-ins stay saved. PitGPT will analyze the data as an early stop and label the caveats clearly.
             </p>
             {minimumDataWarning && (
-              <p style={{ color: "var(--caution)" }}>{minimumDataWarning}</p>
+              <p className="caution-text">{minimumDataWarning}</p>
             )}
             <div className="modal-actions">
               <button className="btn btn-s" onClick={() => setShowStopConfirm(false)} disabled={analyzing}>
                 Keep Going
               </button>
               <button className="btn btn-d" onClick={handleComplete} disabled={analyzing}>
-                {analyzing ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : "Stop and Analyze"}
+                {analyzing ? <div className="spinner spinner-sm" /> : "Stop and Analyze"}
               </button>
             </div>
           </div>

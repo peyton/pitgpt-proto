@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
 import { ingestExperimentStream } from "../lib/api";
@@ -25,6 +25,7 @@ export function ExperimentChat() {
     setIngestionResult,
   } = useApp();
   const [reply, setReply] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const experiment = useMemo(
     () => state.experiments.find((item) => item.id === experimentId) ?? null,
     [experimentId, state.experiments],
@@ -36,6 +37,10 @@ export function ExperimentChat() {
     markExperimentRead(experimentId);
     return () => setCurrentExperiment(null);
   }, [experimentId, markExperimentRead, setCurrentExperiment]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [experiment?.messages.length]);
 
   useEffect(() => {
     if (!experiment || experiment.status !== "draft" || experiment.ingestionResult) return;
@@ -137,10 +142,8 @@ export function ExperimentChat() {
   if (!experiment) {
     return (
       <div className="home-center">
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 12 }}>
-            Experiment not found
-          </h1>
+        <div className="empty-state">
+          <h1 className="page-title">Experiment not found</h1>
           <Link className="btn btn-p" to="/">
             Start New Experiment
           </Link>
@@ -170,6 +173,7 @@ export function ExperimentChat() {
             onReviewProtocol={handleReviewProtocol}
           />
         ))}
+        <div ref={chatEndRef} />
       </section>
 
       <form className="experiment-chat-composer" onSubmit={handleReplySubmit}>

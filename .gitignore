@@ -22,6 +22,7 @@ web/node_modules/
 web/dist/
 web/test-results/
 web/playwright-report/
+*.tsbuildinfo
 src-tauri/target/
 src-tauri/gen/apple/
 src-tauri/gen/ios/

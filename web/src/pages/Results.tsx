@@ -1,30 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
+import { getSafetyBadgeClass, getSafetyLabel, getEvidenceClass } from "../lib/badges";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { doctorQuestions, exportAppointmentBrief } from "../lib/brief";
 import { downloadFile, exportCSV } from "../lib/storage";
 import { computeTrialAuditHash } from "../lib/trial";
 import type { CompletedTrial, Observation } from "../lib/types";
-
-const safetyBadgeClass: Record<string, string> = {
-  GREEN: "badge badge-safe badge-dot",
-  YELLOW: "badge badge-caution badge-dot",
-  RED: "badge badge-danger badge-dot",
-};
-
-const safetyLabel: Record<string, string> = {
-  GREEN: "Green",
-  YELLOW: "Yellow",
-  RED: "Red",
-};
-
-const evidenceClass: Record<string, string> = {
-  strong: "badge badge-safe",
-  moderate: "badge badge-info",
-  weak: "badge badge-neutral",
-  novel: "badge badge-pink",
-};
 
 function TimeSeriesChart({ observations, condALabel, condBLabel }: {
   observations: Observation[];
@@ -32,7 +14,7 @@ function TimeSeriesChart({ observations, condALabel, condBLabel }: {
   condBLabel: string;
 }) {
   const scored = observations.filter((o) => o.primary_score !== null).sort((a, b) => a.day_index - b.day_index);
-  if (scored.length === 0) return <p style={{ color: "var(--gray-400)", textAlign: "center", padding: 40 }}>No data to chart.</p>;
+  if (scored.length === 0) return <p className="chart-empty">No data to chart.</p>;
 
   const width = 760;
   const height = 200;
@@ -116,11 +98,11 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
 
   return (
     <div className="page-container wide">
-      <div className="fade-up" style={{ marginBottom: 28 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 4 }}>
+      <div className="page-header fade-up">
+        <h1 className="page-title">
           {trial.conditionALabel} vs. {trial.conditionBLabel}
         </h1>
-        <span style={{ fontSize: 13, color: "var(--gray-400)", fontFamily: "var(--mono)" }}>
+        <span className="page-meta">
           Completed {trial.completedAt ? new Date(trial.completedAt).toLocaleDateString() : ""} · {getTotalDaysLabel(trial)} · {trial.protocol.template ?? "Custom"}
         </span>
       </div>
@@ -137,14 +119,14 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
       <div className="integrity-grid fade-up fade-up-2">
         <div className="integrity-item">
           <span>Evidence Basis</span>
-          <strong className={evidenceClass[trial.ingestion.evidence_quality]}>
+          <strong className={getEvidenceClass(trial.ingestion.evidence_quality)}>
             {trial.ingestion.evidence_quality}
           </strong>
         </div>
         <div className="integrity-item">
           <span>Safety Tier</span>
-          <strong className={safetyBadgeClass[trial.ingestion.safety_tier]}>
-            {safetyLabel[trial.ingestion.safety_tier]}
+          <strong className={getSafetyBadgeClass(trial.ingestion.safety_tier)}>
+            {getSafetyLabel(trial.ingestion.safety_tier, true)}
           </strong>
         </div>
         <div className="integrity-item">
@@ -181,7 +163,7 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           <div className="stat-card">
             <div className="stat-label">Difference <InfoTooltip text="Mean A minus Mean B. The confidence interval tells you how certain this difference is." /></div>
             <div className="stat-value stat-positive">{result.difference != null ? `${result.difference > 0 ? "+" : ""}${result.difference.toFixed(1)}` : "—"}</div>
-            <div className="stat-sub" style={{ fontFamily: "var(--mono)", fontSize: 11 }}>
+            <div className="stat-sub mono">
               CI: {formatInterval(result.ci_lower, result.ci_upper)}
             </div>
           </div>
@@ -255,13 +237,13 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
           {trial.ingestion.clinician_note || trial.protocol.clinician_note ? (
             <p>{trial.ingestion.clinician_note || trial.protocol.clinician_note}</p>
           ) : null}
-          <h3 style={{ marginTop: 14 }}>Questions to bring</h3>
+          <h3>Questions to bring</h3>
           <ul className="advanced-list">
             {doctorQuestions(trial, result).map((question) => <li key={question}>{question}</li>)}
           </ul>
           {(trial.adverseEvents?.length ?? 0) > 0 && (
             <>
-              <h3 style={{ marginTop: 14 }}>Discomfort logged</h3>
+              <h3>Discomfort logged</h3>
               <ul className="advanced-list">
                 {trial.adverseEvents?.map((event) => (
                   <li key={event.id}>
@@ -361,7 +343,7 @@ function ResultView({ completed }: { completed: CompletedTrial }) {
       </details>
 
       {/* Actions */}
-      <div style={{ display: "flex", gap: 12, marginTop: 24 }} className="fade-up fade-up-5">
+      <div className="results-actions fade-up fade-up-5">
         <button className="btn btn-s" onClick={() => {
           downloadFile(exportCSV(trial.observations), "pitgpt-trial.csv", "text/csv");
         }}>
@@ -446,9 +428,9 @@ export function Results() {
 
   if (!latest) {
     return (
-      <div className="page-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ color: "var(--gray-500)", marginBottom: 16 }}>No completed trials yet.</p>
+      <div className="page-container empty-state-center">
+        <div className="empty-state">
+          <p>No completed trials yet.</p>
           <button className="btn btn-p" onClick={() => navigate("/")}>Start a New Experiment</button>
         </div>
       </div>

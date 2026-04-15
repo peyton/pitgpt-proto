@@ -1,29 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../lib/AppContext";
+import { getSafetyBadgeClass, getSafetyLabel, getEvidenceClass } from "../lib/badges";
 import { createTrial } from "../lib/trial";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { getPeriodCount } from "../lib/randomize";
 import { trialTemplates } from "../lib/templates";
-
-const safetyBadgeClass: Record<string, string> = {
-  GREEN: "badge badge-safe badge-dot",
-  YELLOW: "badge badge-caution badge-dot",
-  RED: "badge badge-danger badge-dot",
-};
-
-const safetyLabel: Record<string, string> = {
-  GREEN: "Green — Safe to Run",
-  YELLOW: "Yellow — Restrictions Apply",
-  RED: "Red — Blocked",
-};
-
-const evidenceClass: Record<string, string> = {
-  strong: "badge badge-safe",
-  moderate: "badge badge-info",
-  weak: "badge badge-neutral",
-  novel: "badge badge-pink",
-};
 
 export function ProtocolReview() {
   const { ingestionResult, protocolExperimentId, setTrial, linkExperimentTrial } = useApp();
@@ -34,9 +16,9 @@ export function ProtocolReview() {
 
   if (!ingestionResult) {
     return (
-      <div className="page-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ color: "var(--gray-500)", marginBottom: 16 }}>No protocol generated yet.</p>
+      <div className="page-container empty-state-center">
+        <div className="empty-state">
+          <p>No protocol generated yet.</p>
           <button className="btn btn-p" onClick={() => navigate("/")}>Start a New Experiment</button>
         </div>
       </div>
@@ -58,21 +40,21 @@ export function ProtocolReview() {
   if (decision === "block") {
     return (
       <div className="page-container">
-        <div className="fade-up" style={{ marginBottom: 32 }}>
-          <div className="back-link" onClick={() => navigate("/")} style={{ fontSize: 13, color: "var(--gray-400)", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer" }}>
-            ← Back to new experiment
-          </div>
-          <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 8 }}>Experiment Blocked</h1>
-          <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
-            {safetyLabel[safety_tier] ?? safety_tier}
+        <div className="page-header fade-up">
+          <button className="back-link" type="button" onClick={() => navigate("/")}>
+            ← Back
+          </button>
+          <h1 className="page-title">Experiment Blocked</h1>
+          <span className={getSafetyBadgeClass(safety_tier)}>
+            {getSafetyLabel(safety_tier)}
           </span>
         </div>
         <div className="caveats-card fade-up fade-up-1">
           <h3>Why this was blocked</h3>
           <p>{block_reason}</p>
-          <p style={{ marginTop: 12 }}>{user_message}</p>
+          {user_message && <p className="user-message">{user_message}</p>}
         </div>
-        <div style={{ marginTop: 24 }}>
+        <div className="page-actions-start">
           <button className="btn btn-p" onClick={() => navigate("/")}>Try a Different Question</button>
         </div>
       </div>
@@ -82,26 +64,22 @@ export function ProtocolReview() {
   if (decision === "manual_review_before_protocol") {
     return (
       <div className="page-container">
-        <div className="fade-up" style={{ marginBottom: 32 }}>
-          <div
-            className="back-link"
-            onClick={() => navigate("/")}
-            style={{ fontSize: 13, color: "var(--gray-400)", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer" }}
-          >
-            ← Back to new experiment
-          </div>
-          <h1 style={{ fontSize: 30, fontWeight: 800, marginBottom: 8 }}>Manual Review Needed</h1>
-          <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
-            {safetyLabel[safety_tier] ?? safety_tier}
+        <div className="page-header fade-up">
+          <button className="back-link" type="button" onClick={() => navigate("/")}>
+            ← Back
+          </button>
+          <h1 className="page-title">Manual Review Needed</h1>
+          <span className={getSafetyBadgeClass(safety_tier)}>
+            {getSafetyLabel(safety_tier)}
           </span>
         </div>
         <div className="caveats-card fade-up fade-up-1">
           <h3>Protocol not ready to lock</h3>
           <p>{user_message}</p>
-          {block_reason && <p style={{ marginTop: 12 }}>{block_reason}</p>}
+          {block_reason && <p>{block_reason}</p>}
           {ingestionResult.next_steps && ingestionResult.next_steps.length > 0 && (
             <>
-              <h3 style={{ marginTop: 18 }}>Follow-up questions</h3>
+              <h3>Follow-up questions</h3>
               <ul>
                 {ingestionResult.next_steps.map((step) => (
                   <li key={step}>{step}</li>
@@ -109,11 +87,11 @@ export function ProtocolReview() {
               </ul>
             </>
           )}
-          <p style={{ marginTop: 12 }}>
+          <p>
             Try narrowing the comparison to two everyday routines or products with a single 0-10 outcome.
           </p>
         </div>
-        <div style={{ marginTop: 24 }}>
+        <div className="page-actions-start">
           <button className="btn btn-p" onClick={() => navigate("/")}>Revise Question</button>
         </div>
       </div>
@@ -123,8 +101,8 @@ export function ProtocolReview() {
   if (!protocol) {
     return (
       <div className="page-container">
-        <p style={{ color: "var(--gray-500)" }}>No protocol was generated. {user_message}</p>
-        <button className="btn btn-p" style={{ marginTop: 16 }} onClick={() => navigate("/")}>Try Again</button>
+        <p className="page-subtitle">{user_message || "No protocol was generated."}</p>
+        <button className="btn btn-p" onClick={() => navigate("/")}>Try Again</button>
       </div>
     );
   }
@@ -149,24 +127,21 @@ export function ProtocolReview() {
 
   return (
     <div className="page-container">
-      <div className="fade-up" style={{ marginBottom: 32 }}>
-        <div
-          onClick={() => navigate("/")}
-          style={{ fontSize: 13, color: "var(--gray-400)", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, cursor: "pointer" }}
-        >
-          ← Back to new experiment
-        </div>
-        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 8 }}>Generated Protocol</h1>
-        <p style={{ color: "var(--gray-500)", fontSize: 15 }}>
-          Review the design below. You can edit condition labels, then lock the protocol so the result stays interpretable.
+      <div className="page-header fade-up">
+        <button className="back-link" type="button" onClick={() => navigate("/")}>
+          ← Back
+        </button>
+        <h1 className="page-title">Generated Protocol</h1>
+        <p className="page-subtitle">
+          Edit condition labels, then lock the protocol to start collecting data.
         </p>
       </div>
 
-      <div className="fade-up fade-up-1" style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <span className={safetyBadgeClass[safety_tier] ?? "badge badge-neutral"}>
-          {safetyLabel[safety_tier] ?? safety_tier}
+      <div className="badge-row fade-up fade-up-1">
+        <span className={getSafetyBadgeClass(safety_tier)}>
+          {getSafetyLabel(safety_tier)}
         </span>
-        <span className={evidenceClass[evidence_quality] ?? "badge badge-neutral"}>
+        <span className={getEvidenceClass(evidence_quality)}>
           {evidence_quality} Evidence
         </span>
         {risk_level && <span className="badge badge-info">{risk_level.replaceAll("_", " ")}</span>}
@@ -193,27 +168,27 @@ export function ProtocolReview() {
           <div className="protocol-detail">
             <div className="protocol-detail-item">
               <label>Condition A</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--pink-500)", flexShrink: 0 }} />
+              <div className="condition-input-row">
+                <span className="condition-dot condition-dot-a" aria-hidden="true" />
                 <input
                   type="text"
+                  className="condition-input"
                   value={condA}
                   onChange={(e) => setCondA(e.target.value)}
                   placeholder={templateHints?.conditionAPlaceholder ?? "e.g. CeraVe Moisturizing Cream"}
-                  style={{ border: "1px solid var(--gray-200)", borderRadius: "var(--r-md)", padding: "8px 12px", fontSize: 15, fontWeight: 600, width: "100%", outline: "none", fontFamily: "var(--font)" }}
                 />
               </div>
             </div>
             <div className="protocol-detail-item">
               <label>Condition B</label>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 12, height: 12, borderRadius: "50%", background: "var(--pink-300)", flexShrink: 0 }} />
+              <div className="condition-input-row">
+                <span className="condition-dot condition-dot-b" aria-hidden="true" />
                 <input
                   type="text"
+                  className="condition-input"
                   value={condB}
                   onChange={(e) => setCondB(e.target.value)}
                   placeholder={templateHints?.conditionBPlaceholder ?? "e.g. La Roche-Posay Toleriane"}
-                  style={{ border: "1px solid var(--gray-200)", borderRadius: "var(--r-md)", padding: "8px 12px", fontSize: 15, fontWeight: 600, width: "100%", outline: "none", fontFamily: "var(--font)" }}
                 />
               </div>
             </div>
@@ -225,7 +200,7 @@ export function ProtocolReview() {
       <div className="protocol-card fade-up fade-up-3">
         <div className="protocol-card-header">
           <h3>Locked for validity</h3>
-          <span style={{ fontSize: 11, color: "var(--gray-400)", fontFamily: "var(--mono)" }}>LOCKED</span>
+          <span className="locked-badge">LOCKED</span>
         </div>
         <div className="protocol-card-body">
           <div className="protocol-detail">
@@ -275,8 +250,8 @@ export function ProtocolReview() {
             ) : null}
           </div>
 
-          <div style={{ marginTop: 20 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 0, color: "var(--gray-400)", marginBottom: 10 }}>
+          <div className="schedule-section">
+            <label className="schedule-label">
               Randomized Periods <InfoTooltip text="You only see the current assignment while the trial is active. Future assignments are hidden to prevent bias." />
             </label>
             <div className="schedule-vis">
@@ -320,7 +295,7 @@ export function ProtocolReview() {
       </div>
 
       {decision === "generate_protocol_with_restrictions" && protocol.screening && (
-        <div style={{ background: "var(--caution-bg)", border: "1px solid #FDE68A", borderRadius: "var(--r-md)", padding: "14px 20px", fontSize: 13, color: "var(--caution)", marginTop: 16 }}>
+        <div className="screening-banner">
           <strong>Screening:</strong> {protocol.screening}
         </div>
       )}
@@ -338,9 +313,9 @@ export function ProtocolReview() {
         </label>
       )}
 
-      <p style={{ fontSize: 14, color: "var(--gray-500)", marginTop: 16 }}>{user_message}</p>
+      {user_message && <p className="user-message">{user_message}</p>}
 
-      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24, paddingTop: 24, borderTop: "1px solid var(--gray-200)" }} className="fade-up fade-up-5">
+      <div className="page-actions fade-up fade-up-5">
         <button className="btn btn-s" onClick={() => navigate("/")}>Start Over</button>
         <button className="btn btn-p" onClick={handleLock} disabled={requiresAcknowledgment && !restrictedAcknowledged}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

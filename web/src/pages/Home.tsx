@@ -128,19 +128,17 @@ export function Home() {
 
   return (
     <div className="home-center">
-      <div className="fade-up" style={{ textAlign: "center", marginBottom: 32 }}>
-        <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: 0, marginBottom: 12, lineHeight: 1.1 }}>
-          What do you want to test?
-        </h1>
-        <p style={{ color: "var(--gray-500)", fontSize: 16, maxWidth: 500, margin: "0 auto" }}>
-          Compare a routine, product, or pattern you can keep consistent. Add research when it helps.
+      <div className="home-hero fade-up">
+        <h1 className="home-title">What do you want to test?</h1>
+        <p className="home-subtitle">
+          Compare a routine, product, or pattern you can keep consistent.
         </p>
       </div>
 
       <div className="path-grid fade-up fade-up-1">
         <button className="path-card" type="button" onClick={handleRunExample} disabled={loadingExample}>
           <strong>Run example</strong>
-          <span>{loadingExample ? "Loading..." : "See a completed result with bundled data."}</span>
+          <span>{loadingExample ? "Loading..." : "See a completed result."}</span>
         </button>
         <button
           className="path-card"
@@ -148,20 +146,15 @@ export function Home() {
           onClick={() => document.getElementById("template-start")?.scrollIntoView({ behavior: "smooth" })}
         >
           <strong>Start template</strong>
-          <span>No API key. Lock labels, then check in daily.</span>
+          <span>No API key needed.</span>
         </button>
         <button className="path-card" type="button" onClick={() => textareaRef.current?.focus()}>
           <strong>Ask question</strong>
-          <span>Generate a protocol from your exact comparison.</span>
+          <span>Generate a protocol from your comparison.</span>
         </button>
       </div>
 
-      <div className="preflight-box fade-up fade-up-2">
-        <strong>Good fit:</strong> low-risk routines, cosmetic products, habits, tracking, or environmental changes.
-        <span>Medication changes, urgent symptoms, invasive interventions, and diagnosis questions need a different path. If a plan touches a condition, medication, or symptoms, bring it to your clinician.</span>
-      </div>
-
-      <div className="fade-up fade-up-3" style={{ width: "100%", maxWidth: 680, marginBottom: 24 }}>
+      <div className="fade-up fade-up-2 home-input-wrap">
         <div className="chat-input">
           <textarea
             ref={textareaRef}
@@ -215,22 +208,21 @@ export function Home() {
         )}
       </div>
 
-      <details className="source-panel fade-up fade-up-4" open={sourceOpen} onToggle={(event) => setSourceOpen(event.currentTarget.open)}>
+      <details className="source-panel fade-up fade-up-3" open={sourceOpen} onToggle={(event) => setSourceOpen(event.currentTarget.open)}>
         <summary className="source-panel-summary">
-          <span>Add research source</span>
-          <small>Text, markdown, CSV, JSON, PDF, or article URL</small>
+          <span>Attach research</span>
+          <small>Paste text, upload a file, or add a URL</small>
         </summary>
         <div className="source-panel-header">
           <div>
             <h2>Source Material</h2>
-            <p>Paste article URLs, abstracts, notes, claims, or product details. Sources stay separate from your question.</p>
           </div>
           <button
             className="btn btn-s btn-sm"
             onClick={handleAddPastedSource}
             disabled={!sourceText.trim()}
           >
-            Add Source
+            Add
           </button>
         </div>
         <textarea
@@ -248,10 +240,13 @@ export function Home() {
                 <small>{source.content.length.toLocaleString()} chars</small>
                 <button
                   type="button"
+                  className="source-chip-remove"
                   aria-label={`Remove ${source.name}`}
                   onClick={() => setSources((current) => current.filter((item) => item.id !== source.id))}
                 >
-                  x
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
                 </button>
               </div>
             ))}
@@ -259,12 +254,11 @@ export function Home() {
         )}
       </details>
 
-      <div className="fade-up fade-up-4" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 20, maxWidth: 680 }}>
+      <div className="quick-prompts fade-up fade-up-3">
         {quickPrompts.map((prompt) => (
           <button
             key={prompt}
-            className="radio-pill"
-            style={{ fontSize: 13 }}
+            className="radio-pill radio-pill-sm"
             onClick={() => {
               setQuery(prompt.replaceAll('"', ""));
               textareaRef.current?.focus();
@@ -275,10 +269,10 @@ export function Home() {
         ))}
       </div>
 
-      <div id="template-start" className="fade-up fade-up-5" style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0, color: "var(--gray-400)", marginTop: 30, marginBottom: 12, textAlign: "center" }}>
-        Or start from a local template
+      <div id="template-start" className="section-label fade-up fade-up-4">
+        Or start from a template
       </div>
-      <div className="template-grid fade-up fade-up-5">
+      <div className="template-grid fade-up fade-up-4">
         {trialTemplates.map((template) => (
           <button
             key={template.id}
