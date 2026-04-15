@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useApp } from "../lib/AppContext";
 import { healthCheck, listProviders, setApiToken } from "../lib/api";
 import { InfoTooltip } from "../components/InfoTooltip";
-import { clearAllData, downloadFile, exportCSV, exportJSON, restoreStateFromJSON } from "../lib/storage";
+import { clearAllData, defaultSettings, downloadFile, exportCSV, exportJSON, restoreStateFromJSON } from "../lib/storage";
 import { getRuntimeMode } from "../lib/runtime";
 import { syncNativeReminderSchedule, type NativeReminderSync } from "../lib/nativeNotifications";
 import type { AiProviderInfo, AiProviderKind } from "../lib/types";
@@ -87,12 +87,22 @@ export function Settings() {
     setApiToken(token);
   };
 
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    if (event.key === "Escape") setShowDeleteConfirm(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showDeleteConfirm, handleEscape]);
+
   const storageSize = new Blob([exportJSON(state)]).size;
   const sizeLabel = storageSize < 1024 ? `${storageSize} B` : `~${Math.round(storageSize / 1024)} KB`;
 
   return (
-    <div className="page-container" style={{ maxWidth: 640 }}>
-      <h1 className="fade-up" style={{ fontSize: 30, fontWeight: 800, letterSpacing: 0, marginBottom: 32 }}>Settings</h1>
+    <div className="page-container settings-container">
+      <h1 className="page-title fade-up">Settings</h1>
 
       <div className="settings-section fade-up fade-up-1">
         <h2>Reminders</h2>
@@ -124,18 +134,6 @@ export function Settings() {
             {nativeReminderSync.message}
           </p>
         )}
-        <div className="setting-row">
-          <div className="setting-label">
-            <h3>Email Reminders <InfoTooltip text="Email delivery is not implemented in this local-first prototype." /></h3>
-            <p>Not available in the local prototype</p>
-          </div>
-          <button
-            className="toggle"
-            onClick={() => updateSettings({ emailReminderEnabled: false })}
-            aria-label="Toggle email reminder"
-            disabled
-          />
-        </div>
       </div>
 
       <div className="settings-section fade-up fade-up-2">
@@ -145,7 +143,7 @@ export function Settings() {
             <h3>Export All Data</h3>
             <p>Download all your trial data as CSV or JSON</p>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="btn-group">
             <button className="btn btn-s btn-sm" onClick={handleExportCSV}>CSV</button>
             <button className="btn btn-s btn-sm" onClick={handleExportJSON}>JSON</button>
             <button className="btn btn-s btn-sm" onClick={() => importInputRef.current?.click()}>Import</button>
@@ -158,12 +156,12 @@ export function Settings() {
             <h3>Storage <InfoTooltip text="All data is stored locally on your device. Nothing is sent to a server. You are the only person who can see your experiments." /></h3>
             <p>All data stored locally on this device</p>
           </div>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--gray-400)" }}>{sizeLabel} used</span>
+          <span className="setting-mono-value">{sizeLabel} used</span>
         </div>
       </div>
 
-      <div className="settings-section fade-up fade-up-3">
-        <h2>AI Provider</h2>
+      <details className="settings-section settings-disclosure fade-up fade-up-3">
+        <summary><h2>AI Provider</h2></summary>
         <div className="setting-row">
           <div className="setting-label">
             <h3>API Token <InfoTooltip text="Only needed when the local API was started with PITGPT_API_TOKEN." /></h3>
@@ -241,7 +239,7 @@ export function Settings() {
             On-device models are planned for iOS. Templates, check-ins, local storage, exports, and analysis work offline now.
           </p>
         )}
-      </div>
+      </details>
 
       <div className="settings-section fade-up fade-up-3">
         <h2>About</h2>
@@ -255,23 +253,26 @@ export function Settings() {
         <div className="setting-row">
           <div className="setting-label">
             <h3>Version</h3>
-            <p>PitGPT v0.1 — Personal Experiment Engine</p>
+            <p>Personal Experiment Engine</p>
           </div>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--gray-400)" }}>v0.1.0</span>
+          <span className="setting-mono-value">v0.1.0</span>
         </div>
         <div className="setting-row">
           <div className="setting-label">
             <h3>Privacy</h3>
             <p>No analytics, no trackers, no third-party data sharing</p>
           </div>
-          <span className="badge badge-safe" style={{ fontSize: 10 }}>Private</span>
+          <span className="badge badge-safe badge-xs">Private</span>
         </div>
       </div>
 
       <div className="danger-zone fade-up fade-up-4">
         <h3>Danger Zone</h3>
-        <p>Permanently delete all your data, including all trials, check-ins, and results. This action cannot be undone.</p>
-        <button className="btn btn-d btn-sm" onClick={() => setShowDeleteConfirm(true)}>Delete All Data</button>
+        <p>Permanently delete all data or reset settings to defaults.</p>
+        <div className="btn-group">
+          <button className="btn btn-s btn-sm" onClick={() => updateSettings({ ...defaultSettings })}>Reset Settings</button>
+          <button className="btn btn-d btn-sm" onClick={() => setShowDeleteConfirm(true)}>Delete All Data</button>
+        </div>
       </div>
 
       {showDeleteConfirm && (

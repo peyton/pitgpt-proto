@@ -46,7 +46,7 @@ const navItems = [
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { state, markExperimentRead } = useApp();
+  const { state, ingestionResult, markExperimentRead } = useApp();
   const conversations = useMemo(
     () =>
       [...state.experiments].sort(
@@ -55,7 +55,15 @@ export function Layout() {
     [state.experiments],
   );
   const primaryNav = navItems.slice(0, 1);
-  const workflowNav = navItems.slice(1);
+  const hasProtocol = Boolean(ingestionResult);
+  const hasTrial = Boolean(state.trial);
+  const hasResults = state.completedResults.length > 0;
+  const workflowNav = navItems.slice(1).filter((item) => {
+    if (item.to === "/protocol" && !hasProtocol) return false;
+    if (item.to === "/trial" && !hasTrial) return false;
+    if (item.to === "/results" && !hasResults) return false;
+    return true;
+  });
 
   return (
     <>
@@ -149,7 +157,7 @@ export function Layout() {
               Settings
             </NavLink>
           </nav>
-          <div className="sidebar-footer">v1.0 · Private · No tracking</div>
+          <div className="sidebar-footer">v0.1.0 · Private</div>
         </aside>
         <main className="main">
           <Outlet />
