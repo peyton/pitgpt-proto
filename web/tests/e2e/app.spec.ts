@@ -355,7 +355,6 @@ test("settings selects an available local provider", async ({ page }, testInfo) 
 
   await page.goto("/");
   await goToSettings(page, testInfo);
-  await openProviderSection(page);
 
   await expect(page.getByText("Ollama is running.")).toBeVisible();
   await page.locator(".provider-row", { hasText: "Ollama" }).getByRole("button", { name: "Use" }).click();
@@ -372,7 +371,6 @@ test("mocked tauri runtime discovers providers and saves native settings", async
   await mockTauriRuntime(page);
   await page.goto("/");
   await goToSettings(page, testInfo);
-  await openProviderSection(page);
 
   await expect(page.getByText("desktop")).toBeVisible();
   await expect(page.getByText("Ollama is running.")).toBeVisible();
@@ -518,10 +516,6 @@ async function mockTauriRuntime(page: Page): Promise<void> {
   await page.route("**/*@tauri-apps*core*.js*", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/javascript", body: moduleBody });
   });
-}
-
-async function openProviderSection(page: Page): Promise<void> {
-  await page.locator(".settings-disclosure summary").click();
 }
 
 async function goToSettings(page: Page, testInfo: TestInfo): Promise<void> {

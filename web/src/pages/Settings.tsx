@@ -160,8 +160,8 @@ export function Settings() {
         </div>
       </div>
 
-      <details className="settings-section settings-disclosure fade-up fade-up-3">
-        <summary><h2>AI Provider</h2></summary>
+      <div className="settings-section fade-up fade-up-3">
+        <h2>AI Provider</h2>
         <div className="setting-row">
           <div className="setting-label">
             <h3>API Token <InfoTooltip text="Only needed when the local API was started with PITGPT_API_TOKEN." /></h3>
@@ -239,7 +239,7 @@ export function Settings() {
             On-device models are planned for iOS. Templates, check-ins, local storage, exports, and analysis work offline now.
           </p>
         )}
-      </details>
+      </div>
 
       <div className="settings-section fade-up fade-up-3">
         <h2>About</h2>
