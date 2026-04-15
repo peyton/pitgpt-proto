@@ -267,7 +267,7 @@ export function ActiveTrial() {
           {todayDone ? (
             <div className="checkin-done">
               <div className="checkin-done-icon">✓</div>
-              <p className="checkin-done-title">Check-in submitted</p>
+              <p className="checkin-done-title">Today's check-in submitted!</p>
               <p className="checkin-done-sub">Come back tomorrow.</p>
             </div>
           ) : (
