@@ -21,8 +21,8 @@ mkdir -p "$(dirname "$output_file")"
 
 case "$mode" in
   macos-dmg)
-    if [ -d src-tauri/target/release/bundle ]; then
-      find src-tauri/target/release/bundle -type f -name '*.dmg' -print | sort > "$output_file"
+    if [ -d app/target/release/bundle ]; then
+      find app/target/release/bundle -type f -name '*.dmg' -print | sort > "$output_file"
     else
       : > "$output_file"
     fi
@@ -30,7 +30,7 @@ case "$mode" in
     missing_message="No DMG was produced"
     ;;
   ios-ipa)
-    find src-tauri -type f -name '*.ipa' -print | sort > "$output_file"
+    find app -type f -name '*.ipa' -print | sort > "$output_file"
     missing_title="Missing iOS artifact"
     missing_message="No IPA was produced"
     ;;

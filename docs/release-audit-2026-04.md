@@ -104,8 +104,8 @@ The following commands passed during the final verification pass:
 - `just typecheck`: no mypy issues in 26 source files.
 - `just web-build`: Vite production build completed.
 - `just web-unit`: 30 passed.
-- `cargo test --manifest-path src-tauri/Cargo.toml --all-targets`: 18 passed.
-- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`: passed.
+- `cargo test --manifest-path app/Cargo.toml --all-targets`: 18 passed.
+- `cargo fmt --manifest-path app/Cargo.toml -- --check`: passed.
 - `just doctor`: passed, with the expected local warning that CocoaPods is not installed.
 - `just lint`: passed all pre-commit hooks.
 - `just check`: passed hk check plus Tauri fmt/clippy.

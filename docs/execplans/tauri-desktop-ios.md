@@ -17,7 +17,7 @@ The observable outcome is that `just tauri-dev` launches the macOS app, `just ta
 - [x] (2026-04-14 00:00Z) Created this ExecPlan before code changes.
 - [x] (2026-04-14 09:00Z) Added shared template and safety-policy data used by Python, TypeScript, and Rust.
 - [x] (2026-04-14 09:00Z) Added provider discovery and optional provider selection to the Python API without breaking OpenRouter defaults.
-- [x] (2026-04-14 09:00Z) Added `src-tauri` Rust target with commands, local storage, macOS provider discovery, Ollama ingestion, and reserved iOS on-device provider.
+- [x] (2026-04-14 09:00Z) Added `app` Rust target with commands, local storage, macOS provider discovery, Ollama ingestion, and reserved iOS on-device provider.
 - [x] (2026-04-14 09:00Z) Added frontend runtime adapters and Settings/Home UI for native providers.
 - [x] (2026-04-14 09:00Z) Added Rust, web, native, and iOS build-path tests plus CI/release workflows.
 - [x] (2026-04-14 09:00Z) Ran verification commands and documented results.
@@ -64,7 +64,7 @@ Verification completed:
 - `npm --prefix web run test:unit` passed: 13 tests.
 - `npm --prefix web run test:e2e` passed: 17 passed, 1 skipped.
 - `npm --prefix web run build` passed.
-- `cargo test --manifest-path src-tauri/Cargo.toml --all-targets` passed: 10 Rust tests.
+- `cargo test --manifest-path app/Cargo.toml --all-targets` passed: 10 Rust tests.
 - `just check` passed, including ruff, mypy, actionlint, zizmor, rustfmt, and clippy.
 - `npm --prefix web run tauri:build -- --debug` passed and produced debug macOS bundles.
 - `just tauri-ios-test` reached the expected local prerequisite boundary because CocoaPods is not installed.
@@ -75,7 +75,7 @@ The repository root is a Python project with a `src/` layout. The main package l
 
 The React app lives in `web/`. It uses Vite and TypeScript. Routes are defined in `web/src/App.tsx`, app state lives in `web/src/lib/AppContext.tsx`, browser storage helpers live in `web/src/lib/storage.ts`, HTTP API helpers live in `web/src/lib/api.ts`, and UI pages live under `web/src/pages/`.
 
-Tauri is a framework that embeds a web frontend in a native shell and lets frontend code call Rust commands through an inter-process call named `invoke`. This implementation adds `src-tauri/` at the repository root. The Tauri app reuses the built React app from `web/dist`.
+Tauri is a framework that embeds a web frontend in a native shell and lets frontend code call Rust commands through an inter-process call named `invoke`. This implementation adds `app/` at the repository root. The Tauri app reuses the built React app from `web/dist`.
 
 ## Plan of Work
 
@@ -94,7 +94,7 @@ Fifth, add tests and CI. Keep the existing Python, Vitest, and Playwright checks
 Run all commands from the repository root unless a command explicitly sets another directory.
 
 1. Update shared data, Python API, and tests.
-2. Add `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, Rust modules, and Tauri capabilities.
+2. Add `app/Cargo.toml`, `app/tauri.conf.json`, Rust modules, and Tauri capabilities.
 3. Add Tauri dependencies and scripts to `web/package.json`, then refresh `web/package-lock.json` with `npm --prefix web install`.
 4. Add frontend runtime adapter modules and update pages/settings.
 5. Add CI workflows and docs.
@@ -127,7 +127,7 @@ The implementation is accepted when:
 
 ## Idempotence and Recovery
 
-All additions are additive. Re-running dependency installation should only update lockfiles when package versions change. Rust target build artifacts stay under `src-tauri/target/` and generated frontend output stays under `web/dist/`; both should be ignored by git. Native app data is stored under the platform app-data directory and can be cleared through the Settings UI or `clear_app_state`.
+All additions are additive. Re-running dependency installation should only update lockfiles when package versions change. Rust target build artifacts stay under `app/target/` and generated frontend output stays under `web/dist/`; both should be ignored by git. Native app data is stored under the platform app-data directory and can be cleared through the Settings UI or `clear_app_state`.
 
 If Tauri iOS initialization cannot run on a machine without Xcode or Apple signing material, keep the config and commands in place and document the missing prerequisite in command output and CI notes. Do not remove the existing web/API paths to satisfy native builds.
 

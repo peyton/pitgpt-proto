@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - ".github/workflows/macos-preview-release.yml"
-      - "src-tauri/**"
+      - "app/**"
       - "web/**"
       - "shared/**"
       - "justfile"

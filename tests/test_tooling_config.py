@@ -25,9 +25,21 @@ def test_repo_managed_cli_tools_are_pinned() -> None:
     tools = tomllib.loads((ROOT / "mise.toml").read_text(encoding="utf-8"))["tools"]
 
     assert re.fullmatch(r"\d+\.\d+\.\d+", tools["just"])
-    for name in ("actionlint", "zizmor", "act"):
+    for name in ("actionlint", "zizmor", "act", "cocoapods"):
         assert tools[name] != "latest"
         assert re.fullmatch(r"\d+\.\d+\.\d+", tools[name])
+
+
+def test_ios_workflows_use_mise_managed_cocoapods() -> None:
+    """iOS CI should use the pinned mise CocoaPods tool instead of Homebrew."""
+    ci_workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8",
+    )
+
+    assert "cocoapods" in tomllib.loads((ROOT / "mise.toml").read_text(encoding="utf-8"))["tools"]
+    assert "brew install cocoapods" not in ci_workflow
+    assert "brew install cocoapods" not in release_workflow
 
 
 def test_renovate_groups_tauri_dependency_updates() -> None:
@@ -74,7 +86,7 @@ def test_macos_preview_release_is_scoped_to_native_app_changes() -> None:
     assert "branches: [master]" in preview_workflow
     assert "PREVIEW_TAG: macos-preview" in preview_workflow
     assert "scripts/publish-macos-preview.sh" in preview_workflow
-    assert '"src-tauri/**"' in preview_workflow
+    assert '"app/**"' in preview_workflow
     assert '"web/**"' in preview_workflow
     assert '"shared/**"' in preview_workflow
     assert "contents: write" in preview_workflow
@@ -115,7 +127,7 @@ def test_release_workflows_use_shared_apple_scripts() -> None:
     assert combined.count("scripts/collect-tauri-artifacts.sh macos-dmg") == 2
     assert "scripts/collect-tauri-artifacts.sh ios-ipa" in release_workflow
     assert 'APPLE_API_KEY_P8_B64" | base64 -d' not in combined
-    assert "find src-tauri/target/release/bundle -type f -name '*.dmg'" not in combined
+    assert "find app/target/release/bundle -type f -name '*.dmg'" not in combined
 
 
 def test_ios_release_uses_app_store_connect_export_with_build_number() -> None:
@@ -217,7 +229,7 @@ def test_tauri_ios_npm_shim_rejects_non_repo_root(tmp_path: Path) -> None:
 
     assert result.returncode == 2
     assert "Could not find PitGPT repo root" in result.stderr
-    assert not (tmp_path / "src-tauri" / "gen" / "apple" / "package.json").exists()
+    assert not (tmp_path / "app" / "gen" / "apple" / "package.json").exists()
 
 
 def test_artifact_collection_fails_when_expected_files_are_missing() -> None:
@@ -241,9 +253,9 @@ def test_artifact_collection_fails_when_expected_files_are_missing() -> None:
 
 def test_tauri_privacy_manifest_is_bundled() -> None:
     """Apple release bundles should include the checked-in privacy manifest."""
-    tauri_config = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    tauri_config = json.loads((ROOT / "app" / "tauri.conf.json").read_text(encoding="utf-8"))
     privacy_manifest = json.loads(
-        (ROOT / "src-tauri" / "PrivacyInfo.xcprivacy").read_text(encoding="utf-8"),
+        (ROOT / "app" / "PrivacyInfo.xcprivacy").read_text(encoding="utf-8"),
     )
 
     assert "PrivacyInfo.xcprivacy" in tauri_config["bundle"]["resources"]

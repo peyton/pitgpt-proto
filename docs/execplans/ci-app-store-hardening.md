@@ -51,9 +51,9 @@ commands, and artifacts matter.
   status`; rerunning the same checks under `bash -lc` produced the intended script outputs.
 - Observation: The Tauri resource setting copied the Apple privacy manifest into the macOS app
   bundle.
-  Evidence: `find src-tauri/target/debug/bundle/macos/PitGPT.app -name
+  Evidence: `find app/target/debug/bundle/macos/PitGPT.app -name
   'PrivacyInfo.xcprivacy' -print` returned
-  `src-tauri/target/debug/bundle/macos/PitGPT.app/Contents/Resources/PrivacyInfo.xcprivacy`.
+  `app/target/debug/bundle/macos/PitGPT.app/Contents/Resources/PrivacyInfo.xcprivacy`.
 
 ## Decision Log
 
@@ -104,7 +104,7 @@ Verification completed:
 - `./bin/mise exec -- npm --prefix web ci`
 - `./bin/mise exec -- npm --prefix web run build`
 - `./bin/mise exec -- npm --prefix web run tauri -- build --debug`
-- `find src-tauri/target/debug/bundle/macos/PitGPT.app -name 'PrivacyInfo.xcprivacy' -print`
+- `find app/target/debug/bundle/macos/PitGPT.app -name 'PrivacyInfo.xcprivacy' -print`
 
 The intentionally omitted items are Apple-account-bound or product-identity-bound changes:
 renaming the bundle identifier, enabling Mac App Store sandbox entitlements, adding Mac App Store
@@ -120,9 +120,9 @@ release artifacts are built by `.github/workflows/release.yml`, while
 `.github/workflows/macos-preview-release.yml` publishes a rolling prerelease named
 `macos-preview`.
 
-The native app is a Tauri v2 app under `src-tauri/`. Tauri is a framework that packages a web
+The native app is a Tauri v2 app under `app/`. Tauri is a framework that packages a web
 frontend with Rust commands into desktop and mobile apps. The shared app configuration is
-`src-tauri/tauri.conf.json`. The web frontend is a Vite React app under `web/`.
+`app/tauri.conf.json`. The web frontend is a Vite React app under `web/`.
 
 The current release workflows repeat Apple secret validation and file-writing shell code in YAML.
 That makes the release path harder to test locally and easier to accidentally change in one
@@ -167,7 +167,7 @@ Run all commands from `/Users/peyton/.codex/worktrees/b136/pitgpt-proto`.
    it fails clearly.
 4. Run `just test tests/test_tooling_config.py`.
 5. Run `just check`, `just test`, `npm --prefix web run build`, and a debug Tauri build because
-   `src-tauri/tauri.conf.json` changed.
+   `app/tauri.conf.json` changed.
 
 ## Validation and Acceptance
 
@@ -205,8 +205,8 @@ Key verification transcripts:
 
     npm --prefix web run tauri -- build --debug
     Finished 2 bundles at:
-    src-tauri/target/debug/bundle/macos/PitGPT.app
-    src-tauri/target/debug/bundle/dmg/PitGPT_0.1.0_aarch64.dmg
+    app/target/debug/bundle/macos/PitGPT.app
+    app/target/debug/bundle/dmg/PitGPT_0.1.0_aarch64.dmg
 
 ## Interfaces and Dependencies
 

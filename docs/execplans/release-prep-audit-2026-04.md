@@ -46,7 +46,7 @@ The remaining local environment gap is CocoaPods: `just doctor` passes but repor
 
 ## Context and Orientation
 
-The repository root contains a Python package in `src/pitgpt`, a React and Vite web frontend in `web`, a Tauri native target in `src-tauri`, shared policy and template data in `shared`, benchmark fixtures in `benchmarks`, release and maintenance scripts in `scripts`, and GitHub Actions workflows in `.github/workflows`. The standard task runner is `justfile`, which routes Python commands through `uv` and `mise`, web commands through `npm --prefix web`, and native checks through the Rust toolchain pinned by `mise.toml`.
+The repository root contains a Python package in `src/pitgpt`, a React and Vite web frontend in `web`, a Tauri native target in `app`, shared policy and template data in `shared`, benchmark fixtures in `benchmarks`, release and maintenance scripts in `scripts`, and GitHub Actions workflows in `.github/workflows`. The standard task runner is `justfile`, which routes Python commands through `uv` and `mise`, web commands through `npm --prefix web`, and native checks through the Rust toolchain pinned by `mise.toml`.
 
 A release-prep audit here means improving the project so the standard commands are easier to run, failures are more actionable, release scripts are safer, documentation matches the code, and tests cover behavior that could regress after packaging. It does not mean adding unrelated product features or changing the clinical safety policy without evidence.
 
@@ -93,7 +93,7 @@ Acceptance requires at least fifty concrete improvements or fixes in the working
 
 ## Idempotence and Recovery
 
-The audit should avoid destructive commands. Dependency installation uses repo-local commands such as `just setup` and `just web-install`. Generated directories such as `.mypy_cache`, `.pytest_cache`, `web/dist`, and `src-tauri/target` can be removed with `just clean` if local checks leave artifacts behind. If a command fails because a local prerequisite is missing, install through the repository's declared tooling rather than relying on untracked global state.
+The audit should avoid destructive commands. Dependency installation uses repo-local commands such as `just setup` and `just web-install`. Generated directories such as `.mypy_cache`, `.pytest_cache`, `web/dist`, and `app/target` can be removed with `just clean` if local checks leave artifacts behind. If a command fails because a local prerequisite is missing, install through the repository's declared tooling rather than relying on untracked global state.
 
 ## Artifacts and Notes
 
@@ -109,7 +109,7 @@ Key final transcripts:
 
 ## Interfaces and Dependencies
 
-No new runtime service dependency is planned. Python dependencies must stay declared in `pyproject.toml`, web dependencies in `web/package.json`, Rust dependencies in `src-tauri/Cargo.toml`, and tool versions in `mise.toml`. Shell scripts should be POSIX-friendly or explicitly Bash with `set -euo pipefail`; Python automation should be invokable as modules where practical.
+No new runtime service dependency is planned. Python dependencies must stay declared in `pyproject.toml`, web dependencies in `web/package.json`, Rust dependencies in `app/Cargo.toml`, and tool versions in `mise.toml`. Shell scripts should be POSIX-friendly or explicitly Bash with `set -euo pipefail`; Python automation should be invokable as modules where practical.
 
 Revision note, 2026-04-14: Created the initial living plan so the release audit can be resumed from repository files alone.
 

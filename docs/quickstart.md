@@ -126,7 +126,8 @@ just tauri-build
 just tauri-ios-test
 ```
 
-This runs the simulator build path used by CI. It requires Xcode and CocoaPods.
+This runs the simulator build path used by CI. It requires Xcode and the
+mise-pinned CocoaPods tool installed by `just setup`.
 iOS supports the offline app core now and reserves `ios_on_device` for future
 on-device model runtimes.
 
