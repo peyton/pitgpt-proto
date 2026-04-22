@@ -1,4 +1,5 @@
 use crate::models::{ProviderKind, WorkflowDefinition};
+#[cfg(not(target_os = "ios"))]
 use crate::providers::fetch_ollama_models;
 
 const WORKFLOWS_JSON: &str = include_str!("../../shared/workflows.json");
@@ -50,29 +51,47 @@ pub async fn resolve_workflow_model(
         );
     };
     if provider == ProviderKind::Ollama {
-        match fetch_ollama_models(ollama_base_url).await {
-            Ok(models) if models.contains(&candidate) => {}
-            Ok(_) => {
-                return (
-                    fallback_model.to_string(),
-                    Some(format!(
-                        "Workflow {} requested {}, but that Ollama model was not found. Using fallback model {}.",
-                        workflow.id, candidate, fallback_model
-                    )),
-                );
-            }
-            Err(_) => {
-                return (
-                    fallback_model.to_string(),
-                    Some(format!(
-                        "Could not verify Ollama model {} for workflow {}. Using fallback model {}.",
-                        candidate, workflow.id, fallback_model
-                    )),
-                );
-            }
+        if let Some(warning) =
+            ollama_verification_warning(&workflow.id, &candidate, fallback_model, ollama_base_url)
+                .await
+        {
+            return (fallback_model.to_string(), Some(warning));
         }
     }
     (candidate, None)
+}
+
+#[cfg(not(target_os = "ios"))]
+async fn ollama_verification_warning(
+    workflow_id: &str,
+    candidate: &str,
+    fallback_model: &str,
+    ollama_base_url: &str,
+) -> Option<String> {
+    match fetch_ollama_models(ollama_base_url).await {
+        Ok(models) if models.iter().any(|model| model == candidate) => None,
+        Ok(_) => Some(format!(
+            "Workflow {} requested {}, but that Ollama model was not found. Using fallback model {}.",
+            workflow_id, candidate, fallback_model
+        )),
+        Err(_) => Some(format!(
+            "Could not verify Ollama model {} for workflow {}. Using fallback model {}.",
+            candidate, workflow_id, fallback_model
+        )),
+    }
+}
+
+#[cfg(target_os = "ios")]
+async fn ollama_verification_warning(
+    workflow_id: &str,
+    _candidate: &str,
+    fallback_model: &str,
+    _ollama_base_url: &str,
+) -> Option<String> {
+    Some(format!(
+        "Ollama verification is unavailable on iOS targets for workflow {}. Using fallback model {}.",
+        workflow_id, fallback_model
+    ))
 }
 
 fn workflow_model_candidate(
