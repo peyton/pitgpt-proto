@@ -251,9 +251,9 @@ Signing secrets used by native CI/release workflows must live in the
 - `APPLE_TEAM_ID`
 - `APPLE_API_KEY`
 - `APPLE_API_ISSUER`
-- `APPLE_API_KEY_P8_B64`
+- `APPLE_API_KEY_P8`
 - `APPLE_DEVELOPMENT_TEAM`
-- `IOS_PROVISIONING_PROFILE_B64`
+- `IOS_PROVISIONING_PROFILE`
 
 Release scripts also honor optional local override paths:
 

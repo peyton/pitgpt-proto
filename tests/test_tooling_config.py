@@ -126,7 +126,8 @@ def test_release_workflows_use_shared_apple_scripts() -> None:
     assert "scripts/apple-release-preflight.sh ios-appstore --write-files" in release_workflow
     assert combined.count("scripts/collect-tauri-artifacts.sh macos-dmg") == 2
     assert "scripts/collect-tauri-artifacts.sh ios-ipa" in release_workflow
-    assert 'APPLE_API_KEY_P8_B64" | base64 -d' not in combined
+    assert "APPLE_API_KEY_P8_B64" not in combined
+    assert "IOS_PROVISIONING_PROFILE_B64" not in combined
     assert "find app/target/release/bundle -type f -name '*.dmg'" not in combined
 
 
@@ -180,19 +181,19 @@ def test_apple_release_scripts_report_missing_secret_modes() -> None:
 
 
 def test_ios_release_preflight_writes_private_files(tmp_path: Path) -> None:
-    """Decoded iOS release files should not be left world-readable on runners."""
+    """Plain iOS release files should not be left world-readable on runners."""
     script = ROOT / "scripts" / "apple-release-preflight.sh"
     profile_path = tmp_path / "PitGPT.mobileprovision"
     api_key_path = tmp_path / "AuthKey.p8"
     env = {
         "APPLE_API_ISSUER": "issuer",
         "APPLE_API_KEY": "key",
-        "APPLE_API_KEY_P8_B64": "a2V5",
+        "APPLE_API_KEY_P8": "key",
         "APPLE_CERTIFICATE": "cert",
         "APPLE_CERTIFICATE_PASSWORD": "password",
         "APPLE_DEVELOPMENT_TEAM": "team",
         "APPLE_SIGNING_IDENTITY": "identity",
-        "IOS_PROVISIONING_PROFILE_B64": "cHJvZmlsZQ==",
+        "IOS_PROVISIONING_PROFILE": "profile",
         "APPLE_API_KEY_PATH": str(api_key_path),
         "IOS_PROVISIONING_PROFILE_PATH": str(profile_path),
         "HOME": str(tmp_path),
@@ -270,13 +271,13 @@ def test_release_checklist_documents_required_secrets() -> None:
     for name in (
         "APPLE_API_ISSUER",
         "APPLE_API_KEY",
-        "APPLE_API_KEY_P8_B64",
+        "APPLE_API_KEY_P8",
         "APPLE_CERTIFICATE",
         "APPLE_CERTIFICATE_PASSWORD",
         "APPLE_DEVELOPMENT_TEAM",
         "APPLE_SIGNING_IDENTITY",
         "APPLE_TEAM_ID",
-        "IOS_PROVISIONING_PROFILE_B64",
+        "IOS_PROVISIONING_PROFILE",
     ):
         assert name in checklist
     assert "app-store-connect" in checklist

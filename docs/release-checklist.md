@@ -32,7 +32,7 @@ macOS DMG builds require:
 
 - `APPLE_API_ISSUER`
 - `APPLE_API_KEY`
-- `APPLE_API_KEY_P8_B64`
+- `APPLE_API_KEY_P8`
 - `APPLE_CERTIFICATE`
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
@@ -42,17 +42,19 @@ iOS App Store Connect builds require:
 
 - `APPLE_API_ISSUER`
 - `APPLE_API_KEY`
-- `APPLE_API_KEY_P8_B64`
+- `APPLE_API_KEY_P8`
 - `APPLE_CERTIFICATE`
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_DEVELOPMENT_TEAM`
 - `APPLE_SIGNING_IDENTITY`
-- `IOS_PROVISIONING_PROFILE_B64`
+- `IOS_PROVISIONING_PROFILE`
 
-The helper script `scripts/apple-release-preflight.sh` writes the decoded App Store Connect API
-key to `APPLE_API_KEY_PATH`, defaulting to `private_keys/AuthKey.p8`. For iOS it also writes the
-decoded provisioning profile to `~/Library/MobileDevice/Provisioning Profiles/PitGPT.mobileprovision`
-unless `IOS_PROVISIONING_PROFILE_PATH` overrides that destination.
+The helper script `scripts/apple-release-preflight.sh` writes the App Store Connect API key
+contents to `APPLE_API_KEY_PATH`, defaulting to `private_keys/AuthKey.p8`. For iOS it also writes
+the provisioning profile contents to
+`~/Library/MobileDevice/Provisioning Profiles/PitGPT.mobileprovision` unless
+`IOS_PROVISIONING_PROFILE_PATH` overrides that destination. Store both as plain secret contents,
+not base64-encoded strings.
 
 The rolling macOS preview workflow delegates tag, release-note, stale-asset cleanup, and artifact
 upload work to `scripts/publish-macos-preview.sh` so the workflow stays lintable and the release
