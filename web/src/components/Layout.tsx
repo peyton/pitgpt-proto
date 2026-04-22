@@ -15,6 +15,21 @@ const navItems = [
     ),
   },
   {
+    to: "/workflows",
+    label: "Workflows",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none">
+        <path
+          d="M3 6.5h6l2 3h6v4h-6l-2-3H3z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+  },
+  {
     to: "/protocol",
     label: "Protocol Review",
     icon: (

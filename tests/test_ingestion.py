@@ -11,6 +11,7 @@ from pitgpt.core.ingestion import IngestionInputError, ingest
 from pitgpt.core.llm import LLMClient, LLMError
 from pitgpt.core.models import EvidenceQuality, IngestionDecision, SafetyTier
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
+from pitgpt.core.workflows import get_workflow
 
 
 def _mock_llm_response(response_data: dict):
@@ -61,6 +62,42 @@ class TestIngestionGreen:
         assert result.policy_version == SAFETY_POLICY_VERSION
         assert result.model == "test/model"
         assert result.response_validation_status == "validated"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_workflow_scaffold_is_embedded_in_user_prompt(self, client):
+        workflow = get_workflow("genotype_routine_hypothesis")
+        assert workflow is not None
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "novel",
+                        "evidence_conflict": False,
+                        "protocol": {
+                            "template": "Custom A/B",
+                            "duration_weeks": 6,
+                            "block_length_days": 7,
+                            "cadence": "daily",
+                            "washout": "None",
+                            "primary_outcome_question": "Score (0-10)",
+                            "screening": "",
+                            "warnings": "",
+                        },
+                        "block_reason": None,
+                        "user_message": "Ready.",
+                    }
+                ),
+            )
+        )
+
+        await ingest("Compare routines", [], client, workflow=workflow)
+        payload = route.calls.last.request.content.decode("utf-8")
+        assert "Workflow mode:" in payload
+        assert workflow.prompt_scaffold in payload
 
 
 class TestIngestionYellow:

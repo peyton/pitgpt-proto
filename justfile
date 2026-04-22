@@ -97,6 +97,26 @@ ingest query model="":
     if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
     ./bin/mise exec -- uv run --python 3.12 pitgpt ingest $args
 
+# List shared MedGemma workflows
+workflow-list:
+    {{uv_run}} pitgpt workflow list
+
+# Run one workflow demo payload
+workflow-demo workflow model="" provider="":
+    #!/usr/bin/env bash
+    args="--workflow {{workflow}}"
+    if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
+    if [ -n "{{provider}}" ]; then args="$args --provider {{provider}}"; fi
+    ./bin/mise exec -- uv run --python 3.12 pitgpt workflow demo $args
+
+# Run all workflow demo payloads
+workflow-demo-all model="" provider="":
+    #!/usr/bin/env bash
+    args=""
+    if [ -n "{{model}}" ]; then args="$args --model {{model}}"; fi
+    if [ -n "{{provider}}" ]; then args="$args --provider {{provider}}"; fi
+    ./bin/mise exec -- uv run --python 3.12 pitgpt workflow demo-all $args
+
 # Run analysis on protocol + observations
 analyze protocol observations:
     {{uv_run}} pitgpt analyze --protocol {{protocol}} --observations {{observations}}

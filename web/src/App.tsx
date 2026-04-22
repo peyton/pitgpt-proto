@@ -7,6 +7,7 @@ import { ProtocolReview } from "./pages/ProtocolReview";
 import { ActiveTrial } from "./pages/ActiveTrial";
 import { Results } from "./pages/Results";
 import { Settings } from "./pages/Settings";
+import { Workflows } from "./pages/Workflows";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="protocol" element={<ProtocolReview />} />
             <Route path="trial" element={<ActiveTrial />} />
             <Route path="results" element={<Results />} />
+            <Route path="workflows" element={<Workflows />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

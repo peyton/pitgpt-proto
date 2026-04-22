@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ingest, ingestExperimentStream, setApiToken, validateTrial } from "./api";
+import {
+  getWorkflowDemo,
+  ingest,
+  ingestExperimentStream,
+  listWorkflows,
+  setApiToken,
+  validateTrial,
+} from "./api";
 import type { IngestionResult } from "./types";
 
 const invokeMock = vi.hoisted(() => vi.fn());
@@ -95,7 +102,9 @@ describe("api", () => {
 
   it("passes abort signals and auth headers to ingestion fetch requests", async () => {
     const controller = new AbortController();
+    let body: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      body = JSON.parse(String(_init?.body ?? "{}")) as Record<string, unknown>;
       return new Response(JSON.stringify(ingestionResult), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -107,6 +116,7 @@ describe("api", () => {
     await expect(
       ingest("Compare moisturizers", ["source"], "test-model", "openrouter", {
         signal: controller.signal,
+        workflowId: "genotype_routine_hypothesis",
       }),
     ).resolves.toEqual(ingestionResult);
 
@@ -117,6 +127,7 @@ describe("api", () => {
         signal: controller.signal,
       }),
     );
+    expect(body?.["workflow_id"]).toBe("genotype_routine_hypothesis");
   });
 
   it("parses streamed experiment setup events", async () => {
@@ -150,6 +161,67 @@ describe("api", () => {
       "/api/experiments/ingest-stream",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("passes workflowId to native ingestion invocations", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    invokeMock.mockResolvedValue(ingestionResult);
+
+    await ingest("Compare moisturizers", [], undefined, "ollama", {
+      workflowId: "multiomics_crossover_designer",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "ingest_local",
+      expect.objectContaining({ workflowId: "multiomics_crossover_designer" }),
+    );
+  });
+
+  it("loads workflows and workflow demo payloads in web mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/workflows")) {
+          return new Response(
+            JSON.stringify([
+              {
+                id: "genotype_routine_hypothesis",
+                title: "Genotype",
+                objective: "Objective",
+                prompt_scaffold: "Scaffold",
+                recommended_provider: "openrouter",
+                recommended_models: { openrouter: "google/medgemma-1.5-4b-it" },
+                ui: {
+                  subtitle: "Subtitle",
+                  description: "Description",
+                  hero_asset: "/x.svg",
+                  theme: "chromatic-helix",
+                },
+                demo: { query: "Demo query", documents: ["doc"] },
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            workflow_id: "genotype_routine_hypothesis",
+            query: "Demo query",
+            documents: ["doc"],
+            recommended_provider: "openrouter",
+            recommended_model: "google/medgemma-1.5-4b-it",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+
+    const workflows = await listWorkflows();
+    const demo = await getWorkflowDemo("genotype_routine_hypothesis");
+
+    expect(workflows[0]?.id).toBe("genotype_routine_hypothesis");
+    expect(demo.workflow_id).toBe("genotype_routine_hypothesis");
   });
 
   it("emits native setup trace events before returning native ingestion", async () => {

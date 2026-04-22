@@ -10,7 +10,7 @@ use crate::analysis::{analyze_result, validate_analysis_inputs};
 use crate::ingestion::ingest_local_result;
 use crate::models::{
     AdverseEventSeverity, Assignment, Observation, ProviderInfo, ProviderKind, ResultCard,
-    TrialTemplate, ValidationReport,
+    TrialTemplate, ValidationReport, WorkflowDefinition,
 };
 use crate::notifications::{plan_trial_reminders_result, ReminderPlan};
 use crate::providers::discover_provider_infos;
@@ -19,6 +19,7 @@ use crate::storage::{
     app_data_dir, clear_state_in_dir, export_to_dir, load_state_from_dir, save_state_to_dir,
 };
 use crate::templates::load_templates as load_templates_shared;
+use crate::workflows::load_workflows;
 
 const INGEST_CANCELLED_MESSAGE: &str = "Ingestion cancelled.";
 
@@ -138,16 +139,22 @@ pub async fn discover_ai_tools() -> Result<Vec<ProviderInfo>, String> {
 }
 
 #[tauri::command]
+pub fn list_workflows() -> Result<Vec<WorkflowDefinition>, String> {
+    load_workflows()
+}
+
+#[tauri::command]
 pub async fn ingest_local(
     query: String,
     documents: Vec<String>,
     provider: ProviderKind,
     model: Option<String>,
+    workflow_id: Option<String>,
     request_id: Option<String>,
     cancellation: State<'_, IngestCancellationState>,
 ) -> Result<Value, String> {
     run_ingest_with_optional_cancellation(request_id, &cancellation, async move {
-        ingest_local_result(query, documents, provider, model).await
+        ingest_local_result(query, documents, provider, model, workflow_id).await
     })
     .await
 }

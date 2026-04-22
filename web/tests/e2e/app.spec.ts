@@ -43,6 +43,63 @@ const analysisResult = {
   caveats: "This was stopped early, so interpret the result cautiously.",
 };
 
+const workflowCatalog = [
+  {
+    id: "genotype_routine_hypothesis",
+    title: "Genotype-to-Routine Hypothesis Builder",
+    objective: "Objective",
+    prompt_scaffold: "Scaffold",
+    recommended_provider: "openrouter",
+    recommended_models: { openrouter: "google/medgemma-1.5-4b-it" },
+    ui: {
+      subtitle: "Subtitle",
+      description: "Description",
+      hero_asset: "/workflow-assets/genotype-routine.svg",
+      theme: "chromatic-helix",
+    },
+    demo: {
+      query: "Build a protocol from sequencing notes for low-risk routine timing changes.",
+      documents: ["doc-one"],
+    },
+  },
+  {
+    id: "multiomics_crossover_designer",
+    title: "Multi-Omics Crossover Designer",
+    objective: "Objective",
+    prompt_scaffold: "Scaffold",
+    recommended_provider: "openrouter",
+    recommended_models: { openrouter: "google/medgemma-1.5-4b-it" },
+    ui: {
+      subtitle: "Subtitle",
+      description: "Description",
+      hero_asset: "/workflow-assets/multiomics-crossover.svg",
+      theme: "signal-lattice",
+    },
+    demo: {
+      query: "Design a crossover from home-lab and wearable trends.",
+      documents: ["doc-two"],
+    },
+  },
+  {
+    id: "adverse_signal_clinician_escalation",
+    title: "Adverse-Signal Clinician Escalation",
+    objective: "Objective",
+    prompt_scaffold: "Scaffold",
+    recommended_provider: "openrouter",
+    recommended_models: { openrouter: "google/medgemma-1.5-4b-it" },
+    ui: {
+      subtitle: "Subtitle",
+      description: "Description",
+      hero_asset: "/workflow-assets/adverse-escalation.svg",
+      theme: "risk-contour",
+    },
+    demo: {
+      query: "Escalate warning signals before protocol generation.",
+      documents: ["doc-three"],
+    },
+  },
+];
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/health", async (route) => {
     await route.fulfill({
@@ -232,6 +289,36 @@ test("blocked and manual-review ingestion responses are gated", async ({ page })
   await page.getByLabel("Generate protocol").click();
   await expect(page.getByRole("heading", { name: "Follow-up questions" })).toBeVisible();
   await expect(page.getByText("What exact two products should be compared?")).toBeVisible();
+});
+
+test("workflow demos launch chat with workflow identifiers", async ({ page }) => {
+  await mockWorkflows(page, workflowCatalog);
+  const seenWorkflowIds: string[] = [];
+  await page.route("**/api/experiments/ingest-stream", async (route) => {
+    const payload = JSON.parse(route.request().postData() ?? "{}") as { workflow_id?: string };
+    if (payload.workflow_id) seenWorkflowIds.push(payload.workflow_id);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: streamEvents([
+        { type: "trace", message: "Workflow demo is running." },
+        { type: "result", message: "Done.", result: generatedIngestion },
+      ]),
+    });
+  });
+
+  await page.goto("/workflows");
+  await expect(page.getByRole("heading", { name: "MedGemma Workflows" })).toBeVisible();
+
+  for (const workflow of workflowCatalog) {
+    const card = page.getByRole("article", { name: workflow.title });
+    await card.getByRole("button", { name: "Run Demo" }).click();
+    await expect(page).toHaveURL(/\/experiments\//);
+    await expect(page.getByText("Workflow demo is running.")).toBeVisible();
+    await page.goto("/workflows");
+  }
+
+  expect(seenWorkflowIds).toEqual(workflowCatalog.map((workflow) => workflow.id));
 });
 
 test("yellow protocol requires acknowledgement before starting", async ({ page }) => {
@@ -451,6 +538,37 @@ async function mockProviders(page: Page, body: unknown): Promise<void> {
   };
   await page.route("**/api/providers", providerResponse);
   await page.route("**/providers", providerResponse);
+}
+
+async function mockWorkflows(page: Page, workflows: unknown[]): Promise<void> {
+  await page.unroute("**/api/workflows").catch(() => undefined);
+  await page.unroute("**/api/workflows/*/demo").catch(() => undefined);
+  await page.route("**/api/workflows", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workflows),
+    });
+  });
+  await page.route("**/api/workflows/*/demo", async (route) => {
+    const url = new URL(route.request().url());
+    const workflowId = url.pathname.split("/").at(-2) ?? "";
+    const workflow = (
+      workflows as Array<{ id?: string; demo?: { query?: string; documents?: string[] } }>
+    ).find((item) => item.id === workflowId);
+    const demo = workflow?.demo;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        workflow_id: workflowId,
+        query: demo?.query ?? "Demo query",
+        documents: demo?.documents ?? [],
+        recommended_provider: "openrouter",
+        recommended_model: "google/medgemma-1.5-4b-it",
+      }),
+    });
+  });
 }
 
 async function mockTauriRuntime(page: Page): Promise<void> {

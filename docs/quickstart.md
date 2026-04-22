@@ -16,6 +16,8 @@ Open the Vite URL and choose:
 - **Run example**: loads bundled observations and shows a completed result.
 - **Start template**: no API key needed; lock labels, then check in daily.
 - **Ask question**: needs `OPENROUTER_API_KEY` to generate a protocol.
+- **MedGemma workflows**: launches three deterministic genomics and
+  multi-omics demo pathways that carry a `workflow_id` across API/web/Tauri/CLI.
 
 The web app stores trials in browser localStorage. Use Settings to export or
 restore JSON. Completed trials can also export an appointment brief Markdown
@@ -45,6 +47,14 @@ Generate a schedule:
 
 ```sh
 pitgpt trial randomize --protocol my-trial/protocol.json --seed 123
+
+List workflow demos:
+
+```sh
+pitgpt workflow list
+pitgpt workflow demo --workflow genotype_routine_hypothesis
+pitgpt workflow demo-all
+```
 ```
 
 Append a check-in:
@@ -92,6 +102,11 @@ Useful read/demo endpoints:
 
 `POST /ingest` requires `OPENROUTER_API_KEY`. Missing configuration returns a
 structured `503`.
+
+Workflow discovery and demos:
+
+- `GET /workflows`
+- `GET /workflows/{workflow_id}/demo`
 
 If `PITGPT_API_TOKEN` is set, all endpoints except `/health`, `/docs`, `/redoc`,
 and `/openapi.json` require `Authorization: Bearer <token>`. The web Settings

@@ -331,6 +331,34 @@ pub struct TrialTemplate {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowUiMeta {
+    pub subtitle: String,
+    pub description: String,
+    pub hero_asset: String,
+    pub theme: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowDemo {
+    pub query: String,
+    #[serde(default)]
+    pub documents: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowDefinition {
+    pub id: String,
+    pub title: String,
+    pub objective: String,
+    pub prompt_scaffold: String,
+    pub recommended_provider: ProviderKind,
+    #[serde(default)]
+    pub recommended_models: BTreeMap<String, String>,
+    pub ui: WorkflowUiMeta,
+    pub demo: WorkflowDemo,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Assignment {
     pub period_index: u32,
     pub pair_index: u32,

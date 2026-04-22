@@ -20,6 +20,7 @@ from pitgpt.core.models import (
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
 from pitgpt.core.safety import prefilter_query, validate_protocol_safety_text
 from pitgpt.core.settings import load_settings
+from pitgpt.core.workflows import WorkflowDefinition, build_workflow_query
 
 PROTOCOL_FOLLOW_UP_STEPS = [
     "What are the exact two routines, products, or behaviors you want to compare?",
@@ -46,6 +47,8 @@ async def ingest(
     model_id: str | None = None,
     max_document_chars: int | None = None,
     max_total_document_chars: int | None = None,
+    workflow: WorkflowDefinition | None = None,
+    model_warning: str | None = None,
 ) -> IngestionResult:
     _validate_query(query)
     query = query.strip()
@@ -55,7 +58,8 @@ async def ingest(
     if prefiltered is not None:
         return prefiltered
 
-    user_parts = [f"User query: {query}"]
+    workflow_query = build_workflow_query(query, workflow)
+    user_parts = [f"User query: {workflow_query}"]
     for i, doc in enumerate(documents, 1):
         user_parts.append(f"\n--- Uploaded Document {i} ---\n{doc}")
 
@@ -78,6 +82,8 @@ async def ingest(
                     model_id or client.model,
                     "The model returned a protocol, but it was missing required details.",
                     "provider_protocol_invalid",
+                    workflow=workflow,
+                    model_warning=model_warning,
                 )
             raise
         unsafe_reasons = validate_protocol_safety_text(protocol)
@@ -98,6 +104,8 @@ async def ingest(
                 ),
                 policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
                 model=model_id or client.model,
+                model_warning=model_warning,
+                workflow_id=workflow.id if workflow else None,
                 response_validation_status="blocked_generated_protocol_safety_text",
             )
     elif decision in {
@@ -109,6 +117,8 @@ async def ingest(
             model_id or client.model,
             "The model did not return a complete protocol.",
             "provider_protocol_missing",
+            workflow=workflow,
+            model_warning=model_warning,
         )
 
     return IngestionResult(
@@ -124,6 +134,8 @@ async def ingest(
         user_message=str(raw.get("user_message", "")),
         policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
         model=model_id or client.model,
+        model_warning=model_warning,
+        workflow_id=workflow.id if workflow else None,
         response_validation_status="validated",
         source_summaries=_string_list(raw.get("source_summaries")),
         claimed_outcomes=_string_list(raw.get("claimed_outcomes")),
@@ -139,6 +151,8 @@ def _manual_review_for_incomplete_protocol(
     model: str,
     reason: str,
     status: str,
+    workflow: WorkflowDefinition | None = None,
+    model_warning: str | None = None,
 ) -> IngestionResult:
     next_steps = _string_list(raw.get("next_steps")) or PROTOCOL_FOLLOW_UP_STEPS
     return IngestionResult(
@@ -159,6 +173,8 @@ def _manual_review_for_incomplete_protocol(
         ),
         policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
         model=model,
+        model_warning=model_warning,
+        workflow_id=workflow.id if workflow else None,
         response_validation_status=status,
         source_summaries=_string_list(raw.get("source_summaries")),
         claimed_outcomes=_string_list(raw.get("claimed_outcomes")),

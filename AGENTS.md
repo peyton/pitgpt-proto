@@ -71,12 +71,16 @@ just bench-analysis # Run deterministic analysis benchmarks
 just parity-analysis # Compare Python and Rust deterministic analysis outputs
 just bench-ingestion # Run LLM-backed ingestion benchmarks
 just bench-all    # Run all benchmark tracks
+just workflow-list # List shared MedGemma workflows
+just workflow-demo workflow=<id> # Run one MedGemma workflow demo payload
+just workflow-demo-all # Run all MedGemma workflow demo payloads
 just serve       # Start API server
 just tui         # Launch TUI
 pitgpt brief     # Print compact local trial result brief
 pitgpt power     # Estimate two-arm sample size for planning
 pitgpt doctor    # Check PitGPT CLI/API runtime settings
 pitgpt trial status/export/import/amend # Inspect, bundle, restore, or amend trial files
+pitgpt workflow list/run/demo/demo-all # Run MedGemma workflow catalog and demos
 just web-dev     # Start web frontend dev server
 just web-build   # Build web frontend for production
 just web-unit    # Run Vitest unit tests
@@ -241,6 +245,9 @@ clinical care.
 - `PITGPT_LLM_CACHE_DIR` — Optional cache directory; default `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL` — Defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL` — Defaults to `llama3.1`
+- `PITGPT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER` — Workflow-mode MedGemma default for OpenRouter (`google/medgemma-1.5-4b-it`)
+- `PITGPT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA` — Workflow-mode MedGemma default for Ollama (`medgemma-1.5-4b-it:Q4_K_M`)
+- `PITGPT_WORKFLOW_MODEL_<WORKFLOW_ID>_<PROVIDER>` — Workflow-specific model override, for example `PITGPT_WORKFLOW_MODEL_GENOTYPE_ROUTINE_HYPOTHESIS_OPENROUTER`
 
 Signing secrets used by native CI/release workflows must live in the
 `apple-signing` GitHub environment:

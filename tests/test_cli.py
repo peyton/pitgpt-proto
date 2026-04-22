@@ -6,6 +6,13 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from pitgpt.cli.main import app
+from pitgpt.core.models import (
+    EvidenceQuality,
+    IngestionDecision,
+    IngestionResult,
+    Protocol,
+    SafetyTier,
+)
 
 runner = CliRunner()
 
@@ -82,6 +89,39 @@ class TestIngestCLI:
             ],
         )
         assert result.exit_code == 1
+
+
+class TestWorkflowCLI:
+    def test_workflow_list_outputs_known_ids(self):
+        result = runner.invoke(app, ["workflow", "list", "--format", "json"])
+        assert result.exit_code == 0
+        ids = {item["id"] for item in json.loads(result.stdout)}
+        assert "genotype_routine_hypothesis" in ids
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.cli.main.ingest")
+    def test_workflow_demo_runs_with_selected_workflow(self, mock_ingest):
+        mock_ingest.return_value = _ingestion_result("generate_protocol")
+
+        result = runner.invoke(
+            app,
+            ["workflow", "demo", "--workflow", "genotype_routine_hypothesis", "--format", "json"],
+        )
+
+        assert result.exit_code == 0
+        assert json.loads(result.stdout)["decision"] == "generate_protocol"
+        assert mock_ingest.call_args.kwargs["workflow"].id == "genotype_routine_hypothesis"
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.cli.main.ingest")
+    def test_workflow_demo_all_runs_three_workflows(self, mock_ingest):
+        mock_ingest.return_value = _ingestion_result("manual_review_before_protocol")
+
+        result = runner.invoke(app, ["workflow", "demo-all", "--format", "json"])
+
+        assert result.exit_code == 0
+        runs = json.loads(result.stdout)["runs"]
+        assert len(runs) == 3
 
 
 class TestProgressiveDisclosureCLI:
@@ -283,6 +323,28 @@ class TestClaudeRankedCLI:
         amended_protocol = json.loads(proto.read_text())
         assert amended_protocol["minimum_meaningful_difference"] == 0.8
         assert amended_protocol["amendments"][0]["reason"] == "Set before analysis."
+
+
+def _ingestion_result(decision: str) -> IngestionResult:
+    protocol = (
+        Protocol(
+            duration_weeks=6,
+            block_length_days=7,
+            cadence="daily",
+            washout="None",
+            primary_outcome_question="Test?",
+        )
+        if decision.startswith("generate_protocol")
+        else None
+    )
+    return IngestionResult(
+        decision=IngestionDecision(decision),
+        safety_tier=SafetyTier.GREEN,
+        evidence_quality=EvidenceQuality.NOVEL,
+        protocol=protocol,
+        block_reason=None if protocol else "Needs detail.",
+        user_message="Ready.",
+    )
 
 
 def _write_small_trial(tmp_path):

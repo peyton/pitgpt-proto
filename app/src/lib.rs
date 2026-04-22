@@ -7,6 +7,7 @@ mod providers;
 mod schedule;
 mod storage;
 mod templates;
+mod workflows;
 
 pub use analysis::analyze_result;
 pub use commands::*;
@@ -14,6 +15,7 @@ pub use models::*;
 pub use providers::discover_provider_infos;
 pub use schedule::generate_schedule_result;
 pub use templates::load_templates;
+pub use workflows::load_workflows;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +39,7 @@ pub fn run() {
             commands::clear_app_state,
             commands::export_file,
             commands::discover_ai_tools,
+            commands::list_workflows,
             commands::ingest_local,
             commands::cancel_ingest_local,
         ])

@@ -314,6 +314,7 @@ function normalizeExperiment(value: unknown): ExperimentConversation | null {
     status,
     unread: typeof value.unread === "boolean" ? value.unread : false,
     query,
+    workflowId: typeof value.workflowId === "string" ? value.workflowId : undefined,
     documents: stringList(value.documents),
     sourceNames: stringList(value.sourceNames),
     ingestionResult,
