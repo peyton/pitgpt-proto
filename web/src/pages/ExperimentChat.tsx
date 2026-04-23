@@ -64,7 +64,7 @@ export function ExperimentChat() {
               status: "streaming",
             });
           },
-          { signal: controller.signal },
+          { signal: controller.signal, workflowId: experiment.workflowId },
         );
         const enriched = enrichIngestionResultWithSources(result, experiment.sourceNames);
         setExperimentResult(experiment.id, enriched);

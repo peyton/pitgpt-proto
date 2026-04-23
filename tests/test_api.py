@@ -51,6 +51,31 @@ class TestReadEndpoints:
             "ios_on_device",
         }.issubset(kinds)
 
+    def test_workflows(self, api_client):
+        resp = api_client.get("/workflows")
+
+        assert resp.status_code == 200
+        ids = {item["id"] for item in resp.json()}
+        assert {
+            "genotype_routine_hypothesis",
+            "multiomics_crossover_designer",
+            "adverse_signal_clinician_escalation",
+        }.issubset(ids)
+
+    def test_workflow_demo(self, api_client):
+        resp = api_client.get("/workflows/genotype_routine_hypothesis/demo")
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["workflow_id"] == "genotype_routine_hypothesis"
+        assert isinstance(payload["query"], str)
+        assert isinstance(payload["documents"], list)
+
+    def test_workflow_demo_missing(self, api_client):
+        resp = api_client.get("/workflows/does_not_exist/demo")
+        assert resp.status_code == 404
+        assert "was not found" in resp.json()["detail"]
+
     def test_schedule(self, api_client):
         resp = api_client.post(
             "/schedule",
@@ -276,6 +301,34 @@ class TestIngestEndpoint:
 
         assert resp.status_code == 200
         assert mock_ingest.call_args.args[3] == "anthropic/claude-sonnet-4"
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    @patch("pitgpt.api.main.ingest")
+    def test_ingest_passes_workflow_to_ingestion(self, mock_ingest, api_client):
+        mock_ingest.return_value = IngestionResult(
+            decision=IngestionDecision.GENERATE_PROTOCOL,
+            safety_tier=SafetyTier.GREEN,
+            evidence_quality=EvidenceQuality.NOVEL,
+            protocol=Protocol(
+                duration_weeks=6,
+                block_length_days=7,
+                cadence="daily",
+                washout="None",
+                primary_outcome_question="Test?",
+            ),
+            user_message="Ready.",
+        )
+
+        resp = api_client.post(
+            "/ingest",
+            json={
+                "query": "Test CeraVe vs Cetaphil",
+                "workflow_id": "genotype_routine_hypothesis",
+            },
+        )
+
+        assert resp.status_code == 200
+        assert mock_ingest.call_args.kwargs["workflow"].id == "genotype_routine_hypothesis"
 
     @patch.dict("os.environ", {"OPENROUTER_API_KEY": ""})
     def test_ingest_no_api_key(self, api_client):

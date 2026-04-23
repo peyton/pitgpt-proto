@@ -1,9 +1,10 @@
 import json
 import os
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -27,6 +28,14 @@ from pitgpt.core.schedule import generate_schedule
 from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import templates_as_dicts
 from pitgpt.core.validation import validate_trial
+from pitgpt.core.workflows import (
+    WorkflowDefinition,
+    WorkflowDemoPayload,
+    get_workflow,
+    list_workflows,
+    resolve_workflow_model,
+    workflow_demo_payload,
+)
 
 
 def _parse_cors_origins(value: str | None) -> list[str]:
@@ -62,6 +71,7 @@ class IngestRequest(BaseModel):
     documents: list[str] = Field(default_factory=list)
     model: str | None = None
     provider: ProviderKind | None = None
+    workflow_id: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -79,6 +89,14 @@ class IngestStreamEvent(BaseModel):
     type: str
     message: str
     result: IngestionResult | None = None
+
+
+@dataclass(frozen=True)
+class IngestionSelection:
+    client: CompletionClient
+    model_id: str
+    provider: ProviderKind
+    model_warning: str | None = None
 
 
 @app.middleware("http")
@@ -159,6 +177,18 @@ async def providers():
     return list_providers()
 
 
+@app.get("/workflows", response_model=list[WorkflowDefinition])
+async def workflows():
+    return list_workflows()
+
+
+@app.get("/workflows/{workflow_id}/demo", response_model=WorkflowDemoPayload)
+async def workflow_demo(workflow_id: str):
+    workflow = _resolve_workflow(workflow_id)
+    assert workflow is not None
+    return workflow_demo_payload(workflow)
+
+
 @app.post("/schedule", response_model=list[ScheduleAssignment])
 async def schedule_endpoint(req: ScheduleRequest):
     return generate_schedule(req.duration_weeks, req.block_length_days, req.seed)
@@ -177,10 +207,20 @@ async def analyze_example_endpoint():
 
 
 @app.post("/ingest", response_model=IngestionResult)
-async def ingest_endpoint(req: IngestRequest):
-    client, model_id = _ingestion_client(req)
+async def ingest_endpoint(req: IngestRequest, response: Response):
+    workflow = _resolve_workflow(req.workflow_id)
+    selection = _ingestion_client(req, workflow)
+    if selection.model_warning:
+        response.headers["X-Model-Warning"] = selection.model_warning
     try:
-        return await ingest(req.query, req.documents, client, model_id)
+        return await ingest(
+            req.query,
+            req.documents,
+            selection.client,
+            selection.model_id,
+            workflow=workflow,
+            model_warning=selection.model_warning,
+        )
     except IngestionInputError as e:
         raise HTTPException(status_code=413, detail=str(e)) from e
     except (KeyError, ValidationError, ValueError) as e:
@@ -194,31 +234,62 @@ async def ingest_endpoint(req: IngestRequest):
 
 @app.post("/experiments/ingest-stream")
 async def ingest_stream_endpoint(req: IngestRequest):
-    client, model_id = _ingestion_client(req)
+    workflow = _resolve_workflow(req.workflow_id)
+    selection = _ingestion_client(req, workflow)
     return StreamingResponse(
-        _ingest_stream_events(req, client, model_id),
+        _ingest_stream_events(req, selection, workflow),
         media_type="application/x-ndjson",
     )
 
 
-def _ingestion_client(req: IngestRequest) -> tuple[CompletionClient, str]:
+def _ingestion_client(
+    req: IngestRequest, workflow: WorkflowDefinition | None
+) -> IngestionSelection:
     settings = load_settings()
-    provider = req.provider or ProviderKind.OPENROUTER
-    if provider == ProviderKind.OPENROUTER:
-        api_key = settings.openrouter_api_key
-        if not api_key:
+    provider = req.provider or (
+        workflow.recommended_provider if workflow else ProviderKind.OPENROUTER
+    )
+    warnings: list[str] = []
+    if provider == ProviderKind.OPENROUTER and not settings.openrouter_api_key:
+        if workflow and req.provider is None:
+            provider = ProviderKind.OLLAMA
+            warnings.append(
+                "OPENROUTER_API_KEY was not set for this MedGemma workflow, "
+                "so local Ollama fallback was used."
+            )
+        else:
             raise HTTPException(status_code=503, detail="OPENROUTER_API_KEY not set")
-        model_id = req.model or settings.default_model
+
+    if provider == ProviderKind.OPENROUTER:
+        model_id, warning = resolve_workflow_model(
+            workflow=workflow,
+            provider=provider,
+            requested_model=req.model,
+            fallback_model=settings.default_model,
+            settings=settings,
+            env=os.environ,
+        )
+        if warning:
+            warnings.append(warning)
         client: CompletionClient = LLMClient(
             model=model_id,
-            api_key=api_key,
+            api_key=settings.openrouter_api_key,
             base_url=settings.llm_base_url,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
             timeout_s=settings.llm_timeout_s,
         )
     elif provider == ProviderKind.OLLAMA:
-        model_id = req.model or settings.ollama_default_model
+        model_id, warning = resolve_workflow_model(
+            workflow=workflow,
+            provider=provider,
+            requested_model=req.model,
+            fallback_model=settings.ollama_default_model,
+            settings=settings,
+            env=os.environ,
+        )
+        if warning:
+            warnings.append(warning)
         client = OllamaClient(
             model=model_id,
             base_url=settings.ollama_base_url,
@@ -229,21 +300,36 @@ def _ingestion_client(req: IngestRequest) -> tuple[CompletionClient, str]:
         raise HTTPException(
             status_code=400, detail=f"Provider {provider.value} is not supported by API"
         )
-    return client, model_id
+    warning_text = " ".join(warnings).strip() or None
+    return IngestionSelection(
+        client=client,
+        model_id=model_id,
+        provider=provider,
+        model_warning=warning_text,
+    )
 
 
 async def _ingest_stream_events(
     req: IngestRequest,
-    client: CompletionClient,
-    model_id: str,
+    selection: IngestionSelection,
+    workflow: WorkflowDefinition | None,
 ) -> AsyncIterator[str]:
+    if selection.model_warning:
+        yield _stream_event("trace", selection.model_warning)
     yield _stream_event("trace", "Reading your experiment question.")
     if req.documents:
         yield _stream_event("trace", f"Reviewing {len(req.documents)} attached source(s).")
     yield _stream_event("trace", "Checking safety boundaries and trial fit.")
     yield _stream_event("trace", "Drafting follow-up questions or a protocol.")
     try:
-        result = await ingest(req.query, req.documents, client, model_id)
+        result = await ingest(
+            req.query,
+            req.documents,
+            selection.client,
+            selection.model_id,
+            workflow=workflow,
+            model_warning=selection.model_warning,
+        )
     except IngestionInputError as e:
         yield _stream_event("error", str(e))
         return
@@ -270,6 +356,15 @@ def _stream_event(
 ) -> str:
     event = IngestStreamEvent(type=event_type, message=message, result=result)
     return f"{json.dumps(jsonable_encoder(event), separators=(',', ':'))}\n"
+
+
+def _resolve_workflow(workflow_id: str | None) -> WorkflowDefinition | None:
+    if workflow_id is None:
+        return None
+    workflow = get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail=f"Workflow {workflow_id} was not found")
+    return workflow
 
 
 @app.post("/analyze", response_model=ResultCard)

@@ -145,6 +145,14 @@ export function Home() {
         <button
           className="path-card"
           type="button"
+          onClick={() => navigate("/workflows")}
+        >
+          <strong>MedGemma workflows</strong>
+          <span>Launch genomics and multi-omics demo flows end-to-end.</span>
+        </button>
+        <button
+          className="path-card"
+          type="button"
           onClick={() => document.getElementById("template-start")?.scrollIntoView({ behavior: "smooth" })}
         >
           <strong>Start template</strong>

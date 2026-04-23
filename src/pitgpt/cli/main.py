@@ -3,8 +3,10 @@ import csv
 import io
 import json
 import math
+import os
 import sys
 import zipfile
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -16,13 +18,14 @@ from rich.panel import Panel
 from rich.table import Table
 
 from pitgpt.core.analysis import analyze
-from pitgpt.core.ingestion import IngestionInputError, ingest
+from pitgpt.core.ingestion import CompletionClient, IngestionInputError, ingest
 from pitgpt.core.io import load_analysis_protocol, parse_observations_csv, read_text_file
-from pitgpt.core.llm import LLMClient
+from pitgpt.core.llm import LLMClient, OllamaClient
 from pitgpt.core.models import (
     Adherence,
     AnalysisProtocol,
     Condition,
+    IngestionResult,
     Observation,
     ProtocolAmendment,
     ResultCard,
@@ -30,20 +33,30 @@ from pitgpt.core.models import (
     TrialBundleManifest,
     YesNo,
 )
+from pitgpt.core.providers import ProviderKind
 from pitgpt.core.schedule import generate_schedule, generate_seed
 from pitgpt.core.settings import load_settings
 from pitgpt.core.templates import TRIAL_TEMPLATES
 from pitgpt.core.validation import validate_trial
+from pitgpt.core.workflows import (
+    WorkflowDefinition,
+    get_workflow,
+    list_workflows,
+    resolve_workflow_model,
+    workflow_demo_payload,
+)
 
 app = typer.Typer(name="pitgpt", help="PitGPT — personal clinical trial machine")
 benchmark_app = typer.Typer(name="benchmark", help="Run and report on benchmarks")
 demo_app = typer.Typer(name="demo", help="Run bundled examples")
 trial_app = typer.Typer(name="trial", help="Create and randomize trial files")
 checkin_app = typer.Typer(name="checkin", help="Append observation check-ins safely")
+workflow_app = typer.Typer(name="workflow", help="Run MedGemma workflow demos")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(demo_app, name="demo")
 app.add_typer(trial_app, name="trial")
 app.add_typer(checkin_app, name="checkin")
+app.add_typer(workflow_app, name="workflow")
 
 console = Console()
 
@@ -99,19 +112,93 @@ def _get_model(model: str | None) -> str:
     return load_settings().default_model
 
 
-def _get_client(model_id: str) -> LLMClient:
+@dataclass(frozen=True)
+class CLIIngestionSelection:
+    client: CompletionClient
+    model_id: str
+    provider: ProviderKind
+    model_warning: str | None = None
+
+
+def _workflow_or_exit(workflow_id: str | None) -> WorkflowDefinition | None:
+    if workflow_id is None:
+        return None
+    workflow = get_workflow(workflow_id)
+    if workflow is not None:
+        return workflow
+    known = ", ".join(item.id for item in list_workflows())
+    console.print(f"[red]Unknown workflow '{workflow_id}'. Known workflows: {known}[/red]")
+    raise typer.Exit(1)
+
+
+def _resolve_ingestion_selection(
+    model: str | None,
+    provider: ProviderKind | None,
+    workflow: WorkflowDefinition | None,
+) -> CLIIngestionSelection:
     settings = load_settings()
-    key = settings.openrouter_api_key
-    if not key:
-        console.print("[red]OPENROUTER_API_KEY not set[/red]")
+    selected_provider = (
+        provider or (workflow.recommended_provider if workflow else None) or ProviderKind.OPENROUTER
+    )
+    warnings: list[str] = []
+    if selected_provider == ProviderKind.OPENROUTER and not settings.openrouter_api_key:
+        if workflow is not None and provider is None:
+            selected_provider = ProviderKind.OLLAMA
+            warnings.append(
+                "OPENROUTER_API_KEY was not set for this MedGemma workflow, so local Ollama fallback was used."
+            )
+        else:
+            console.print("[red]OPENROUTER_API_KEY not set[/red]")
+            raise typer.Exit(1)
+
+    if selected_provider == ProviderKind.OPENROUTER:
+        model_id, warning = resolve_workflow_model(
+            workflow=workflow,
+            provider=selected_provider,
+            requested_model=model,
+            fallback_model=settings.default_model,
+            settings=settings,
+            env=os.environ,
+        )
+        if warning:
+            warnings.append(warning)
+        client: CompletionClient = LLMClient(
+            model=model_id,
+            api_key=settings.openrouter_api_key,
+            base_url=settings.llm_base_url,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+            timeout_s=settings.llm_timeout_s,
+        )
+    elif selected_provider == ProviderKind.OLLAMA:
+        model_id, warning = resolve_workflow_model(
+            workflow=workflow,
+            provider=selected_provider,
+            requested_model=model,
+            fallback_model=settings.ollama_default_model,
+            settings=settings,
+            env=os.environ,
+        )
+        if warning:
+            warnings.append(warning)
+        client = OllamaClient(
+            model=model_id,
+            base_url=settings.ollama_base_url,
+            temperature=settings.llm_temperature,
+            timeout_s=settings.llm_timeout_s,
+        )
+    else:
+        console.print(
+            f"[red]Provider {selected_provider.value} is not supported by the CLI ingestion path.[/red]"
+        )
         raise typer.Exit(1)
-    return LLMClient(
-        model=model_id,
-        api_key=key,
-        base_url=settings.llm_base_url,
-        temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
-        timeout_s=settings.llm_timeout_s,
+
+    warning_text = " ".join(warnings).strip() or None
+    return CLIIngestionSelection(
+        client=client,
+        model_id=model_id,
+        provider=selected_provider,
+        model_warning=warning_text,
     )
 
 
@@ -141,11 +228,155 @@ def _json_or_text(value: Any) -> str:
     return json.dumps(value) if not isinstance(value, str) else value
 
 
+def _run_ingestion_or_exit(
+    query: str,
+    documents: list[str],
+    workflow: WorkflowDefinition | None,
+    provider: ProviderKind | None,
+    model: str | None,
+) -> IngestionResult:
+    selection = _resolve_ingestion_selection(model, provider, workflow)
+    if selection.model_warning:
+        console.print(f"[yellow]{selection.model_warning}[/yellow]")
+    try:
+        return asyncio.run(
+            ingest(
+                query,
+                documents,
+                selection.client,
+                selection.model_id,
+                workflow=workflow,
+                model_warning=selection.model_warning,
+            )
+        )
+    except (IngestionInputError, KeyError, ValueError, ValidationError) as e:
+        console.print(f"[red]Invalid ingestion response: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@workflow_app.command("list")
+def workflow_list_command(format: str = FORMAT_OPTION):
+    """List MedGemma workflow definitions shared across API/web/native/CLI."""
+    fmt = _detect_format(format)
+    workflows = list_workflows()
+    if fmt == "json":
+        console.print_json(json.dumps([item.model_dump(mode="json") for item in workflows]))
+        return
+    table = Table(title="PitGPT Workflow Catalog")
+    table.add_column("ID", style="bold")
+    table.add_column("Title")
+    table.add_column("Objective")
+    table.add_column("Provider")
+    for workflow in workflows:
+        table.add_row(
+            workflow.id,
+            workflow.title,
+            workflow.objective,
+            workflow.recommended_provider.value,
+        )
+    console.print(table)
+
+
+@workflow_app.command("run")
+def workflow_run_command(
+    workflow_id: str = typer.Option(..., "--workflow", help="Workflow identifier"),
+    query: str = typer.Option(..., "--query", help="Experiment prompt"),
+    doc: list[str] = typer.Option([], "--doc", "-d", help="Document file paths"),  # noqa: B008
+    provider: ProviderKind | None = typer.Option(  # noqa: B008
+        None, "--provider", help="Provider override"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Model override"),
+    format: str = FORMAT_OPTION,
+):
+    """Run ingestion with a selected MedGemma workflow scaffold."""
+    fmt = _detect_format(format)
+    workflow = _workflow_or_exit(workflow_id)
+    assert workflow is not None
+    documents = [_read_file_or_exit(path) for path in doc]
+    result = _run_ingestion_or_exit(query, documents, workflow, provider, model)
+    if fmt == "json":
+        console.print_json(result.model_dump_json())
+    else:
+        _print_ingestion_result(result)
+
+
+@workflow_app.command("demo")
+def workflow_demo_command(
+    workflow_id: str = typer.Option(..., "--workflow", help="Workflow identifier"),
+    provider: ProviderKind | None = typer.Option(  # noqa: B008
+        None, "--provider", help="Provider override"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Model override"),
+    format: str = FORMAT_OPTION,
+):
+    """Run a deterministic canned demo payload for one workflow."""
+    fmt = _detect_format(format)
+    workflow = _workflow_or_exit(workflow_id)
+    assert workflow is not None
+    demo = workflow_demo_payload(workflow)
+    result = _run_ingestion_or_exit(demo.query, demo.documents, workflow, provider, model)
+    if fmt == "json":
+        console.print_json(result.model_dump_json())
+    else:
+        _print_ingestion_result(result)
+
+
+@workflow_app.command("demo-all")
+def workflow_demo_all_command(
+    provider: ProviderKind | None = typer.Option(  # noqa: B008
+        None, "--provider", help="Provider override"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Model override"),
+    format: str = FORMAT_OPTION,
+):
+    """Run all workflow demo payloads in sequence."""
+    fmt = _detect_format(format)
+    runs: list[dict[str, object]] = []
+    for workflow in list_workflows():
+        demo = workflow_demo_payload(workflow)
+        result = _run_ingestion_or_exit(demo.query, demo.documents, workflow, provider, model)
+        runs.append(
+            {
+                "workflow_id": workflow.id,
+                "decision": result.decision.value,
+                "safety_tier": result.safety_tier.value,
+                "evidence_quality": result.evidence_quality.value,
+                "model": result.model,
+                "model_warning": result.model_warning,
+                "workflow_recorded": result.workflow_id,
+            }
+        )
+    if fmt == "json":
+        console.print_json(json.dumps({"runs": runs}))
+        return
+    table = Table(title="Workflow Demo Runs")
+    table.add_column("Workflow", style="bold")
+    table.add_column("Decision")
+    table.add_column("Tier")
+    table.add_column("Evidence")
+    table.add_column("Model")
+    for run in runs:
+        table.add_row(
+            str(run["workflow_id"]),
+            str(run["decision"]),
+            str(run["safety_tier"]),
+            str(run["evidence_quality"]),
+            str(run["model"] or ""),
+        )
+    console.print(table)
+
+
 @app.command("ingest")
 def ingest_command(
     query: str = typer.Option(..., "--query", "-q", help="Natural language question"),
     doc: list[str] = typer.Option(  # noqa: B008
         [], "--doc", "-d", help="Document file paths"
+    ),
+    workflow_id: str | None = typer.Option(
+        None, "--workflow-id", help="Workflow identifier from `pitgpt workflow list`"
+    ),
+    provider: ProviderKind | None = typer.Option(  # noqa: B008
+        None, "--provider", help="Optional provider override"
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="Model identifier"),
     no_limit: bool = typer.Option(
@@ -155,12 +386,25 @@ def ingest_command(
 ):
     """Run research ingestion and produce a protocol or safety decision."""
     fmt = _detect_format(format)
-    model_id = _get_model(model)
+    workflow = _workflow_or_exit(workflow_id)
+    selection = _resolve_ingestion_selection(model, provider, workflow)
     documents = [_read_file_or_exit(d) for d in doc]
-    client = _get_client(model_id)
+    if selection.model_warning:
+        console.print(f"[yellow]{selection.model_warning}[/yellow]")
     try:
         limit = 10**12 if no_limit else None
-        result = asyncio.run(ingest(query, documents, client, model_id, limit, limit))
+        result = asyncio.run(
+            ingest(
+                query,
+                documents,
+                selection.client,
+                selection.model_id,
+                limit,
+                limit,
+                workflow=workflow,
+                model_warning=selection.model_warning,
+            )
+        )
     except (IngestionInputError, KeyError, ValueError, ValidationError) as e:
         console.print(f"[red]Invalid ingestion response: {e}[/red]")
         raise typer.Exit(1) from e

@@ -1,9 +1,7 @@
 from enum import Enum
-from html.parser import HTMLParser
 from typing import Protocol as TypingProtocol
 from urllib.parse import urlparse
 
-import httpx
 from pydantic import BaseModel, ValidationError
 
 from pitgpt.core.models import (
@@ -20,6 +18,7 @@ from pitgpt.core.models import (
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
 from pitgpt.core.safety import prefilter_query, validate_protocol_safety_text
 from pitgpt.core.settings import load_settings
+from pitgpt.core.workflows import WorkflowDefinition, build_workflow_query
 
 PROTOCOL_FOLLOW_UP_STEPS = [
     "What are the exact two routines, products, or behaviors you want to compare?",
@@ -27,6 +26,10 @@ PROTOCOL_FOLLOW_UP_STEPS = [
     "Are any medications, symptoms, pregnancy, urgent issues, or clinician instructions involved?",
 ]
 SOURCE_FETCH_TIMEOUT_S = 20.0
+URL_SOURCE_BLOCK_MESSAGE = (
+    "This URL was not fetched automatically for security reasons. "
+    "Paste the relevant source text or upload a text document instead."
+)
 
 
 class IngestionInputError(ValueError):
@@ -46,6 +49,8 @@ async def ingest(
     model_id: str | None = None,
     max_document_chars: int | None = None,
     max_total_document_chars: int | None = None,
+    workflow: WorkflowDefinition | None = None,
+    model_warning: str | None = None,
 ) -> IngestionResult:
     _validate_query(query)
     query = query.strip()
@@ -55,7 +60,8 @@ async def ingest(
     if prefiltered is not None:
         return prefiltered
 
-    user_parts = [f"User query: {query}"]
+    workflow_query = build_workflow_query(query, workflow)
+    user_parts = [f"User query: {workflow_query}"]
     for i, doc in enumerate(documents, 1):
         user_parts.append(f"\n--- Uploaded Document {i} ---\n{doc}")
 
@@ -78,6 +84,8 @@ async def ingest(
                     model_id or client.model,
                     "The model returned a protocol, but it was missing required details.",
                     "provider_protocol_invalid",
+                    workflow=workflow,
+                    model_warning=model_warning,
                 )
             raise
         unsafe_reasons = validate_protocol_safety_text(protocol)
@@ -98,6 +106,8 @@ async def ingest(
                 ),
                 policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
                 model=model_id or client.model,
+                model_warning=model_warning,
+                workflow_id=workflow.id if workflow else None,
                 response_validation_status="blocked_generated_protocol_safety_text",
             )
     elif decision in {
@@ -109,6 +119,8 @@ async def ingest(
             model_id or client.model,
             "The model did not return a complete protocol.",
             "provider_protocol_missing",
+            workflow=workflow,
+            model_warning=model_warning,
         )
 
     return IngestionResult(
@@ -124,6 +136,8 @@ async def ingest(
         user_message=str(raw.get("user_message", "")),
         policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
         model=model_id or client.model,
+        model_warning=model_warning,
+        workflow_id=workflow.id if workflow else None,
         response_validation_status="validated",
         source_summaries=_string_list(raw.get("source_summaries")),
         claimed_outcomes=_string_list(raw.get("claimed_outcomes")),
@@ -139,6 +153,8 @@ def _manual_review_for_incomplete_protocol(
     model: str,
     reason: str,
     status: str,
+    workflow: WorkflowDefinition | None = None,
+    model_warning: str | None = None,
 ) -> IngestionResult:
     next_steps = _string_list(raw.get("next_steps")) or PROTOCOL_FOLLOW_UP_STEPS
     return IngestionResult(
@@ -159,6 +175,8 @@ def _manual_review_for_incomplete_protocol(
         ),
         policy_version=str(raw.get("policy_version", SAFETY_POLICY_VERSION)),
         model=model,
+        model_warning=model_warning,
+        workflow_id=workflow.id if workflow else None,
         response_validation_status=status,
         source_summaries=_string_list(raw.get("source_summaries")),
         claimed_outcomes=_string_list(raw.get("claimed_outcomes")),
@@ -220,13 +238,12 @@ def _validate_documents(
 
 async def _resolve_documents(documents: list[str]) -> list[str]:
     resolved: list[str] = []
-    async with httpx.AsyncClient(timeout=SOURCE_FETCH_TIMEOUT_S, follow_redirects=True) as client:
-        for doc in documents:
-            source = doc.strip()
-            if not _is_url_source(source):
-                resolved.append(doc)
-                continue
-            resolved.append(await _fetch_url_source(client, source))
+    for doc in documents:
+        source = doc.strip()
+        if not _is_url_source(source):
+            resolved.append(doc)
+            continue
+        resolved.append(_url_source_placeholder(source))
     return resolved
 
 
@@ -235,58 +252,8 @@ def _is_url_source(source: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc) and "\n" not in source
 
 
-async def _fetch_url_source(client: httpx.AsyncClient, url: str) -> str:
-    try:
-        response = await client.get(url)
-        response.raise_for_status()
-    except httpx.HTTPError as error:
-        raise IngestionInputError(f"Could not fetch source URL {url}: {error}") from error
-
-    content_type = response.headers.get("content-type", "").lower()
-    if "text/html" in content_type:
-        text = _html_to_text(response.text)
-    elif content_type.startswith("text/") or "json" in content_type or "xml" in content_type:
-        text = response.text
-    else:
-        text = (
-            f"Source URL: {url}\n"
-            f"Content type: {content_type or 'unknown'}\n"
-            "The linked resource was not directly text-readable. Upload a text PDF or paste "
-            "the article text if the source content is needed."
-        )
-    return f"Source URL: {url}\n\n{text.strip()}"
-
-
-def _html_to_text(html: str) -> str:
-    parser = _HTMLTextExtractor()
-    parser.feed(html)
-    return parser.text()
-
-
-class _HTMLTextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self._parts: list[str] = []
-        self._skip_depth = 0
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "noscript"}:
-            self._skip_depth += 1
-        if tag in {"p", "br", "li", "section", "article", "h1", "h2", "h3"}:
-            self._parts.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript"} and self._skip_depth > 0:
-            self._skip_depth -= 1
-        if tag in {"p", "li", "section", "article"}:
-            self._parts.append("\n")
-
-    def handle_data(self, data: str) -> None:
-        if self._skip_depth == 0:
-            self._parts.append(data)
-
-    def text(self) -> str:
-        return " ".join("".join(self._parts).split())
+def _url_source_placeholder(url: str) -> str:
+    return f"Source URL: {url}\n\n{URL_SOURCE_BLOCK_MESSAGE}"
 
 
 def _string_list(value: object) -> list[str]:

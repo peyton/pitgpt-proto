@@ -7,6 +7,8 @@ import type {
   Observation,
   ResultCard,
   ValidationReport,
+  WorkflowDefinition,
+  WorkflowDemoPayload,
 } from "./types";
 
 const BASE = "/api";
@@ -40,6 +42,7 @@ function readTokenFromState(): string {
 
 interface ApiRequestOptions {
   signal?: AbortSignal;
+  workflowId?: string;
 }
 
 export interface IngestStreamEvent {
@@ -68,6 +71,7 @@ export async function ingest(
       documents,
       model: model ?? "anthropic/claude-sonnet-4",
       provider,
+      workflow_id: options.workflowId,
     }),
   });
   if (!res.ok) {
@@ -98,6 +102,7 @@ export async function ingestExperimentStream(
       documents,
       model: model ?? "anthropic/claude-sonnet-4",
       provider,
+      workflow_id: options.workflowId,
     }),
   });
   if (!res.ok) {
@@ -204,6 +209,7 @@ async function ingestNative(
       documents,
       provider: provider ?? "ollama",
       model: model || null,
+      workflowId: options.workflowId ?? null,
       requestId,
     });
     throwIfAborted(options.signal);
@@ -332,6 +338,37 @@ export async function listProviders(): Promise<AiProviderInfo[]> {
   } catch {
     return [];
   }
+}
+
+export async function listWorkflows(): Promise<WorkflowDefinition[]> {
+  if (isTauriRuntime()) {
+    return invokeNative<WorkflowDefinition[]>("list_workflows");
+  }
+  const res = await fetch(`${BASE}/workflows`, { headers: authHeaders() });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, "Could not load workflows"));
+  }
+  return res.json();
+}
+
+export async function getWorkflowDemo(workflowId: string): Promise<WorkflowDemoPayload> {
+  if (isTauriRuntime()) {
+    const workflows = await listWorkflows();
+    const workflow = workflows.find((item) => item.id === workflowId);
+    if (!workflow) throw new Error(`Workflow ${workflowId} not found.`);
+    return {
+      workflow_id: workflow.id,
+      query: workflow.demo.query,
+      documents: workflow.demo.documents,
+      recommended_provider: workflow.recommended_provider,
+      recommended_model: workflow.recommended_models[workflow.recommended_provider] ?? "",
+    };
+  }
+  const res = await fetch(`${BASE}/workflows/${workflowId}/demo`, { headers: authHeaders() });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, "Could not load workflow demo"));
+  }
+  return res.json();
 }
 
 async function readErrorMessage(res: Response, fallback: string): Promise<string> {

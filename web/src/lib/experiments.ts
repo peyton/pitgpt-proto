@@ -7,6 +7,7 @@ import type {
 
 interface CreateExperimentInput {
   query: string;
+  workflowId?: string;
   documents?: string[];
   sourceNames?: string[];
   ingestionResult?: IngestionResult | null;
@@ -18,6 +19,7 @@ export type ExperimentMessageInput = Omit<ExperimentMessage, "id" | "createdAt">
 
 export function createExperimentConversation({
   query,
+  workflowId,
   documents = [],
   sourceNames = [],
   ingestionResult = null,
@@ -47,6 +49,7 @@ export function createExperimentConversation({
     status: resolvedStatus,
     unread: false,
     query: query.trim(),
+    workflowId,
     documents,
     sourceNames,
     ingestionResult,

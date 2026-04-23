@@ -307,6 +307,8 @@ class IngestionResult(BaseModel):
     user_message: str
     policy_version: str = ""
     model: str | None = None
+    model_warning: str | None = None
+    workflow_id: str | None = None
     response_validation_status: str = "validated"
     source_summaries: list[str] = Field(default_factory=list)
     claimed_outcomes: list[str] = Field(default_factory=list)

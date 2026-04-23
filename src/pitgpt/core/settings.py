@@ -10,6 +10,8 @@ DEFAULT_LLM_TEMPERATURE = 0.0
 DEFAULT_LLM_MAX_TOKENS = 4096
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.1"
+DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER = "google/medgemma-1.5-4b-it"
+DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA = "medgemma-1.5-4b-it:Q4_K_M"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
@@ -31,6 +33,8 @@ class Settings:
     max_total_document_chars: int | None = None
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL
     ollama_default_model: str = DEFAULT_OLLAMA_MODEL
+    workflow_medgemma_model_openrouter: str = DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER
+    workflow_medgemma_model_ollama: str = DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -57,6 +61,14 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         ),
         ollama_base_url=source.get("PITGPT_OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
         ollama_default_model=source.get("PITGPT_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
+        workflow_medgemma_model_openrouter=source.get(
+            "PITGPT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER",
+            DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER,
+        ),
+        workflow_medgemma_model_ollama=source.get(
+            "PITGPT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA",
+            DEFAULT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA,
+        ),
     )
 
 

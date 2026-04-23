@@ -1,7 +1,8 @@
 use serde_json::{Map, Value};
 use std::time::Duration;
 
-use crate::models::{Protocol, ProviderKind};
+use crate::models::{Protocol, ProviderKind, WorkflowDefinition};
+use crate::workflows::{build_workflow_query, get_workflow, resolve_workflow_model};
 
 const SAFETY_POLICY: &str = include_str!("../../shared/safety_policy.md");
 const SOURCE_FETCH_TIMEOUT_S: u64 = 20;
@@ -16,11 +17,35 @@ pub async fn ingest_local_result(
     documents: Vec<String>,
     provider: ProviderKind,
     model: Option<String>,
+    workflow_id: Option<String>,
 ) -> Result<Value, String> {
+    let workflow = match workflow_id {
+        Some(ref id) => get_workflow(id)
+            .map_err(|err| format!("Could not load workflows: {err}"))?
+            .ok_or_else(|| format!("Workflow {id} was not found"))
+            .map(Some)?,
+        None => None,
+    };
     match provider {
         ProviderKind::Ollama => {
-            let model = model.unwrap_or_else(|| "llama3.1".to_string());
-            ingest_ollama("http://localhost:11434", &model, &query, &documents).await
+            let fallback_model = "llama3.1";
+            let (model, model_warning) = resolve_workflow_model(
+                workflow.as_ref(),
+                ProviderKind::Ollama,
+                model,
+                fallback_model,
+                "http://localhost:11434",
+            )
+            .await;
+            ingest_ollama(
+                "http://localhost:11434",
+                &model,
+                &query,
+                &documents,
+                workflow.as_ref(),
+                model_warning.as_deref(),
+            )
+            .await
         }
         ProviderKind::IosOnDevice => Err(
             "iOS on-device models are reserved for future work and are not available yet."
@@ -37,6 +62,8 @@ pub async fn ingest_ollama(
     model: &str,
     query: &str,
     documents: &[String],
+    workflow: Option<&WorkflowDefinition>,
+    model_warning: Option<&str>,
 ) -> Result<Value, String> {
     validate_inputs(query, documents)?;
     let documents = resolve_documents(documents).await?;
@@ -46,7 +73,7 @@ pub async fn ingest_ollama(
         "starting local ingestion provider=ollama model={model} documents={} total_document_chars={total_document_chars}",
         documents.len()
     );
-    let user_message = build_user_message(query, &documents);
+    let user_message = build_user_message(query, &documents, workflow);
     let payload = serde_json::json!({
         "model": model,
         "stream": false,
@@ -87,10 +114,12 @@ pub async fn ingest_ollama(
                 model,
                 "The local model did not return a complete protocol.",
                 "provider_content_not_json",
+                workflow,
+                model_warning,
             )
         }
     };
-    normalize_ingestion_result(&mut result, model)?;
+    normalize_ingestion_result(&mut result, model, workflow, model_warning)?;
     validate_ingestion_result(&result)?;
     log::info!(
         target: "pitgpt::ingestion",
@@ -104,8 +133,13 @@ pub async fn ingest_ollama(
     Ok(result)
 }
 
-fn build_user_message(query: &str, documents: &[String]) -> String {
-    let mut parts = vec![format!("User query: {}", query.trim())];
+fn build_user_message(
+    query: &str,
+    documents: &[String],
+    workflow: Option<&WorkflowDefinition>,
+) -> String {
+    let workflow_query = build_workflow_query(query, workflow);
+    let mut parts = vec![format!("User query: {workflow_query}")];
     for (idx, doc) in documents.iter().enumerate() {
         parts.push(format!("\n--- Uploaded Document {} ---\n{doc}", idx + 1));
     }
@@ -224,12 +258,27 @@ fn update_skip_depth(tag: &str, skip_depth: &mut u32) {
     }
 }
 
-fn normalize_ingestion_result(value: &mut Value, model: &str) -> Result<(), String> {
+fn normalize_ingestion_result(
+    value: &mut Value,
+    model: &str,
+    workflow: Option<&WorkflowDefinition>,
+    model_warning: Option<&str>,
+) -> Result<(), String> {
     let obj = value
         .as_object_mut()
         .ok_or_else(|| "ingestion result must be a JSON object".to_string())?;
     obj.entry("model")
         .or_insert(Value::String(model.to_string()));
+    if let Some(warning) = model_warning {
+        if !warning.trim().is_empty() {
+            obj.entry("model_warning")
+                .or_insert(Value::String(warning.to_string()));
+        }
+    }
+    if let Some(workflow) = workflow {
+        obj.entry("workflow_id")
+            .or_insert(Value::String(workflow.id.clone()));
+    }
     obj.entry("response_validation_status")
         .or_insert(Value::String("validated".to_string()));
     obj.entry("evidence_conflict").or_insert(Value::Bool(false));
@@ -267,12 +316,18 @@ fn normalize_ingestion_result(value: &mut Value, model: &str) -> Result<(), Stri
             target: "pitgpt::ingestion",
             "downgrading incomplete provider protocol to manual review model={model} status={status}: {issue}"
         );
-        downgrade_to_manual_review(obj, &issue, status);
+        downgrade_to_manual_review(obj, &issue, status, workflow, model_warning);
     }
     Ok(())
 }
 
-fn manual_review_result(model: &str, reason: &str, status: &str) -> Value {
+fn manual_review_result(
+    model: &str,
+    reason: &str,
+    status: &str,
+    workflow: Option<&WorkflowDefinition>,
+    model_warning: Option<&str>,
+) -> Value {
     serde_json::json!({
         "decision": "manual_review_before_protocol",
         "safety_tier": "YELLOW",
@@ -285,6 +340,8 @@ fn manual_review_result(model: &str, reason: &str, status: &str) -> Value {
         "block_reason": reason,
         "user_message": "I need a little more detail before I can lock this protocol. Answer the follow-up questions and try again.",
         "model": model,
+        "model_warning": model_warning,
+        "workflow_id": workflow.map(|item| item.id.as_str()),
         "response_validation_status": status,
         "source_summaries": [],
         "claimed_outcomes": [],
@@ -295,7 +352,13 @@ fn manual_review_result(model: &str, reason: &str, status: &str) -> Value {
     })
 }
 
-fn downgrade_to_manual_review(obj: &mut Map<String, Value>, reason: &str, status: &str) {
+fn downgrade_to_manual_review(
+    obj: &mut Map<String, Value>,
+    reason: &str,
+    status: &str,
+    workflow: Option<&WorkflowDefinition>,
+    model_warning: Option<&str>,
+) {
     obj.insert(
         "decision".to_string(),
         Value::String("manual_review_before_protocol".to_string()),
@@ -326,6 +389,20 @@ fn downgrade_to_manual_review(obj: &mut Map<String, Value>, reason: &str, status
         "response_validation_status".to_string(),
         Value::String(status.to_string()),
     );
+    if let Some(warning) = model_warning {
+        if !warning.trim().is_empty() {
+            obj.insert(
+                "model_warning".to_string(),
+                Value::String(warning.to_string()),
+            );
+        }
+    }
+    if let Some(workflow) = workflow {
+        obj.insert(
+            "workflow_id".to_string(),
+            Value::String(workflow.id.clone()),
+        );
+    }
     if !obj
         .get("next_steps")
         .and_then(Value::as_array)
@@ -391,9 +468,15 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_reserved_ios_provider() {
-        let err = ingest_local_result("test".to_string(), vec![], ProviderKind::IosOnDevice, None)
-            .await
-            .unwrap_err();
+        let err = ingest_local_result(
+            "test".to_string(),
+            vec![],
+            ProviderKind::IosOnDevice,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
 
         assert!(err.contains("reserved"));
     }
@@ -416,7 +499,7 @@ mod tests {
 
     #[test]
     fn trims_query_in_provider_prompt() {
-        let prompt = build_user_message("  compare routines  ", &[]);
+        let prompt = build_user_message("  compare routines  ", &[], None);
 
         assert_eq!(prompt, "User query: compare routines");
     }
@@ -446,7 +529,7 @@ mod tests {
             "user_message": "Ready.",
         });
 
-        normalize_ingestion_result(&mut result, "test-model").unwrap();
+        normalize_ingestion_result(&mut result, "test-model", None, None).unwrap();
         validate_ingestion_result(&result).unwrap();
 
         assert_eq!(result["decision"], "manual_review_before_protocol");
@@ -472,7 +555,7 @@ mod tests {
             "user_message": "Ready.",
         });
 
-        normalize_ingestion_result(&mut result, "test-model").unwrap();
+        normalize_ingestion_result(&mut result, "test-model", None, None).unwrap();
         validate_ingestion_result(&result).unwrap();
 
         assert_eq!(result["decision"], "manual_review_before_protocol");

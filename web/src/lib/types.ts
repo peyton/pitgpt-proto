@@ -180,6 +180,8 @@ export interface IngestionResult {
   user_message: string;
   policy_version?: string;
   model?: string | null;
+  model_warning?: string | null;
+  workflow_id?: string | null;
   response_validation_status?: string;
   source_summaries?: string[];
   claimed_outcomes?: string[];
@@ -395,11 +397,41 @@ export interface ExperimentConversation {
   status: ExperimentStatus;
   unread: boolean;
   query: string;
+  workflowId?: string;
   documents: string[];
   sourceNames: string[];
   ingestionResult?: IngestionResult | null;
   trialId?: string;
   messages: ExperimentMessage[];
+}
+
+export interface WorkflowUiMeta {
+  subtitle: string;
+  description: string;
+  hero_asset: string;
+  theme: string;
+}
+
+export interface WorkflowDemoPayload {
+  workflow_id: string;
+  query: string;
+  documents: string[];
+  recommended_provider: AiProviderKind;
+  recommended_model: string;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  title: string;
+  objective: string;
+  prompt_scaffold: string;
+  recommended_provider: AiProviderKind;
+  recommended_models: Partial<Record<AiProviderKind, string>>;
+  ui: WorkflowUiMeta;
+  demo: {
+    query: string;
+    documents: string[];
+  };
 }
 
 export interface TrialEvent {

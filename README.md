@@ -25,6 +25,8 @@ clinician.
 - `pitgpt doctor`: inspect local PitGPT runtime configuration.
 - `pitgpt trial status/export/import/amend`: inspect, bundle, restore, and
   record amendments for local trial files.
+- `pitgpt workflow list/run/demo/demo-all`: run shared MedGemma workflow
+  catalog demos and custom workflow-scaffolded ingestion.
 - `pitgpt ingest`: send a question and optional documents to the research
   ingestion engine. This requires `OPENROUTER_API_KEY`.
 - `pitgpt benchmark run`: run the benchmark suite against deterministic analysis
@@ -130,6 +132,13 @@ Optional configuration:
 - `PITGPT_LLM_CACHE_DIR`: optional cache directory, defaulting to `~/.pitgpt/cache`
 - `PITGPT_OLLAMA_BASE_URL`: defaults to `http://localhost:11434`
 - `PITGPT_OLLAMA_MODEL`: defaults to `llama3.1`
+- `PITGPT_WORKFLOW_MEDGEMMA_MODEL_OPENROUTER`: workflow-mode MedGemma default for
+  OpenRouter (`google/medgemma-1.5-4b-it`)
+- `PITGPT_WORKFLOW_MEDGEMMA_MODEL_OLLAMA`: workflow-mode MedGemma default for
+  Ollama (`medgemma-1.5-4b-it:Q4_K_M`)
+- `PITGPT_WORKFLOW_MODEL_<WORKFLOW_ID>_<PROVIDER>`: workflow-specific model
+  override, for example
+  `PITGPT_WORKFLOW_MODEL_GENOTYPE_ROUTINE_HYPOTHESIS_OPENROUTER`
 
 ## API, TUI, And Web
 

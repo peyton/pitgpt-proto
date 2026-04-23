@@ -7,10 +7,11 @@ import httpx
 import pytest
 import respx
 
-from pitgpt.core.ingestion import IngestionInputError, ingest
+from pitgpt.core.ingestion import URL_SOURCE_BLOCK_MESSAGE, IngestionInputError, ingest
 from pitgpt.core.llm import LLMClient, LLMError
 from pitgpt.core.models import EvidenceQuality, IngestionDecision, SafetyTier
 from pitgpt.core.policy import SAFETY_POLICY_PROMPT, SAFETY_POLICY_VERSION
+from pitgpt.core.workflows import get_workflow
 
 
 def _mock_llm_response(response_data: dict):
@@ -61,6 +62,42 @@ class TestIngestionGreen:
         assert result.policy_version == SAFETY_POLICY_VERSION
         assert result.model == "test/model"
         assert result.response_validation_status == "validated"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_workflow_scaffold_is_embedded_in_user_prompt(self, client):
+        workflow = get_workflow("genotype_routine_hypothesis")
+        assert workflow is not None
+        route = respx.post("https://test.api/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json=_mock_llm_response(
+                    {
+                        "decision": "generate_protocol",
+                        "safety_tier": "GREEN",
+                        "evidence_quality": "novel",
+                        "evidence_conflict": False,
+                        "protocol": {
+                            "template": "Custom A/B",
+                            "duration_weeks": 6,
+                            "block_length_days": 7,
+                            "cadence": "daily",
+                            "washout": "None",
+                            "primary_outcome_question": "Score (0-10)",
+                            "screening": "",
+                            "warnings": "",
+                        },
+                        "block_reason": None,
+                        "user_message": "Ready.",
+                    }
+                ),
+            )
+        )
+
+        await ingest("Compare routines", [], client, workflow=workflow)
+        payload = route.calls.last.request.content.decode("utf-8")
+        assert "Workflow mode:" in payload
+        assert workflow.prompt_scaffold in payload
 
 
 class TestIngestionYellow:
@@ -391,13 +428,6 @@ class TestLLMErrors:
     @respx.mock
     @pytest.mark.asyncio
     async def test_url_source_is_fetched_before_provider_prompt(self, client):
-        respx.get("https://example.com/article").mock(
-            return_value=httpx.Response(
-                200,
-                headers={"content-type": "text/html"},
-                text="<html><body><h1>Trial evidence</h1><script>bad()</script><p>Comfort improved.</p></body></html>",
-            )
-        )
         route = respx.post("https://test.api/chat/completions").mock(
             return_value=httpx.Response(
                 200,
@@ -419,30 +449,17 @@ class TestLLMErrors:
         request = json.loads(route.calls[0].request.content)
         user_prompt = request["messages"][1]["content"]
         assert "Source URL: https://example.com/article" in user_prompt
-        assert "Trial evidence" in user_prompt
-        assert "Comfort improved." in user_prompt
-        assert "bad()" not in user_prompt
+        assert URL_SOURCE_BLOCK_MESSAGE in user_prompt
 
-    @respx.mock
     @pytest.mark.asyncio
     async def test_document_limit_applies_to_fetched_url_content(self, client):
-        route = respx.get("https://example.com/article").mock(
-            return_value=httpx.Response(
-                200,
-                headers={"content-type": "text/html"},
-                text=f"<html><body><p>{'x' * 80}</p></body></html>",
-            )
-        )
-
         with pytest.raises(IngestionInputError, match="Document 1 is too large"):
             await ingest(
                 "test",
                 ["https://example.com/article"],
                 client,
-                max_document_chars=60,
+                max_document_chars=12,
             )
-
-        assert route.called
 
     @respx.mock
     @pytest.mark.asyncio

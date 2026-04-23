@@ -1,0 +1,74 @@
+[
+  {
+    "id": "genotype_routine_hypothesis",
+    "title": "Genotype-to-Routine Hypothesis Builder",
+    "objective": "Convert user-provided sequencing notes into low-risk, reversible routine hypotheses that can be tested in a structured personal A/B experiment.",
+    "prompt_scaffold": "Prioritize routine-level interventions only. Do not recommend diagnosis, prescription changes, supplements with interaction risk, or urgent-care decisions. Translate variant-level inputs into concrete, measurable routine comparisons and explicit confounder tracking.",
+    "recommended_provider": "openrouter",
+    "recommended_models": {
+      "openrouter": "google/medgemma-1.5-4b-it",
+      "ollama": "medgemma-1.5-4b-it:Q4_K_M"
+    },
+    "ui": {
+      "subtitle": "Use sequencing notes to frame testable routine choices.",
+      "description": "Build a reversible protocol from genotype and home-lab context with explicit safety boundaries.",
+      "hero_asset": "/workflow-assets/genotype-routine.svg",
+      "theme": "chromatic-helix"
+    },
+    "demo": {
+      "query": "From my at-home sequencing notes, build a personal A/B protocol for sleep routine timing to improve next-day cognitive clarity without changing medications or supplements.",
+      "documents": [
+        "Variant notes from a home pipeline: PER3 rs228697 and CLOCK rs1801260 are present. User reports delayed sleep phase tendency and shiftable wake schedule. Current medications unchanged. Goal: improve morning focus and reaction time.",
+        "Wearable baseline summary: 21-day median sleep onset 00:48, wake 08:01, sleep duration 6.7h, morning alertness score median 4/10, resting HR variability lower on days with sleep onset after 01:00."
+      ]
+    }
+  },
+  {
+    "id": "multiomics_crossover_designer",
+    "title": "Multi-Omics Crossover Designer",
+    "objective": "Design an analyzable crossover trial from longitudinal home-lab markers, wearables, and diary signals while preserving low-risk intervention scope.",
+    "prompt_scaffold": "Treat biomarker and wearable signals as planning context, not diagnosis. Produce a rigorous randomizable crossover design with confounder logging, adherence criteria, and a measurable primary outcome question. Keep interventions routine-based and reversible.",
+    "recommended_provider": "openrouter",
+    "recommended_models": {
+      "openrouter": "google/medgemma-1.5-4b-it",
+      "ollama": "medgemma-1.5-4b-it:Q4_K_M"
+    },
+    "ui": {
+      "subtitle": "Turn longitudinal home-lab data into a structured crossover.",
+      "description": "Define cadence, confounders, and analysis-ready outcomes for high-discipline self-tracking.",
+      "hero_asset": "/workflow-assets/multiomics-crossover.svg",
+      "theme": "signal-lattice"
+    },
+    "demo": {
+      "query": "Create a crossover design using my monthly inflammation panel trends and wearable recovery scores to compare two low-risk morning routines for sustained daytime energy.",
+      "documents": [
+        "Home-lab longitudinal panel (6 months): hs-CRP ranges 1.2-2.3 mg/L, fasting glucose 89-96 mg/dL, ApoB stable, ferritin stable. No urgent abnormalities reported by clinician. User wants non-pharmacologic routine optimization only.",
+        "Wearable exports: readiness score, HRV, sleep efficiency, and resting HR. User notes midday energy dips on low-HRV mornings. Confounders available: caffeine timing, workout intensity, menstrual cycle phase, travel days."
+      ]
+    }
+  },
+  {
+    "id": "adverse_signal_clinician_escalation",
+    "title": "Adverse-Signal Clinician Escalation",
+    "objective": "Handle warning-signal scenarios by producing constrained manual-review or block output with a concise clinician handoff summary and targeted follow-up questions.",
+    "prompt_scaffold": "If adverse signals or possible safety escalation appear, prefer manual_review_before_protocol or block. Never provide autonomous clinical interpretation or treatment instructions. Create concise clinician-facing handoff language and practical user next steps within platform safety limits.",
+    "recommended_provider": "openrouter",
+    "recommended_models": {
+      "openrouter": "google/medgemma-1.5-4b-it",
+      "ollama": "medgemma-1.5-4b-it:Q4_K_M"
+    },
+    "ui": {
+      "subtitle": "Escalate warning patterns into a clinician-ready handoff.",
+      "description": "Generate constrained escalation output and focused clarification questions without replacing care.",
+      "hero_asset": "/workflow-assets/adverse-escalation.svg",
+      "theme": "risk-contour"
+    },
+    "demo": {
+      "query": "Use my symptom timeline and wearable instability notes to decide whether this remains a low-risk routine experiment or needs clinician review before any protocol.",
+      "documents": [
+        "Timeline: user tracked intermittent palpitations, dizziness episodes after high-intensity exercise weeks, and two nights with poor sleep plus elevated resting heart rate. User asks for a self-experiment plan but wants safety-first guidance.",
+        "Wearable flags: resting heart rate increased from baseline 54 to 66 over 9 days; HRV dropped by 35 percent; subjective fatigue increased. No medication changes disclosed."
+      ]
+    }
+  }
+]

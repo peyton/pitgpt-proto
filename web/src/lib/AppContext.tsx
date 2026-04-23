@@ -35,6 +35,7 @@ interface AppContextValue {
   restoreAll: (state: AppState) => void;
   createExperiment: (input: {
     query: string;
+    workflowId?: string;
     documents?: string[];
     sourceNames?: string[];
     ingestionResult?: IngestionResult | null;
@@ -142,6 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const createExperiment = useCallback(
     (input: {
       query: string;
+      workflowId?: string;
       documents?: string[];
       sourceNames?: string[];
       ingestionResult?: IngestionResult | null;
